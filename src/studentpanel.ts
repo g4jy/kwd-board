@@ -312,7 +312,11 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
 
 // 중앙 DB에서 뽑은 전체 단어·문형 + 관련된 말
 let dbView: { kind: 'w' | 'g'; sort: 'recent' | 'first' | 'seen'; q: string } = { kind: 'w', sort: 'recent', q: '' };
-function renderDbVocab(body: HTMLElement, db: BoardData, mem: StudentMemory | null, act: PanelActions, insBtn: (line: string, label?: string) => HTMLElement) {
+function renderDbVocab(body: HTMLElement, dbIn: BoardData, mem: StudentMemory | null, act: PanelActions, insBtn: (line: string, label?: string) => HTMLElement) {
+  // DB에 아직 안 들어간 단어(수업 기록 .lesson_data 에만 있는 것)도 합친다
+  const inDb = new Set(dbIn.vocab.map((v) => v.w));
+  const extra = (mem?.vocab || []).filter((v) => v.kr && !inDb.has(v.kr)).map((v) => ({ w: v.kr, en: v.en || '', cat: '', pos: '', seen: v.count || 1, status: v.status || '', first: Number((v.lesson || '').replace(/\D/g, '')) || null, last: null, rel: {}, only: true }));
+  const db: BoardData = { ...dbIn, vocab: [...dbIn.vocab, ...extra] };
   const review = new Set((mem?.vocab || []).filter((v) => v.status === 'review').map((v) => v.kr));
   const seg = h('div', { class: 'mp-seg' });
   const mk = (k: 'w' | 'g', label: string) => {
@@ -355,7 +359,7 @@ function renderDbVocab(body: HTMLElement, db: BoardData, mem: StudentMemory | nu
       let vs = db.vocab.filter((v) => !q || v.w.includes(q) || v.en.toLowerCase().includes(q));
       vs = [...vs].sort((a, b) => (dbView.sort === 'first' ? num(a.first) - num(b.first) : dbView.sort === 'seen' ? b.seen - a.seen : num(b.last ?? b.first) - num(a.last ?? a.first)));
       for (const v of vs.slice(0, 300)) {
-        const sub = [v.en, v.first != null ? `#${v.first} 처음` : '', v.seen > 1 ? `${v.seen}번` : '', v.chapter ? `챕터 ${v.chapter.target}` : '', review.has(v.w) ? '오늘 복습' : ''].filter(Boolean).join(' · ');
+        const sub = [v.en, v.first != null ? `#${v.first} 처음` : '', v.seen > 1 ? `${v.seen}번` : '', v.chapter ? `챕터 ${v.chapter.target}` : '', review.has(v.w) ? '오늘 복습' : '', (v as { only?: boolean }).only ? '수업 기록에만 (DB 아직)' : ''].filter(Boolean).join(' · ');
         const r = h('div', { class: 'mp-row mp-dbrow' + (review.has(v.w) ? ' review' : '') }, h('button', { type: 'button', class: 'mp-main mp-open', 'aria-expanded': 'false' }, v.w), h('div', { class: 'mp-rsub' }, sub), insBtn(`${v.w}${v.en ? ' : ' + v.en : ''}`));
         const open = r.querySelector('.mp-open') as HTMLElement;
         open.addEventListener('click', () => {
