@@ -74,8 +74,8 @@ test.describe('판 화면', () => {
     await expect(page.locator('.zoom .pct')).toHaveText('100%');
     await page.waitForTimeout(200);
     expect(await page.evaluate(() => document.activeElement?.classList.contains('board-doc'))).toBe(true);
-    // 도구 줄: 글 · 펜3 · 형광 · 지우개 · ↶ · ↷ · 가져오기 · ⋯
-    await expect(page.locator('.toolbar button')).toHaveCount(10);
+    // 도구 줄: 선택 · 글 · 펜3 · 형광 · 지우개 · ↶ · ↷ · 가져오기 · ⋯
+    await expect(page.locator('.toolbar button')).toHaveCount(11);
     await page.click('.back-btn');
     await expect(page.locator('h1')).toHaveText('KWD 수업 판');
     await expect(page.locator('.board-row').first()).toContainText('학생 12');
@@ -135,12 +135,11 @@ test.describe('펜', () => {
     await page.click('.pen-pop .pp-sw[title="보라"]');
     await page.locator('.pen-pop .pp-slider').fill('9');
     await page.click('.pen-pop .pp-step[title="굵게"]');
-    expect(await kwd(page, (k) => k.ink.style)).toEqual({ color: '#6a1b9a', size: 10, hl: false });
-    // 직접 고른 색은 '최근'에 남는다
-    await page.locator('.pen-pop .custom input').evaluate((el: HTMLInputElement) => {
-      el.value = '#123456';
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    });
+    expect(await kwd(page, (k) => k.ink.style)).toMatchObject({ color: '#6a1b9a', size: 10, hl: false });
+    // 직접 고른 색은 '최근'에 남는다 (끌어 고르기 창의 색 코드 칸)
+    await page.click('.pen-pop .pp-sw.custom');
+    await page.locator('.pen-pop .cp-hex').fill('#123456');
+    await page.locator('.pen-pop .cp-hex').press('Tab');
     await expect(page.locator('.pen-pop .pp-recent .pp-sw')).toHaveCount(1);
     await page.keyboard.press('Escape');
     await expect(page.locator('.pen-pop')).toHaveCount(0);
@@ -148,13 +147,13 @@ test.describe('펜', () => {
     await page.click('.pen-slot[data-slot="3"]');
     expect(await kwd(page, (k) => k.tool())).toBe('hl');
     await page.click('.pen-slot[data-slot="3"]');
-    await expect(page.locator('.pen-pop .pp-sw')).toHaveCount(5);
+    await expect(page.locator('.pen-pop .pp-sw[data-color]')).toHaveCount(8);
     await page.click('.pen-pop .pp-sw[title="분홍"]');
     await page.keyboard.press('Escape');
     await page.reload();
     await page.waitForFunction(() => !!(window as any).__kwd);
     const prefs = await kwd(page, (k) => k.prefs());
-    expect(prefs.pens[1]).toEqual({ color: '#123456', size: 10 });
+    expect(prefs.pens[1]).toMatchObject({ color: '#123456', size: 10 });
     expect(prefs.hl.color).toBe('#ff8fc7');
     expect(prefs.recent[0]).toBe('#123456');
   });
@@ -604,5 +603,51 @@ test.describe('태블릿 입력·성능', () => {
     expect(r.importMs).toBeLessThan(10000);
     expect(r.navMs).toBeLessThan(50);
     expect(r.firstBoxH[0]).toBeGreaterThan(5000);
+  });
+});
+
+test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
+  test('펜 종류·끌어 고른 색·형광 진하기·선택 도구·글상자·웹 학습지 창·사진 비율·학습지 위 확대', () => {
+    const r = JSON.parse(execFileSync('node', ['scripts/v4-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/v4t' } }));
+    expect(r.errs).toEqual([]);
+    expect(r.penPref.kind).toBe('ball');
+    expect(r.penPref.color).not.toBe('#222222');
+    expect(r.stroke1).toEqual({ k: 'ball', color: r.penPref.color });
+    expect(r.stroke2).toEqual({ hl: true, o: 0.6, color: '#c39bff' });
+    expect(r.selected).toBe(2);
+    expect(r.moved).toEqual([50, 60]);
+    expect(r.afterDelete).toBe(0);
+    expect(r.afterUndo).toBe(2);
+    expect(r.boxes).toHaveLength(1);
+    expect(r.boxes[0].text).toBe('여기 상자 글');
+    expect(r.boxesAfterEmpty).toBe(1);
+    expect(r.htmlMove).toEqual([-60, 40]);
+    expect(r.htmlSize[0]).toBeLessThan(-60);
+    expect(r.quiz).toBe('정답!');
+    expect(r.zoomOverHtml[1]).toBeGreaterThan(r.zoomOverHtml[0] * 1.2);
+    expect(r.iframeCursor).toContain('url(');
+    expect(r.img.ratio).toBe(3);
+    expect(r.md).toContain('[글상자');
+    expect(r.md).toContain('여기 상자 글');
+  });
+  test('KWD 폴더: 오늘 수업 → 학생 → 이 학생 패널 6칸, 자료를 판에, 체험 학생, 학생 기기에는 없음', () => {
+    const r = JSON.parse(execFileSync('node', ['scripts/folder-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/foldert' } }));
+    expect(r.errs).toEqual([]);
+    expect(r.noFolderCard).toBe('KWD 폴더 연결하기');
+    expect(r.rows).toHaveLength(2);
+    expect(r.rows[1]).toContain('시작');
+    expect(r.url).toMatch(/^\/b\/s1234567d\d{6}\?r=t$/);
+    expect(r.chip).toBe('Mina K');
+    expect(r.tabs).toEqual(['오늘', '수업안', '자료', '학생', '지난 수업', '단어']);
+    expect(r.today).toContain('주말에 부산에 갔어요');
+    expect(r.boardText).toContain('송편 : rice cake');
+    expect(r.plan).toContain('맛 형용사');
+    expect(r.htmlObj).toBe('#3_수업페이지');
+    expect(r.lessonDoc).toContain('수업 2');
+    expect(r.vocab.length).toBeGreaterThanOrEqual(5);
+    expect(r.hints).toBeGreaterThan(0);
+    expect(r.trialTabs).toContain('오늘');
+    expect(r.trialToday).toContain('여행 한국어');
+    expect(r.studentMemBtn).toBe(true);
   });
 });

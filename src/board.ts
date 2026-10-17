@@ -3,15 +3,18 @@ import type { Editor } from '@tiptap/core';
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import * as Y from 'yjs';
 import { ySyncPluginKey } from '@tiptap/y-tiptap';
-import { BoardStore, getServerUrl, setServerUrl, getToken, setToken, upsertIndex, loadIndex, LOCAL, TEXT_W, TEXT_H, type Role, type PageInfo, type InkTarget } from './store';
+import { BoardStore, randomId, getServerUrl, setServerUrl, getToken, setToken, upsertIndex, loadIndex, LOCAL, TEXT_W, TEXT_H, type Role, type PageInfo, type InkTarget } from './store';
 import { Viewport } from './viewport';
-import { InkLayer, type Tool, type PageBox } from './ink';
-import { createPageEditor, insertImageFiles, makeHintPlugin, hintKey, ROLE_COLORS, ROLE_NAMES, type HintWord } from './editor';
+import { InkLayer, CURSOR_ARROW, CURSOR_TEXT, type Tool, type PageBox } from './ink';
+import { PageObjects, BOX_W, type ObjectHost } from './objects';
+import { createPageEditor, insertImageFiles, fileToDataUrl, makeHintPlugin, hintKey, ROLE_COLORS, ROLE_NAMES, type HintWord } from './editor';
 import { summarize } from './exportmd';
 import { buildBundle, bundleName, boardMarkdown, canPickFolder, pickFolder, folderName, writeToFolder } from './record';
 import { importPdf, importHtml, htmlWithBridge, joinText } from './importer';
 import { loadPrefs, savePrefs, penSlot, renderSlot, buildPenPopover, type PenPrefs } from './palette';
 import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY, type StudentMemory } from './memory';
+import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, type StudentPack, type PackFile } from './kwdfolder';
+import { renderStudentPanel, type PanelTab } from './studentpanel';
 import { h, download, downloadBlob, fmtDate, fmtClock, toast, EMBEDDED } from './ui';
 
 const GAP = 28; // 페이지 사이
@@ -31,6 +34,7 @@ interface PageView {
   editorHost?: HTMLElement;
   editor?: Editor;
   bg?: HTMLElement;
+  objs?: PageObjects;
   y: number;
   h: number;
 }
@@ -77,6 +81,11 @@ export class BoardScreen {
   private pushTimer = 0;
   private lastBundleAt = 0;
   private rotateHinted = false;
+  private selObj: { page: string; id: string } | null = null;
+  private objHost!: ObjectHost;
+  private pack: StudentPack | null = null;
+  private packTab: PanelTab = 'today';
+  private packFolder = '';
 
   constructor(params: BoardParams) {
     this.params = params;
@@ -86,6 +95,8 @@ export class BoardScreen {
     this.store = new BoardStore(params.id, params.role, params.server || getServerUrl());
     this.prefs = loadPrefs(params.role);
     this.root = h('div', { class: `board role-${params.role}` });
+    this.root.style.setProperty('--cur-arrow', CURSOR_ARROW);
+    this.root.style.setProperty('--cur-text', CURSOR_TEXT);
     this.build();
     void this.afterLoad();
   }
@@ -105,6 +116,30 @@ export class BoardScreen {
     this.undo = new Y.UndoManager([this.store.pages], { trackedOrigins: new Set([ySyncPluginKey, LOCAL]), captureTimeout: 400 });
     this.store.beforeInkChange = () => this.undo.stopCapturing();
 
+    this.objHost = {
+      store: this.store,
+      role: this.role,
+      undo: this.undo,
+      scale: () => this.vp.view.s,
+      canEdit: () => this.role === 'teacher' || (this.role === 'student' && this.store.getSetting('studentWrite', false)),
+      canType: () => this.role === 'teacher' || (this.role === 'student' && this.store.getSetting('studentWrite', false)),
+      interactive: () => this.tool === 'text' || this.tool === 'select',
+      selectMode: () => this.tool === 'select',
+      selected: () => this.selObj?.id || null,
+      select: (page, id) => this.selectObj(page, id),
+      onText: (page, block, kind, text) => this.store.logText(page, block, kind, text),
+      onBoxFocus: (ed, page) => {
+        this.activeEditor = ed;
+        this.currentPage = page;
+      },
+      onHtmlEvent: (page, mid, d) => {
+        if (d.type === 'kwd:event') this.store.log({ kind: 'interaction', page, id: mid, data: { name: d.name, value: d.value, score: d.score } });
+        else if (d.type === 'kwd:text' && this.role === 'teacher' && d.text && mid) {
+          const cur = this.store.matdata.get(`${mid}/1`);
+          if (cur && !cur.text?.length) this.store.doc.transact(() => this.store.matdata.set(`${mid}/1`, { ...cur, text: [{ s: d.text!.slice(0, 4000), x: 0, y: 0, w: cur.w, h: cur.h }] }), 'import');
+        }
+      },
+    };
     this.ink = new InkLayer(canvas, this.store, this.vp);
     this.ink.getPages = () => this.pageBoxes();
     this.ink.canDraw = () => this.role !== 'student' || this.store.getSetting('studentInk', false);
@@ -119,7 +154,10 @@ export class BoardScreen {
     if (this.role === 'student' || this.role === 'assist') back.hidden = true;
     this.timerEl = h('div', { class: 'timer', hidden: '' });
     this.memBtn = h('button', { type: 'button', class: 'mem-btn', hidden: '' }, '이 학생');
-    this.memBtn.addEventListener('click', () => this.toggleMemPanel());
+    this.memBtn.addEventListener('click', () => {
+      if (this.packFolder && !this.pack) void this.loadFolderStudent(true);
+      else this.toggleMemPanel();
+    });
     const topRight = h('div', { class: 'top-right' }, this.timerEl, this.memBtn);
     this.followBtn = h('button', { type: 'button', class: 'follow-btn', hidden: '' }, '따라가기');
     this.followBtn.addEventListener('click', () => {
@@ -137,6 +175,7 @@ export class BoardScreen {
     this.chip.addEventListener('click', () => this.openLinks());
 
     this.bindViewport();
+    this.bindSelectAndBoxes();
     this.bindAwareness();
     this.bindKeys();
     const pagesObs = () => this.syncPages();
@@ -179,6 +218,11 @@ export class BoardScreen {
       importHtmlText: (html: string, name: string) => importHtml(this.store, html, name, this.order.indexOf(this.currentPage)),
       setMemory: (m: unknown) => this.setMemory(normalize(m, this.studentNo())),
       goto: (id: string) => this.gotoPage(id),
+      placeHtml: (html: string, name: string) => this.placeHtml(html, name),
+      addBox: (page: string, x: number, y: number) => this.addBox(page, x, y),
+      objs: (page: string) => this.store.objList(page),
+      selection: () => ({ ink: this.ink.selection, obj: this.selObj }),
+      setTool: (t: Tool) => this.setTool(t),
     };
   }
 
@@ -201,8 +245,12 @@ export class BoardScreen {
       this.touchIndex();
       this.store.meta.observe(() => this.touchIndex());
       const st = this.studentNo();
-      const { mem } = await loadMemory(st);
-      if (mem) this.setMemory(mem);
+      this.packFolder = folderForBoard(this.store.id);
+      if (this.packFolder) void this.loadFolderStudent(false);
+      else {
+        const { mem } = await loadMemory(st);
+        if (mem) this.setMemory(mem);
+      }
     }
     this.syncPages();
     // 폰 학생은 처음부터 큰 글씨 (46% 축소면 글이 8px 남짓)
@@ -233,6 +281,7 @@ export class BoardScreen {
     // 지워진 페이지
     for (const [id, v] of this.views) {
       if (!ids.includes(id)) {
+        v.objs?.destroy();
         v.editor?.destroy();
         // 편집기를 없애면 Tiptap 이 공용 UndoManager 를 멈춘다 → 바로 되살린다
         (this.undo as unknown as { restore?: () => void }).restore?.();
@@ -266,6 +315,10 @@ export class BoardScreen {
         onText: (block, kind, text) => this.store.logText(info.id, block, kind, text),
         onEvent: (kind, data) => this.store.log({ kind, page: info.id, data }),
         scrollToSelection: (c) => this.keepVisible(c),
+        onImageFiles: (files) => {
+          void this.insertImages(files, info.id);
+          return true;
+        },
         onFocus: () => {
           this.activeEditor = editor;
           this.currentPage = info.id;
@@ -289,6 +342,8 @@ export class BoardScreen {
     }
     const label = h('div', { class: 'page-no' });
     el.append(label);
+    view.objs = new PageObjects(info.id, el, this.objHost);
+    this.store.objs(info.id).observe(() => this.layoutSoon());
     this.views.set(info.id, view);
   }
 
@@ -348,7 +403,9 @@ export class BoardScreen {
       let hgt = v.info.h;
       if (v.info.kind === 'text' && v.editorHost) {
         const content = v.editorHost.scrollHeight + 160;
-        hgt = Math.max(TEXT_H, Math.ceil(content / 40) * 40);
+        let objBottom = 0;
+        for (const o of this.store.objList(id)) objBottom = Math.max(objBottom, o.y + o.h + 120);
+        hgt = Math.max(TEXT_H, Math.ceil(Math.max(content, objBottom) / 40) * 40);
         v.el.style.height = hgt + 'px';
       }
       v.h = hgt;
@@ -667,6 +724,147 @@ export class BoardScreen {
     this.disposers.push(() => window.removeEventListener('resize', onResize));
   }
 
+  // 선택 도구(획 고르기·옮기기·네모로 여러 개) + 글상자 만들기 + 웹 학습지 위 휠
+  private bindSelectAndBoxes() {
+    const stage = this.stage;
+    let op: { kind: 'drag' | 'band'; sx: number; sy: number; wx: number; wy: number; moved: boolean; id: number } | null = null;
+    stage.addEventListener('pointerdown', (e) => {
+      if (this.tool !== 'select' || this.role !== 'teacher') return;
+      if (e.pointerType === 'touch' || e.button !== 0) return;
+      const t = e.target as HTMLElement;
+      if (t.closest('.obj, .toolbar, .rail, .zoom, .bubble, .menu, .pen-pop, .mem-panel')) return;
+      const [wx, wy] = this.vp.toWorld(e.clientX, e.clientY);
+      const sb = this.ink.selectionBox();
+      let kind: 'drag' | 'band' = 'band';
+      if (sb && wx >= sb[0] - 8 && wx <= sb[2] + 8 && wy >= sb[1] - 8 && wy <= sb[3] + 8) kind = 'drag';
+      else {
+        const hit = this.ink.hitStroke(wx, wy);
+        if (hit) {
+          this.selObj = null;
+          for (const v of this.views.values()) v.objs?.refreshSelection();
+          this.ink.selection = { page: hit.page, ids: [hit.id], dx: 0, dy: 0 };
+          kind = 'drag';
+        }
+      }
+      if (kind === 'band') this.ink.band = { x0: wx, y0: wy, x1: wx, y1: wy };
+      op = { kind, sx: e.clientX, sy: e.clientY, wx, wy, moved: false, id: e.pointerId };
+      stage.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      this.ink.invalidate();
+    });
+    stage.addEventListener('pointermove', (e) => {
+      if (!op || e.pointerId !== op.id) return;
+      if (!op.moved && Math.hypot(e.clientX - op.sx, e.clientY - op.sy) < 3) return;
+      op.moved = true;
+      const [wx, wy] = this.vp.toWorld(e.clientX, e.clientY);
+      if (op.kind === 'drag' && this.ink.selection) {
+        this.ink.selection.dx = wx - op.wx;
+        this.ink.selection.dy = wy - op.wy;
+      } else if (this.ink.band) {
+        this.ink.band.x1 = wx;
+        this.ink.band.y1 = wy;
+      }
+      this.ink.invalidate();
+    });
+    const end = (e: PointerEvent) => {
+      if (!op || e.pointerId !== op.id) return;
+      const o = op;
+      op = null;
+      try {
+        stage.releasePointerCapture(e.pointerId);
+      } catch {
+        /* ignore */
+      }
+      if (o.kind === 'drag') {
+        const sel = this.ink.selection;
+        if (sel && o.moved && (sel.dx || sel.dy)) {
+          const { page, ids, dx, dy } = sel;
+          sel.dx = sel.dy = 0;
+          this.store.moveStrokes(page, ids, dx, dy);
+        }
+        this.ink.invalidate();
+        return;
+      }
+      const b = this.ink.band;
+      this.ink.band = null;
+      if (!b || !o.moved) {
+        this.clearSelection();
+        return;
+      }
+      const found = this.ink.strokesInRect(b.x0, b.y0, b.x1, b.y1);
+      let best: [string, string[]] | null = null;
+      for (const ent of found) if (!best || ent[1].length > best[1].length) best = ent;
+      if (best) {
+        this.selObj = null;
+        this.ink.selection = { page: best[0], ids: best[1], dx: 0, dy: 0 };
+      } else {
+        this.ink.selection = null;
+        const [ax, bx] = [Math.min(b.x0, b.x1), Math.max(b.x0, b.x1)];
+        const [ay, by] = [Math.min(b.y0, b.y1), Math.max(b.y0, b.y1)];
+        for (const pb of this.pageBoxes()) {
+          const ids = this.views.get(pb.id)?.objs?.idsInRect(ax - pb.x, ay - pb.y, bx - pb.x, by - pb.y) || [];
+          if (ids.length) {
+            this.selectObj(pb.id, ids[0]);
+            break;
+          }
+        }
+      }
+      for (const v of this.views.values()) v.objs?.refreshSelection();
+      this.ink.invalidate();
+    };
+    stage.addEventListener('pointerup', end);
+    stage.addEventListener('pointercancel', end);
+
+    // 글상자: 빈 곳 두 번 누르기 (글·선택 도구) · 자료 페이지는 한 번 (글 도구)
+    const emptySpot = (t: HTMLElement) => {
+      if (t.closest('.obj, .mat-frame')) return false;
+      if (t.classList.contains('board-doc') || t.classList.contains('page-text') || t.classList.contains('page') || t.classList.contains('page-bg') || t.classList.contains('mat-img') || t.classList.contains('page-objs')) return true;
+      return false;
+    };
+    const canMake = () => this.role === 'teacher' || (this.role === 'student' && this.store.getSetting('studentWrite', false));
+    let wasTypingInBox = false;
+    stage.addEventListener(
+      'pointerdown',
+      () => {
+        wasTypingInBox = !!(document.activeElement as HTMLElement | null)?.closest?.('.obj-box-text');
+      },
+      { capture: true },
+    );
+    this.pagesHost.addEventListener('dblclick', (e) => {
+      if ((this.tool !== 'text' && this.tool !== 'select') || !canMake()) return;
+      const t = e.target as HTMLElement;
+      if (!emptySpot(t)) return;
+      const at = this.pageAt(e.clientX, e.clientY);
+      if (!at) return;
+      e.preventDefault();
+      window.getSelection()?.removeAllRanges();
+      this.addBox(at.page, at.x, at.y);
+    });
+    this.pagesHost.addEventListener('click', (e) => {
+      if (this.tool !== 'text' || !canMake() || wasTypingInBox) return;
+      const t = e.target as HTMLElement;
+      if (!t.closest('.page-material') || !emptySpot(t)) return;
+      const at = this.pageAt(e.clientX, e.clientY);
+      if (at) this.addBox(at.page, at.x, at.y);
+    });
+
+    // 웹 학습지 안에서 보낸 휠: Ctrl·핀치 = 판 확대, 그 밖 = 판 이동
+    const onMsg = (e: MessageEvent) => {
+      const d = e.data as { type?: string; dx?: number; dy?: number; x?: number; y?: number; ctrl?: boolean } | null;
+      if (!d || typeof d !== 'object' || d.type !== 'kwd:wheel') return;
+      const frame = Array.from(this.root.querySelectorAll('iframe')).find((f) => f.contentWindow === e.source);
+      if (!frame) return;
+      const r = frame.getBoundingClientRect();
+      const k = r.width / (frame.offsetWidth || r.width || 1);
+      const sx = r.left + (d.x || 0) * k, sy = r.top + (d.y || 0) * k;
+      if (d.ctrl) this.vp.zoomAt(sx, sy, Math.exp(-(d.dy || 0) * 0.0015));
+      else this.vp.panBy(-(d.dx || 0), -(d.dy || 0));
+      this.userMovedView();
+    };
+    window.addEventListener('message', onMsg);
+    this.disposers.push(() => window.removeEventListener('message', onMsg));
+  }
+
   private wheelLock = 0;
   private wheelStep(dy: number) {
     const now = performance.now();
@@ -748,6 +946,7 @@ export class BoardScreen {
     const showCaret = this.store.getSetting('showCaret', true);
     if (this.role === 'student') {
       for (const ed of this.editors.values()) ed.setEditable(studentWrite, false);
+      for (const v of this.views.values()) v.objs?.setEditable(studentWrite);
       if (!studentInk && this.tool !== 'text') this.setTool('text');
       this.toolbar.hidden = !(studentWrite || studentInk);
       this.root.classList.toggle('tb-on', !this.toolbar.hidden);
@@ -756,6 +955,7 @@ export class BoardScreen {
     }
     if (this.role === 'assist') {
       for (const ed of this.editors.values()) ed.setEditable(false, false);
+      for (const v of this.views.values()) v.objs?.setEditable(false);
       this.root.classList.add('mat-locked');
     }
     this.root.classList.toggle('hide-carets', !showCaret && this.role === 'student');
@@ -788,7 +988,8 @@ export class BoardScreen {
   private buildToolbar(): HTMLElement {
     const bar = h('div', { class: 'toolbar' });
     const btn = (id: string, label: string, title: string, cls = '') => h('button', { type: 'button', class: `tb ${cls}`, 'data-tool': id, title }, label);
-    const text = btn('text', '글', '글 (T)');
+    const select = btn('select', '선택', '선택 (V) · 필기·사진·글상자를 골라 옮기기 · 빈 곳 끌면 여러 개');
+    const text = btn('text', '글', '글 (T) · 빈 곳을 두 번 누르면 글상자');
     this.slots = [0, 1, 2].map((i) => penSlot(i, this.prefs.pens[i]));
     const hl = penSlot(3, this.prefs.hl, true);
     this.slots.push(hl);
@@ -799,7 +1000,7 @@ export class BoardScreen {
     const more = btn('more', '⋯', '더보기', 'icon');
     const sep = () => h('span', { class: 'tb-sep' });
     const pens = h('span', { class: 'tb-pens' }, ...this.slots);
-    if (this.role === 'teacher') bar.append(text, sep(), pens, eraser, sep(), undo, redo, sep(), imp, more);
+    if (this.role === 'teacher') bar.append(select, text, sep(), pens, eraser, sep(), undo, redo, sep(), imp, more);
     else if (this.role === 'assist') bar.append(pens, eraser, sep(), undo, redo);
     else bar.append(text, pens, eraser, undo);
     bar.addEventListener('click', (e) => {
@@ -808,6 +1009,7 @@ export class BoardScreen {
       if (b.dataset.slot != null) return this.pickSlot(Number(b.dataset.slot), b);
       const id = b.dataset.tool;
       if (id === 'text') this.setTool('text');
+      else if (id === 'select') this.setTool('select');
       else if (id === 'eraser') {
         if (this.tool === 'eraser') this.openPenPopover('eraser', b);
         else this.setTool('eraser');
@@ -833,13 +1035,14 @@ export class BoardScreen {
   }
 
   private applyPenStyle() {
-    if (this.tool === 'hl') this.ink.style = { color: this.prefs.hl.color, size: this.prefs.hl.size, hl: true };
+    if (this.tool === 'hl') this.ink.style = { color: this.prefs.hl.color, size: this.prefs.hl.size, hl: true, opacity: this.prefs.hl.opacity ?? 0.35 };
     else {
       const p = this.prefs.pens[this.prefs.active];
-      this.ink.style = { color: p.color, size: p.size, hl: false };
+      this.ink.style = { color: p.color, size: p.size, hl: false, kind: p.kind };
     }
     this.ink.eraserSize = this.prefs.eraser;
     this.ink.straighten = this.prefs.straighten;
+    this.ink.updateCursor();
   }
 
   private openPenPopover(kind: 'pen' | 'hl' | 'eraser', anchor: HTMLElement) {
@@ -902,6 +1105,8 @@ export class BoardScreen {
       } else if (b.dataset.tool) b.classList.toggle('on', b.dataset.tool === t);
     });
     this.closePopover();
+    if (t !== 'select') this.clearSelection();
+    for (const v of this.views.values()) v.objs?.refreshSelection();
     if (t === 'text') {
       // 지금 보는 페이지의 편집기에만 커서를 둔다 (다른 페이지로 튀지 않게)
       const ed = this.editors.get(this.currentPage);
@@ -936,11 +1141,16 @@ export class BoardScreen {
       }
       if (e.key === 'Escape') {
         if (this.popover) this.closePopover();
+        else if (this.selObj || this.ink.selection) this.clearSelection();
         else if (this.panel) this.closePanel();
         else if (this.tool !== 'text') this.setTool('text');
         return;
       }
       if (typing || this.role === 'student') return;
+      if ((e.key === 'Delete' || e.key === 'Backspace') && this.deleteSelection()) {
+        e.preventDefault();
+        return;
+      }
       if (this.single() && (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ')) {
         e.preventDefault();
         this.step(1);
@@ -953,6 +1163,7 @@ export class BoardScreen {
       else if (e.key === 'h' || e.key === 'H') this.setTool('hl');
       else if (e.key === 'e' || e.key === 'E') this.setTool('eraser');
       else if (e.key === 't' || e.key === 'T') this.setTool('text');
+      else if ((e.key === 'v' || e.key === 'V') && this.role === 'teacher') this.setTool('select');
     };
     window.addEventListener('keydown', onKey);
     this.disposers.push(() => window.removeEventListener('keydown', onKey));
@@ -1161,9 +1372,9 @@ export class BoardScreen {
       return el;
     };
     menu.append(
-      item('사진', '지금 페이지에 넣어요 · 복사해서 붙여 넣어도 돼요', () => this.pickFile('image/*', true, (files) => this.insertImages(files))),
+      item('사진', '지금 페이지 위에 놓여요 · 끌어서 옮기고 모서리로 크기', () => this.pickFile('image/*', true, (files) => void this.insertImages(files))),
       item('PDF · 슬라이드', '한 쪽씩 페이지로 들어가요 · PPT는 PDF로 저장해서', () => this.pickFile('application/pdf,.pdf', false, (files) => void this.importPdfFile(files[0]))),
-      item('웹 학습지', '누르고 입력하는 학습지 파일(.html)', () => this.pickFile('.html,.htm,text/html', false, (files) => void this.importHtmlFile(files[0]))),
+      item('웹 학습지', '.html 파일 · 지금 페이지 위에 창으로, 옮기고 크기 바꾸기', () => this.pickFile('.html,.htm,text/html', false, (files) => void this.importHtmlFile(files[0]))),
       item('빈 페이지', '이 페이지 다음에', () => this.addTextPage()),
     );
     this.showPanel(menu, anchor);
@@ -1176,13 +1387,109 @@ export class BoardScreen {
     input.click();
   }
 
-  private insertImages(files: File[]) {
-    let ed = this.editors.get(this.currentPage);
-    if (!ed) {
-      this.addTextPage();
-      ed = this.editors.get(this.currentPage);
+  // 사진: 지금 보는 페이지 위에 원래 비율로 놓는다
+  async insertImages(files: File[], pageId?: string) {
+    const list = files.filter((f) => f.type.startsWith('image/'));
+    if (!list.length) return;
+    let page = pageId || this.currentPage;
+    if (!this.views.get(page)) page = this.order[0];
+    const v = this.views.get(page);
+    if (!v) return;
+    let k = 0;
+    for (const f of list) {
+      const dataUrl = await fileToDataUrl(f);
+      const img = await new Promise<HTMLImageElement>((res, rej) => {
+        const im = new Image();
+        im.onload = () => res(im);
+        im.onerror = rej;
+        im.src = dataUrl;
+      }).catch(() => null);
+      if (!img) continue;
+      const ratio = img.naturalWidth / img.naturalHeight || 1;
+      let w = Math.min(v.info.w * 0.6, img.naturalWidth);
+      let hh = w / ratio;
+      if (hh > 560) {
+        hh = 560;
+        w = hh * ratio;
+      }
+      let src = dataUrl;
+      if (this.store.status === 'connected') {
+        const blob = await (await fetch(dataUrl)).blob();
+        const key = `img-${Date.now().toString(36)}-${k}.jpg`;
+        if (await this.store.putBlob(key, blob)) src = 'blob:' + key;
+      }
+      const [x, y] = this.spotOnPage(page, w, hh);
+      const o = this.store.addObj(page, { type: 'img', x: x + k * 24, y: y + k * 24, w: Math.round(w), h: Math.round(hh), ratio, src, name: f.name });
+      this.store.log({ kind: 'image', page, id: o.id, data: { name: f.name } });
+      this.selectObj(page, o.id);
+      k++;
     }
-    if (ed) insertImageFiles(ed, files, (name) => this.store.log({ kind: 'image', page: this.currentPage, data: { name } }));
+    if (this.tool !== 'text' && this.tool !== 'select') this.setTool('select');
+  }
+
+  // 지금 화면 가운데쯤 페이지 좌표 (페이지 안으로)
+  private spotOnPage(page: string, w: number, hh: number): [number, number] {
+    const v = this.views.get(page);
+    if (!v) return [40, 40];
+    const r = this.stage.getBoundingClientRect();
+    const [cx, cy] = this.vp.toWorld(r.left + r.width / 2, r.top + r.height / 2);
+    const px = Math.max(16, Math.min(v.info.w - w - 16, cx - w / 2));
+    const py = Math.max(16, Math.min(Math.max(16, v.h - hh - 16), cy - v.y - hh / 2));
+    return [Math.round(px), Math.round(py)];
+  }
+
+  private pageAt(clientX: number, clientY: number): { page: string; x: number; y: number } | null {
+    const [wx, wy] = this.vp.toWorld(clientX, clientY);
+    for (const b of this.pageBoxes()) {
+      if (!b.visible) continue;
+      if (wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h) return { page: b.id, x: wx - b.x, y: wy - b.y };
+    }
+    return null;
+  }
+
+  // 글상자: 그 자리에 바로 쓰기
+  addBox(page: string, x: number, y: number) {
+    const v = this.views.get(page);
+    if (!v) return;
+    const w = Math.min(BOX_W, v.info.w - 24);
+    const o = this.store.addObj(page, { type: 'box', x: Math.round(Math.max(8, Math.min(v.info.w - w - 8, x - 12))), y: Math.round(Math.max(8, y - 18)), w, h: 44 });
+    this.currentPage = page;
+    if (this.tool !== 'text') this.setTool('text');
+    this.selectObj(page, o.id);
+    v.objs?.focusBox(o.id);
+  }
+
+  private selectObj(page: string, id: string | null) {
+    if (id) {
+      if (this.ink.selection) {
+        this.ink.selection = null;
+        this.ink.invalidate();
+      }
+      this.selObj = { page, id };
+    } else this.selObj = null;
+    for (const v of this.views.values()) v.objs?.refreshSelection();
+  }
+
+  private clearSelection() {
+    this.selObj = null;
+    this.ink.selection = null;
+    this.ink.band = null;
+    this.ink.invalidate();
+    for (const v of this.views.values()) v.objs?.refreshSelection();
+  }
+
+  private deleteSelection(): boolean {
+    if (this.ink.selection?.ids.length) {
+      this.store.removeStrokes(this.ink.selection.page, this.ink.selection.ids);
+      this.clearSelection();
+      return true;
+    }
+    if (this.selObj && this.tool === 'select') {
+      this.store.removeObj(this.selObj.page, this.selObj.id);
+      this.clearSelection();
+      return true;
+    }
+    return false;
   }
 
   private async importPdfFile(file: File) {
@@ -1207,17 +1514,35 @@ export class BoardScreen {
   }
 
   private async importHtmlFile(file: File) {
-    const html = await file.text();
-    const id = await importHtml(this.store, html, file.name.replace(/\.html?$/i, ''), this.order.indexOf(this.currentPage));
-    this.syncPages();
-    this.gotoPage(id);
+    this.placeHtml(await file.text(), file.name.replace(/\.html?$/i, ''));
+  }
+
+  // 웹 학습지를 지금 페이지 위에 창으로 놓는다
+  placeHtml(html: string, name: string, page = this.currentPage) {
+    let pg = page;
+    if (!this.views.get(pg)) pg = this.order[0];
+    const v = this.views.get(pg);
+    if (!v) return;
+    const mid = randomId(8);
+    this.store.doc.transact(() => {
+      this.store.materials.set(mid, { id: mid, name, type: 'html', pages: 1 });
+      this.store.matdata.set(`${mid}/1`, { html, w: 720, h: 480 });
+    }, 'import');
+    this.store.log({ kind: 'material', id: mid, data: { op: 'import', type: 'html', name, bytes: html.length, as: 'object' } });
+    const w = Math.min(720, v.info.w - 40);
+    const hh = Math.round(w * 0.66);
+    const [x, y] = this.spotOnPage(pg, w, hh);
+    const o = this.store.addObj(pg, { type: 'html', x, y, w, h: hh, mid, name });
+    this.selectObj(pg, o.id);
+    if (this.tool !== 'text' && this.tool !== 'select') this.setTool('select');
+    return o.id;
   }
 
   // ================= 학생 메모리 =================
   private setMemory(m: StudentMemory | null) {
     this.memory = m;
     if (this.role !== 'teacher') return;
-    this.memBtn.hidden = !m;
+    this.memBtn.hidden = !m && !this.pack;
     if (!m) return;
     void cacheSet(m);
     for (const ed of this.editors.values()) this.attachHints(ed);
@@ -1271,9 +1596,87 @@ export class BoardScreen {
     this.renderMemPanel();
   }
 
+  // KWD 폴더의 학생 자료 (선생님 기기에서만 읽는다)
+  private async loadFolderStudent(interactive: boolean) {
+    if (this.role !== 'teacher' || !this.packFolder) return;
+    let st = (await folderState()).state;
+    if (st === 'prompt' && interactive) st = (await reopenFolder()) ? 'granted' : 'prompt';
+    if (st !== 'granted') {
+      this.memBtn.hidden = false;
+      this.memBtn.textContent = '이 학생 · 폴더 열기';
+      this.memBtn.title = 'KWD 폴더를 다시 열면 이 학생 자료가 붙어요';
+      return;
+    }
+    const brief = await briefFor().catch(() => null);
+    const entry = brief?.lessons.find((l) => l.folder === this.packFolder);
+    const pack = await loadPack(this.packFolder, entry).catch(() => null);
+    if (!pack) {
+      this.memBtn.hidden = true;
+      return;
+    }
+    this.pack = pack;
+    this.memBtn.hidden = false;
+    this.memBtn.textContent = '이 학생';
+    this.memBtn.title = '';
+    this.renderChip();
+    if (interactive && !this.memPanel) this.toggleMemPanel();
+    else if (this.memPanel) this.renderMemPanel();
+    const ric = (window as unknown as { requestIdleCallback?: (f: () => void) => void }).requestIdleCallback || ((f: () => void) => window.setTimeout(f, 300));
+    ric(() => {
+      void buildMemory(pack)
+        .then((m) => this.setMemory(m))
+        .catch((e) => console.warn('memory', e));
+    });
+  }
+
+  private insertLineToBoard(line: string, tag = '') {
+    const ed = this.activeEditor || this.editors.get(this.currentPage) || this.editors.get(this.order.find((id) => this.views.get(id)?.info.kind === 'text') || '');
+    if (!ed) return;
+    const { $from } = ed.state.selection;
+    const at = $from.depth >= 1 ? $from.end(1) : ed.state.doc.content.size;
+    const empty = $from.parent.isTextblock && $from.parent.textContent === '';
+    if (empty) ed.chain().focus().insertContent(line).run();
+    else ed.chain().focus().setTextSelection(at).splitBlock().insertContent(line).run();
+    this.store.log({ kind: 'text', page: this.currentPage, src: 'memory', text: line, data: { op: 'insert', tab: tag } });
+    toast('판에 넣었어요');
+  }
+
+  private async placePackFile(f: PackFile) {
+    const file = await readPackFile(this.packFolder, f.path);
+    if (!file) throw new Error('no file');
+    const base = f.name.replace(/\.[^.]+$/, '');
+    if (f.kind === 'html') this.placeHtml(await file.text(), base);
+    else if (f.kind === 'img') await this.insertImages([file]);
+    else if (f.kind === 'pdf') {
+      const ids = await importPdf(this.store, await file.arrayBuffer(), base, this.order.indexOf(this.currentPage));
+      this.syncPages();
+      if (ids[0]) this.gotoPage(ids[0]);
+    }
+  }
+
   private memTab = 'vocab';
   private renderMemPanel() {
     const p = this.memPanel;
+    if (p && this.pack) {
+      renderStudentPanel(
+        p,
+        this.pack,
+        this.memory,
+        this.packTab,
+        (t) => {
+          this.packTab = t;
+          this.renderMemPanel();
+        },
+        {
+          insertLine: (line) => this.insertLineToBoard(line, this.packTab),
+          placeFile: (f) => this.placePackFile(f),
+          readLessonDoc: async (name) => (await (await readPackFile(this.packFolder, [name]))?.text()) || '',
+          otherBoards: () => loadIndex().filter((b) => b.id !== this.store.id && folderForBoard(b.id) === this.packFolder),
+          close: () => this.toggleMemPanel(),
+        },
+      );
+      return;
+    }
     const m = this.memory;
     if (!p || !m) return;
     p.innerHTML = '';
@@ -1452,7 +1855,6 @@ export class BoardScreen {
     menu.append(
       ...(canPickFolder() && !EMBEDDED ? [item('기록 폴더 정하기', '정하면 1분마다 자동 저장', () => void pickFolder().then((n) => n && toast(`기록 폴더: ${n}`)))] : []),
       item('글만 마크다운으로 받기', '', () => this.exportMd()),
-      item(this.memory ? '학생 메모리 바꾸기' : '학생 메모리 불러오기', 'memory.json', () => this.pickMemoryFile()),
       item('서버·선생님 열쇠', '여러 기기 연결', () => this.openServer()),
     );
     this.showPanel(menu, anchor);
@@ -1551,7 +1953,7 @@ export class BoardScreen {
     const others = Array.from(this.store.awareness.getStates().entries()).filter(([cid]) => cid !== this.store.awareness.clientID);
     const roles = others.map(([, st]) => st?.role).filter(Boolean) as Role[];
     this.chip.innerHTML = '';
-    const name = this.role === 'teacher' ? this.memory?.profile?.name || (student ? `학생 ${student}` : '판') : '수업 판';
+    const name = this.role === 'teacher' ? this.pack?.name || this.memory?.profile?.name || (student ? `학생 ${student}` : '판') : '수업 판';
     this.chip.append(h('span', { class: `dot ${this.store.status}` }), h('span', { class: 'chip-main' }, name));
     if (elapsed) this.chip.append(h('span', { class: 'chip-sub' }, '수업 ' + elapsed));
     if (this.role === 'teacher') {

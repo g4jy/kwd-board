@@ -2,6 +2,7 @@
 import * as pdfjs from 'pdfjs-dist';
 import PdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?worker&inline';
 import { randomId, TEXT_W, type BoardStore, type MaterialPage } from './store';
+import { CURSOR_ARROW } from './ink';
 
 let workerReady = false;
 function ensureWorker() {
@@ -108,11 +109,16 @@ export async function importHtml(store: BoardStore, html: string, name: string, 
 }
 
 // HTML 자료 안에서 돌아가는 작은 연결 코드: 자료가 따로 아무것도 안 해도 클릭·입력이 기록된다.
-export const HTML_BRIDGE = `<script>(function(){
+// HTML 자료 안에서 돌아가는 작은 연결 코드: 자료가 따로 아무것도 안 해도 클릭·입력이 기록된다.
+// + 자료 위에서 Ctrl·핀치 확대, 더 내려갈 데가 없을 때의 휠은 판으로 넘긴다 (판 확대·이동)
+// + 어두운 자료에서도 보이는 커서
+export const HTML_BRIDGE = `<style>html,body{cursor:${CURSOR_ARROW.replace(/"/g, "'")}}a,button,[onclick],[role=button],label,select,summary,input[type=button],input[type=submit],input[type=checkbox],input[type=radio]{cursor:pointer}</style><script>(function(){
 function send(type,payload){try{parent.postMessage(Object.assign({type:type},payload),'*')}catch(e){}}
 window.kwd={event:function(name,value,score){send('kwd:event',{name:name,value:value,score:score})},text:function(t){send('kwd:text',{text:t})}};
 document.addEventListener('click',function(e){var el=e.target.closest('button,a,[data-kwd]');if(!el)return;send('kwd:event',{name:el.getAttribute('data-kwd')||'click',value:(el.innerText||'').trim().slice(0,80)})},true);
 document.addEventListener('change',function(e){var el=e.target;if(!el||!('value' in el))return;send('kwd:event',{name:el.name||el.id||'input',value:String(el.value).slice(0,120)})},true);
+function canScroll(el,dy,dx){while(el&&el.nodeType===1){var cs=getComputedStyle(el);var oy=/(auto|scroll)/.test(cs.overflowY)||el===document.scrollingElement;var ox=/(auto|scroll)/.test(cs.overflowX)||el===document.scrollingElement;if(dy&&oy&&el.scrollHeight>el.clientHeight+1){if(dy<0&&el.scrollTop>0)return true;if(dy>0&&el.scrollTop+el.clientHeight<el.scrollHeight-1)return true}if(dx&&ox&&el.scrollWidth>el.clientWidth+1){if(dx<0&&el.scrollLeft>0)return true;if(dx>0&&el.scrollLeft+el.clientWidth<el.scrollWidth-1)return true}el=el.parentElement}var se=document.scrollingElement;if(se&&dy){if(dy<0&&se.scrollTop>0)return true;if(dy>0&&se.scrollTop+innerHeight<se.scrollHeight-1)return true}return false}
+document.addEventListener('wheel',function(e){var ctrl=e.ctrlKey||e.metaKey;if(ctrl||!canScroll(e.target,e.deltaY,e.deltaX)){e.preventDefault();send('kwd:wheel',{dx:e.deltaX,dy:e.deltaY,x:e.clientX,y:e.clientY,ctrl:ctrl})}},{passive:false});
 window.addEventListener('load',function(){send('kwd:text',{text:(document.body.innerText||'').slice(0,4000)})});
 })();<\/script>`;
 

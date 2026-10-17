@@ -20,6 +20,25 @@ export interface Stroke {
   hl: boolean; // 형광펜
   pts: number[]; // [x,y,p, ...] 페이지 좌표(px)
   t: number;
+  k?: PenKind; // 펜 종류 (없으면 만년필)
+  o?: number; // 형광펜 진하기 0..1
+}
+
+export type PenKind = 'fountain' | 'ball' | 'brush' | 'pencil';
+
+// 페이지 위에 놓이는 것: 글상자·사진·웹 학습지 (페이지 좌표 px)
+export interface PageObject {
+  id: string;
+  type: 'box' | 'img' | 'html';
+  x: number;
+  y: number;
+  w: number;
+  h: number; // 글상자는 내용에 따라 자람(최소 높이)
+  src?: string; // img: dataURL 또는 'blob:키'
+  mid?: string; // html: 자료 id (matdata `${mid}/1`)
+  name?: string;
+  ratio?: number; // img: 가로/세로 (크기 바꿀 때 유지)
+  t: number;
 }
 
 export interface PageInfo {
@@ -71,7 +90,8 @@ export interface BoardEvent {
     | 'table'
     | 'timer'
     | 'setting'
-    | 'presence';
+    | 'presence'
+    | 'object';
   page?: string;
   block?: string;
   text?: string;
@@ -201,6 +221,77 @@ export class BoardStore {
   ink(pageId: string): Y.Array<Stroke> {
     return this.doc.getArray<Stroke>('ink:' + pageId);
   }
+  objs(pageId: string): Y.Array<Y.Map<unknown>> {
+    return this.doc.getArray<Y.Map<unknown>>('obj:' + pageId);
+  }
+  boxFragment(objId: string): Y.XmlFragment {
+    return this.doc.getXmlFragment('box:' + objId);
+  }
+  objList(pageId: string): PageObject[] {
+    return this.objs(pageId).toArray().map((m) => m.toJSON() as PageObject);
+  }
+  findObj(pageId: string, id: string): Y.Map<unknown> | null {
+    return this.objs(pageId).toArray().find((m) => m.get('id') === id) || null;
+  }
+  addObj(pageId: string, o: Omit<PageObject, 'id' | 't'> & { id?: string }): PageObject {
+    const obj: PageObject = { ...o, id: o.id || randomId(8), t: this.now() } as PageObject;
+    const m = new Y.Map<unknown>();
+    this.beforeInkChange?.();
+    this.doc.transact(() => {
+      for (const [k, v] of Object.entries(obj)) if (v !== undefined) m.set(k, v);
+      this.objs(pageId).push([m]);
+    }, LOCAL);
+    this.beforeInkChange?.();
+    this.log({ kind: 'object', page: pageId, id: obj.id, data: { op: 'add', type: obj.type, x: Math.round(obj.x), y: Math.round(obj.y), w: Math.round(obj.w), h: Math.round(obj.h), name: obj.name } });
+    return obj;
+  }
+  updateObj(pageId: string, id: string, patch: Partial<PageObject>, log = true) {
+    const m = this.findObj(pageId, id);
+    if (!m) return;
+    this.doc.transact(() => {
+      for (const [k, v] of Object.entries(patch)) m.set(k, v);
+    }, LOCAL);
+    if (log) this.log({ kind: 'object', page: pageId, id, data: { op: 'move', ...Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v) : v])) } });
+  }
+  removeObj(pageId: string, id: string) {
+    const arr = this.objs(pageId);
+    const idx = arr.toArray().findIndex((m) => m.get('id') === id);
+    if (idx < 0) return;
+    this.beforeInkChange?.();
+    this.doc.transact(() => arr.delete(idx, 1), LOCAL);
+    this.beforeInkChange?.();
+    this.log({ kind: 'object', page: pageId, id, data: { op: 'delete' } });
+  }
+  // 획 옮기기 (선택 도구): 한 번에 여러 획을 같은 거리만큼
+  moveStrokes(pageId: string, ids: string[], dx: number, dy: number) {
+    const arr = this.ink(pageId);
+    const set = new Set(ids);
+    this.beforeInkChange?.();
+    this.doc.transact(() => {
+      const list = arr.toArray();
+      for (let i = list.length - 1; i >= 0; i--) {
+        const s = list[i];
+        if (!set.has(s.id)) continue;
+        const pts = s.pts.map((v, j) => (j % 3 === 0 ? Math.round((v + dx) * 100) / 100 : j % 3 === 1 ? Math.round((v + dy) * 100) / 100 : v));
+        arr.delete(i, 1);
+        arr.insert(i, [{ ...s, pts }]);
+      }
+    }, LOCAL);
+    this.beforeInkChange?.();
+    this.log({ kind: 'ink', page: pageId, data: { op: 'move', ids, dx: Math.round(dx), dy: Math.round(dy) } });
+  }
+  removeStrokes(pageId: string, ids: string[]) {
+    const arr = this.ink(pageId);
+    const set = new Set(ids);
+    this.beforeInkChange?.();
+    this.doc.transact(() => {
+      const list = arr.toArray();
+      for (let i = list.length - 1; i >= 0; i--) if (set.has(list[i].id)) arr.delete(i, 1);
+    }, LOCAL);
+    this.beforeInkChange?.();
+    for (const id of ids) this.log({ kind: 'erase', page: pageId, id });
+  }
+
   pageList(): PageInfo[] {
     return this.pages.toArray().map((m) => m.toJSON() as PageInfo);
   }
@@ -356,7 +447,7 @@ export class BoardStore {
     const xs = stroke.pts.filter((_, i) => i % 3 === 0);
     const ys = stroke.pts.filter((_, i) => i % 3 === 1);
     const bbox = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)].map((v) => Math.round(v));
-    this.log({ kind: 'ink', page: pageId, id: stroke.id, block: target?.block, text: target?.text, data: { color: stroke.color, hl: stroke.hl, size: stroke.size, bbox, shape: target?.shape || 'free', ctx: target?.ctx } });
+    this.log({ kind: 'ink', page: pageId, id: stroke.id, block: target?.block, text: target?.text, data: { color: stroke.color, hl: stroke.hl, size: stroke.size, kind: stroke.k, bbox, shape: target?.shape || 'free', ctx: target?.ctx } });
   }
   removeStroke(pageId: string, id: string) {
     const arr = this.ink(pageId).toArray();

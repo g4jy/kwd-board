@@ -106,10 +106,10 @@ export function insertImageFiles(editor: Editor, files: FileList | File[], onDon
   })();
 }
 
-const ImagePaste = Extension.create<{ onImage: (name: string) => void }>({
+const ImagePaste = Extension.create<{ onImage: (name: string) => void; onFiles?: (files: File[]) => boolean }>({
   name: 'imagePaste',
   addOptions() {
-    return { onImage: () => undefined };
+    return { onImage: () => undefined, onFiles: undefined };
   },
   addProseMirrorPlugins() {
     const opts = this.options;
@@ -121,12 +121,14 @@ const ImagePaste = Extension.create<{ onImage: (name: string) => void }>({
         props: {
           handlePaste(_v, e) {
             if (!isImg(e.clipboardData?.files)) return false;
+            if (opts.onFiles?.(Array.from(e.clipboardData!.files))) return true;
             insertImageFiles(editor, e.clipboardData!.files, opts.onImage);
             return true;
           },
           handleDrop(_v, e) {
             if (!isImg(e.dataTransfer?.files)) return false;
             e.preventDefault();
+            if (opts.onFiles?.(Array.from(e.dataTransfer!.files))) return true;
             insertImageFiles(editor, e.dataTransfer!.files, opts.onImage);
             return true;
           },
@@ -180,10 +182,12 @@ export interface PageEditorHooks {
   onEvent: (kind: 'blank' | 'result' | 'correction' | 'image', data: Record<string, unknown>) => void;
   scrollToSelection?: (rect: { left: number; top: number; bottom: number }) => void;
   onFocus?: () => void;
+  onBlur?: () => void;
+  onImageFiles?: (files: File[]) => boolean; // 붙여넣은·끌어온 사진을 페이지 위 그림으로
 }
 
-export function createPageEditor(element: HTMLElement, store: BoardStore, pageId: string, role: Role, undoManager: Y.UndoManager, hooks: PageEditorHooks, placeholder: string): Editor {
-  const fragment = store.fragment(pageId);
+export function createPageEditor(element: HTMLElement, store: BoardStore, pageId: string, role: Role, undoManager: Y.UndoManager, hooks: PageEditorHooks, placeholder: string, fragmentOverride?: Y.XmlFragment, extraClass = ''): Editor {
+  const fragment = fragmentOverride || store.fragment(pageId);
   const editor = new Editor({
     element,
     editable: role === 'teacher',
@@ -197,13 +201,13 @@ export function createPageEditor(element: HTMLElement, store: BoardStore, pageId
       Placeholder.configure({ placeholder }),
       Blank.configure({ role: () => role, onChange: (k, d) => hooks.onEvent(k, d) }),
       Correction.configure({ onChange: (k, d) => hooks.onEvent(k, d) }),
-      ImagePaste.configure({ onImage: (name) => hooks.onEvent('image', { name }) }),
+      ImagePaste.configure({ onImage: (name) => hooks.onEvent('image', { name }), onFiles: hooks.onImageFiles }),
       BlockId.configure({ enabled: true }),
       Collaboration.configure({ document: store.doc, fragment, yUndoOptions: { undoManager } }),
       CollaborationCaret.configure({ provider: { awareness: store.awareness }, user: { name: ROLE_NAMES[role], color: ROLE_COLORS[role] } }),
     ],
     editorProps: {
-      attributes: { class: 'board-doc', spellcheck: 'false', autocomplete: 'off', autocorrect: 'off', autocapitalize: 'off', lang: 'ko' },
+      attributes: { class: 'board-doc' + (extraClass ? ' ' + extraClass : ''), spellcheck: 'false', autocomplete: 'off', autocorrect: 'off', autocapitalize: 'off', lang: 'ko' },
       handleScrollToSelection: (view) => {
         if (!hooks.scrollToSelection) return false;
         try {
@@ -215,6 +219,7 @@ export function createPageEditor(element: HTMLElement, store: BoardStore, pageId
       },
     },
     onFocus: () => hooks.onFocus?.(),
+    onBlur: () => hooks.onBlur?.(),
     onUpdate: ({ editor: ed, transaction }) => {
       if (!transaction.docChanged || transaction.getMeta(ySyncPluginKey)) return;
       const { $from } = ed.state.selection;

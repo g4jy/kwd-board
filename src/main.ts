@@ -2,6 +2,10 @@ import './styles.css';
 import { HomeScreen } from './home';
 import { BoardScreen } from './board';
 import type { Role } from './store';
+import { setWorkHandleForTest, listStudents } from './kwdfolder';
+
+// 시험용 손잡이 (자동 시험이 실제 폴더 대신 OPFS 폴더를 넣는다)
+(window as unknown as { __kwdFolder?: unknown }).__kwdFolder = { setWorkHandleForTest, listStudents, rerender: () => route() };
 
 let current: { destroy(): void } | null = null;
 

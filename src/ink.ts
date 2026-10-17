@@ -1,15 +1,60 @@
 // 잉크 층: 화면 크기 캔버스 하나에 모든 페이지의 획을 그린다.
 // 획은 페이지 좌표(px)로 저장되어 페이지에 붙는다 — 자료 쪽을 넘기면 그 쪽의 잉크도 함께 간다.
 import { getStroke } from 'perfect-freehand';
-import { randomId, type BoardStore, type InkTarget, type Stroke } from './store';
+import { randomId, type BoardStore, type InkTarget, type Stroke, type PenKind } from './store';
 import type { Viewport } from './viewport';
 
-export type Tool = 'text' | 'pen' | 'hl' | 'eraser' | 'laser';
+export type Tool = 'select' | 'text' | 'pen' | 'hl' | 'eraser' | 'laser';
 
 export interface PenStyle {
   color: string;
   size: number;
   hl: boolean;
+  kind?: PenKind;
+  opacity?: number; // 형광펜
+}
+
+// 어두운 바탕에서도 보이는 커서 (흰 테두리)
+const svgCursor = (svg: string, x: number, y: number, fallback: string) => `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${x} ${y}, ${fallback}`;
+export const CURSOR_ARROW = svgCursor('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path d="M3 2 L3 19 L7.5 14.8 L10.6 21.5 L13.4 20.3 L10.3 13.7 L16.5 13.7 Z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>', 3, 2, 'default');
+export const CURSOR_TEXT = svgCursor('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path d="M8 3h8M8 21h8M12 3v18" stroke="#fff" stroke-width="4.2" stroke-linecap="round"/><path d="M8 3h8M8 21h8M12 3v18" stroke="#111" stroke-width="1.8" stroke-linecap="round"/></svg>', 12, 12, 'text');
+export function penCursor(color: string, size: number, hl = false): string {
+  const r = Math.max(3, Math.min(14, (hl ? size * 0.5 : size * 0.7) + 2));
+  const d = Math.ceil(r * 2 + 6);
+  const c = d / 2;
+  const fill = hl ? color + '88' : color;
+  return svgCursor(`<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}"><circle cx="${c}" cy="${c}" r="${r}" fill="${fill}" stroke="#fff" stroke-width="2"/><circle cx="${c}" cy="${c}" r="${r + 1.6}" fill="none" stroke="#111" stroke-width="1"/></svg>`, Math.round(c), Math.round(c), 'crosshair');
+}
+
+// 펜 종류별 perfect-freehand 설정
+export const PEN_KINDS: Array<{ id: PenKind; label: string }> = [
+  { id: 'fountain', label: '만년필' },
+  { id: 'ball', label: '볼펜' },
+  { id: 'brush', label: '붓' },
+  { id: 'pencil', label: '연필' },
+];
+function kindOptions(k: PenKind | undefined, size: number) {
+  switch (k) {
+    case 'ball':
+      return { size: size * 1.05, thinning: 0.12, smoothing: 0.55, streamline: 0.5, taper: 0, simulate: false, alpha: 1 };
+    case 'brush':
+      return { size: size * 1.9, thinning: 0.88, smoothing: 0.6, streamline: 0.4, taper: Math.min(40, size * 6), simulate: true, alpha: 1 };
+    case 'pencil':
+      return { size: size * 0.9, thinning: 0.35, smoothing: 0.35, streamline: 0.3, taper: Math.min(6, size * 1.5), simulate: true, alpha: 0.78 };
+    default:
+      return { size: size * 1.25, thinning: 0.62, smoothing: 0.5, streamline: 0.48, taper: Math.min(14, size * 3), simulate: true, alpha: 1 };
+  }
+}
+export function strokeAlpha(s: { hl: boolean; k?: PenKind; o?: number }): number {
+  if (s.hl) return s.o ?? 0.35;
+  return kindOptions(s.k, 1).alpha;
+}
+
+export interface InkSelection {
+  page: string;
+  ids: string[];
+  dx: number;
+  dy: number;
 }
 
 export interface PageBox {
@@ -27,6 +72,8 @@ interface LiveStroke {
   color: string;
   size: number;
   hl: boolean;
+  k?: PenKind;
+  o?: number;
   live?: boolean;
 }
 
@@ -54,6 +101,8 @@ export class InkLayer {
   getPages: () => PageBox[] = () => [];
   canDraw: () => boolean = () => true;
   locate: (page: string, pts: number[], screenPts: Array<[number, number]>) => InkTarget | undefined = () => undefined;
+  selection: InkSelection | null = null; // 선택 도구로 고른 획
+  band: { x0: number; y0: number; x1: number; y1: number } | null = null; // 고르는 네모 (세상 좌표)
   onStrokeAdded?: () => void;
 
   constructor(canvas: HTMLCanvasElement, store: BoardStore, vp: Viewport) {
@@ -91,11 +140,17 @@ export class InkLayer {
 
   setTool(t: Tool) {
     this.tool = t;
-    this.canvas.style.pointerEvents = t === 'text' ? 'none' : 'auto';
-    this.canvas.style.cursor = t === 'eraser' ? 'none' : t === 'laser' ? 'none' : 'crosshair';
-    this.canvas.classList.toggle('active', t !== 'text');
+    this.canvas.style.pointerEvents = t === 'text' || t === 'select' ? 'none' : 'auto';
+    this.updateCursor();
+    this.canvas.classList.toggle('active', t !== 'text' && t !== 'select');
+    if (t !== 'select') this.selection = null;
     if (t !== 'laser') this.clearLaser();
     this.invalidate();
+  }
+
+  updateCursor() {
+    const t = this.tool;
+    this.canvas.style.cursor = t === 'eraser' || t === 'laser' ? 'none' : t === 'pen' || t === 'hl' ? penCursor(this.style.color, this.style.size, t === 'hl') : 'default';
   }
 
   resize() {
@@ -150,7 +205,7 @@ export class InkLayer {
   }
 
   private onDown(e: PointerEvent) {
-    if (this.tool === 'text' || !this.canDraw()) return;
+    if (this.tool === 'text' || this.tool === 'select' || !this.canDraw()) return;
     if (e.pointerType === 'pen') this.hasPenHistory = true;
     if (this.tool === 'laser') return this.pushLaser(e);
     if (!this.isDrawPointer(e)) return;
@@ -169,6 +224,8 @@ export class InkLayer {
     }
     const st = this.tool === 'hl' ? { ...this.style, hl: true } : this.style;
     this.drawing = { page: hit.page.id, pts: [hit.x, hit.y, this.pressure(e)], color: st.color, size: st.size, hl: st.hl };
+    if (st.hl) this.drawing.o = st.opacity ?? 0.35;
+    else if (st.kind && st.kind !== 'fountain') this.drawing.k = st.kind;
     this.screenPts = [[e.clientX, e.clientY]];
     this.invalidate();
   }
@@ -241,6 +298,8 @@ export class InkLayer {
     this.store.awareness.setLocalStateField('drawing', null);
     if (d.pts.length < 6) d.pts.push(d.pts[0] + 0.5, d.pts[1] + 0.5, d.pts[2]);
     const stroke: Stroke = { id: randomId(8), role: this.store.role, color: d.color, size: d.size, hl: d.hl, pts: d.pts.map((v) => Math.round(v * 100) / 100), t: this.store.now() };
+    if (d.k) stroke.k = d.k;
+    if (d.hl && d.o != null) stroke.o = d.o;
     let target: InkTarget | undefined;
     try {
       target = this.locate(d.page, stroke.pts, this.screenPts);
@@ -280,6 +339,48 @@ export class InkLayer {
     return p.length >= 3 && (p[0] - x) ** 2 + (p[1] - y) ** 2 <= r2;
   }
 
+  // ---- 선택 도구 ----
+  hitStroke(wx: number, wy: number): { page: string; id: string } | null {
+    const hit = this.hitPage(wx, wy, true);
+    if (!hit) return null;
+    const r = 6 / this.vp.view.s;
+    const list = this.store.ink(hit.page.id).toArray();
+    for (let i = list.length - 1; i >= 0; i--) if (this.hits(list[i], hit.x, hit.y, r + list[i].size / 2)) return { page: hit.page.id, id: list[i].id };
+    return null;
+  }
+  // 세상 좌표 네모 안에 다 들어오는 획 (페이지별)
+  strokesInRect(x0: number, y0: number, x1: number, y1: number): Map<string, string[]> {
+    const out = new Map<string, string[]>();
+    const [ax, bx] = [Math.min(x0, x1), Math.max(x0, x1)];
+    const [ay, by] = [Math.min(y0, y1), Math.max(y0, y1)];
+    for (const pg of this.getPages()) {
+      if (!pg.visible) continue;
+      for (const st of this.store.ink(pg.id).toArray()) {
+        const b = strokeBox(st);
+        if (b[0] + pg.x >= ax && b[2] + pg.x <= bx && b[1] + pg.y >= ay && b[3] + pg.y <= by) {
+          if (!out.has(pg.id)) out.set(pg.id, []);
+          out.get(pg.id)!.push(st.id);
+        }
+      }
+    }
+    return out;
+  }
+  selectionBox(): [number, number, number, number] | null {
+    const sel = this.selection;
+    if (!sel || !sel.ids.length) return null;
+    const pg = this.getPages().find((p) => p.id === sel.page);
+    if (!pg) return null;
+    const set = new Set(sel.ids);
+    let b: [number, number, number, number] | null = null;
+    for (const st of this.store.ink(sel.page).toArray()) {
+      if (!set.has(st.id)) continue;
+      const sb = strokeBox(st);
+      b = b ? [Math.min(b[0], sb[0]), Math.min(b[1], sb[1]), Math.max(b[2], sb[2]), Math.max(b[3], sb[3])] : sb;
+    }
+    if (!b) return null;
+    return [b[0] + pg.x + sel.dx, b[1] + pg.y + sel.dy, b[2] + pg.x + sel.dx, b[3] + pg.y + sel.dy];
+  }
+
   // ---- 레이저 ----
   private pushLaser(e: PointerEvent) {
     const [x, y] = this.vp.toWorld(e.clientX, e.clientY);
@@ -307,15 +408,16 @@ export class InkLayer {
     const pts: number[][] = [];
     for (let i = 0; i + 2 < s.pts.length; i += 3) pts.push([s.pts[i], s.pts[i + 1], s.pts[i + 2]]);
     const simulate = pts.every((p) => p[2] === 0.5);
+    const ko = kindOptions(s.k, s.size);
     const outline = getStroke(pts, {
-      size: s.size * (s.hl ? 1 : 1.25),
-      thinning: s.hl ? 0 : 0.62,
-      smoothing: 0.5,
-      streamline: 0.48,
-      simulatePressure: simulate && !s.hl,
+      size: s.hl ? s.size : ko.size,
+      thinning: s.hl ? 0 : ko.thinning,
+      smoothing: s.hl ? 0.5 : ko.smoothing,
+      streamline: s.hl ? 0.48 : ko.streamline,
+      simulatePressure: simulate && !s.hl && ko.simulate,
       easing: (t) => Math.sin((t * Math.PI) / 2),
-      start: { taper: s.hl ? 0 : Math.min(14, s.size * 3), cap: true },
-      end: { taper: s.hl ? 0 : Math.min(14, s.size * 3), cap: true },
+      start: { taper: s.hl ? 0 : ko.taper, cap: true },
+      end: { taper: s.hl ? 0 : ko.taper, cap: true },
       last: !('live' in s && s.live),
     });
     const path = new Path2D();
@@ -351,10 +453,17 @@ export class InkLayer {
       ctx.beginPath();
       ctx.rect(0, 0, pg.w, pg.h);
       ctx.clip();
+      const sel = this.selection && this.selection.page === pg.id ? this.selection : null;
+      const selSet = sel ? new Set(sel.ids) : null;
       for (const st of this.store.ink(pg.id).toArray()) {
         ctx.fillStyle = st.color;
-        ctx.globalAlpha = st.hl ? 0.35 : 1;
-        ctx.fill(this.strokePath(st, pg.id + ':' + st.id));
+        ctx.globalAlpha = strokeAlpha(st);
+        if (selSet?.has(st.id) && (sel!.dx || sel!.dy)) {
+          ctx.save();
+          ctx.translate(sel!.dx, sel!.dy);
+          ctx.fill(this.strokePath(st, pg.id + ':' + st.id));
+          ctx.restore();
+        } else ctx.fill(this.strokePath(st, pg.id + ':' + st.id));
       }
       ctx.restore();
     }
@@ -364,7 +473,7 @@ export class InkLayer {
       if (!pg || !pg.visible) return;
       ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * (x + pg.x * s), dpr * (y + pg.y * s));
       ctx.fillStyle = d.color;
-      ctx.globalAlpha = d.hl ? 0.35 : 1;
+      ctx.globalAlpha = strokeAlpha(d);
       ctx.fill(this.strokePath({ ...d, live: true }));
       ctx.globalAlpha = 1;
     };
@@ -408,15 +517,50 @@ export class InkLayer {
       Object.assign(entry, { x: l.x, y: l.y, t: now });
       this.lasers.set(cid, entry);
     }
+    // 선택 상자·고르는 네모
+    ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * x, dpr * y);
+    const sb = this.selectionBox();
+    if (sb) {
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1.5 / s;
+      ctx.setLineDash([6 / s, 4 / s]);
+      ctx.strokeStyle = '#1f6feb';
+      ctx.strokeRect(sb[0] - 6 / s, sb[1] - 6 / s, sb[2] - sb[0] + 12 / s, sb[3] - sb[1] + 12 / s);
+      ctx.setLineDash([]);
+    }
+    if (this.band) {
+      const b = this.band;
+      ctx.fillStyle = 'rgba(31,111,235,0.08)';
+      ctx.strokeStyle = 'rgba(31,111,235,0.8)';
+      ctx.lineWidth = 1 / s;
+      ctx.fillRect(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.abs(b.x1 - b.x0), Math.abs(b.y1 - b.y0));
+      ctx.strokeRect(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.abs(b.x1 - b.x0), Math.abs(b.y1 - b.y0));
+    }
     // 지우개 범위 원
     if (this.tool === 'eraser' && this.cursor) {
       const r = this.canvas.getBoundingClientRect();
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.strokeStyle = 'rgba(60,60,60,0.7)';
-      ctx.lineWidth = 1;
+      // 어두운 바탕에서도 보이게: 흰 굵은 원 + 검은 가는 원
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
       ctx.beginPath();
       ctx.arc(this.cursor.x - r.left, this.cursor.y - r.top, this.eraserSize, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = 'rgba(20,20,20,0.85)';
+      ctx.stroke();
     }
   }
+}
+
+export function strokeBox(st: Stroke): [number, number, number, number] {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i + 2 < st.pts.length; i += 3) {
+    x0 = Math.min(x0, st.pts[i]);
+    y0 = Math.min(y0, st.pts[i + 1]);
+    x1 = Math.max(x1, st.pts[i]);
+    y1 = Math.max(y1, st.pts[i + 1]);
+  }
+  const r = st.size;
+  return [x0 - r, y0 - r, x1 + r, y1 + r];
 }

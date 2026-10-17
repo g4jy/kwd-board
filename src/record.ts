@@ -4,6 +4,7 @@ import type { Editor } from '@tiptap/core';
 import type { BoardStore } from './store';
 import { pageMarkdown } from './exportmd';
 import { joinText } from './importer';
+import { boxPlainText } from './objects';
 
 export const APP_VERSION = '0.3.0';
 
@@ -39,6 +40,18 @@ export function boardMarkdown({ store, editors }: RecordInput): string {
       out.push(`[자료 ${p.mid} p${p.n}] ${mat?.name || ''}`);
       const md = store.matdata.get(`${p.mid}/${p.n}`);
       if (md?.text?.length) out.push('', joinText(md.text));
+    }
+    // 페이지 위에 놓인 것 (글상자·사진·웹 학습지)
+    for (const o of store.objList(p.id)) {
+      if (o.type === 'box') {
+        const t = boxPlainText(store, o.id);
+        if (t) out.push('', `[글상자 (${Math.round(o.x)},${Math.round(o.y)})] ${t.replace(/\n+/g, ' / ')}`);
+      } else if (o.type === 'img') out.push('', `[사진] ${o.name || ''}`.trim());
+      else {
+        const md = o.mid ? store.matdata.get(`${o.mid}/1`) : undefined;
+        out.push('', `[웹 학습지] ${o.name || ''}`.trim());
+        if (md?.text?.length) out.push(joinText(md.text));
+      }
     }
     // 이 페이지의 잉크를 글로
     const inkLines = inkSummary(store, p.id);
@@ -113,6 +126,7 @@ export async function buildBundle(input: RecordInput): Promise<{ name: string; b
       ...p,
       doc: p.kind === 'text' ? editors.get(p.id)?.getJSON() || null : null,
       ink: store.ink(p.id).toArray(),
+      objects: store.objList(p.id).map((o) => ({ ...o, src: o.src && o.src.startsWith('data:') ? '(그림)' : o.src, text: o.type === 'box' ? boxPlainText(store, o.id) : undefined })),
     })),
     settings: store.settings.toJSON(),
   };
