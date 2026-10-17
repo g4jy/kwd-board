@@ -7,3 +7,4 @@ server/cloudflare/node_modules/
 server/cloudflare/.wrangler/
 dist-artifact/
 server/cloudflare/.dev.vars
+server-data/
