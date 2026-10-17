@@ -13,12 +13,16 @@ import { buildBundle, bundleName, boardMarkdown, canPickFolder, pickFolder, fold
 import { importPdf, importHtml, htmlWithBridge, joinText } from './importer';
 import { loadPrefs, savePrefs, penSlot, renderSlot, buildPenPopover, type PenPrefs } from './palette';
 import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY, type StudentMemory } from './memory';
-import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, type StudentPack, type PackFile } from './kwdfolder';
+import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, type StudentPack, type PackFile } from './kwdfolder';
+import { annotatedWorksheet } from './wsexport';
 import { renderStudentPanel, type PanelTab } from './studentpanel';
-import { hwConfig, setHwConfig, homeworkFor, hwMedia } from './homework';
+import { hwConfig, setHwConfig, hwMedia, historyFromApp } from './homework';
 import { h, download, downloadBlob, fmtDate, fmtClock, toast, EMBEDDED } from './ui';
 
 const GAP = 28; // 페이지 사이
+// 웹 학습지 창: 테두리 1px + 위 막대 32px → iframe 은 (1, 33) 에서 시작
+export const OBJ_BAR = 33;
+export const wsLayer = (objId: string, step: number) => `ws:${objId}:${step}`;
 const COLORS = { red: '#d32f2f', blue: '#1565c0', green: '#2e7d32' };
 
 export interface BoardParams {
@@ -59,6 +63,8 @@ export class BoardScreen {
   private tool: Tool = 'text';
   private prefs: PenPrefs;
   private following = true;
+  private followOnce = true; // 처음 한 번만 따라감
+  private lookSeen = 0; // 마지막으로 따른 '여기 보세요'
   private teacherView: { cx: number; cy: number; s: number; w: number; h: number; page?: string; mode?: string } | null = null;
   private memory: StudentMemory | null = null;
   // UI
@@ -127,6 +133,17 @@ export class BoardScreen {
       interactive: () => this.tool === 'text' || this.tool === 'select',
       selectMode: () => this.tool === 'select',
       openPopup: (page, id) => this.setPopup({ page, id }),
+      focusObj: (page, id) => this.gotoObj(page, id, this.role === 'teacher'),
+      canDrive: () => this.role === 'teacher' || (this.role === 'student' && !!this.store.getSetting('studentMaterial', false)),
+      addWsBox: (layer, x, y) => {
+        const o = this.store.addObj(layer, { type: 'box', x: Math.round(x), y: Math.round(y), w: BOX_W, h: 44 });
+        if (this.tool !== 'text') this.setTool('text');
+        window.setTimeout(() => {
+          const ed = this.findBoxEditor(o.id);
+          ed?.commands.focus('end');
+        }, 30);
+      },
+      saveWs: (page, id) => void this.saveWorksheet(page, id),
       selected: () => this.selObj?.id || null,
       select: (page, id) => this.selectObj(page, id),
       onText: (page, block, kind, text) => this.store.logText(page, block, kind, text),
@@ -160,8 +177,10 @@ export class BoardScreen {
       if (this.packFolder && !this.pack) void this.loadFolderStudent(true);
       else this.toggleMemPanel();
     });
-    const topRight = h('div', { class: 'top-right' }, this.timerEl, this.memBtn);
-    this.followBtn = h('button', { type: 'button', class: 'follow-btn', hidden: '' }, '따라가기');
+    const lookBtn = h('button', { type: 'button', class: 'look-btn', title: '학생 화면을 지금 내 화면(또는 고른 것)으로' }, '👀 여기 보세요');
+    lookBtn.addEventListener('click', () => this.lookHere());
+    const topRight = h('div', { class: 'top-right' }, this.timerEl, ...(this.role === 'teacher' ? [lookBtn] : []), this.memBtn);
+    this.followBtn = h('button', { type: 'button', class: 'follow-btn', hidden: '' }, '선생님 화면으로');
     this.followBtn.addEventListener('click', () => {
       this.following = true;
       this.followBtn.hidden = true;
@@ -220,6 +239,8 @@ export class BoardScreen {
       importHtmlText: (html: string, name: string) => importHtml(this.store, html, name, this.order.indexOf(this.currentPage)),
       setMemory: (m: unknown) => this.setMemory(normalize(m, this.studentNo())),
       goto: (id: string) => this.gotoPage(id),
+      gotoItem: (key: string) => this.gotoItem(key),
+      lookHere: () => this.lookHere(),
       placeHtml: (html: string, name: string) => this.placeHtml(html, name),
       addBox: (page: string, x: number, y: number) => this.addBox(page, x, y),
       objs: (page: string) => this.store.objList(page),
@@ -255,8 +276,6 @@ export class BoardScreen {
       }
     }
     this.syncPages();
-    // 폰 학생은 처음부터 큰 글씨 (46% 축소면 글이 8px 남짓)
-    if (this.role === 'student' && window.innerWidth < 640) this.setReflow(true);
     this.initialView();
     this.renderChip();
     if (this.role === 'teacher') {
@@ -304,7 +323,8 @@ export class BoardScreen {
   }
 
   private createPageView(info: PageInfo) {
-    const el = h('section', { class: `page page-${info.kind}`, 'data-page': info.id });
+    const isCanvas = info.kind === 'text' && this.store.pageIndex(info.id) === 0;
+    const el = h('section', { class: `page page-${info.kind}` + (isCanvas ? ' canvas' : ''), 'data-page': info.id });
     el.style.width = info.w + 'px';
     const view: PageView = { info, el, y: 0, h: info.h };
     if (info.kind === 'text') {
@@ -345,7 +365,10 @@ export class BoardScreen {
     const label = h('div', { class: 'page-no' });
     el.append(label);
     view.objs = new PageObjects(info.id, el, this.objHost);
-    this.store.objs(info.id).observe(() => this.layoutSoon());
+    this.store.objs(info.id).observe(() => {
+      this.layoutSoon();
+      this.renderRailSoon();
+    });
     this.views.set(info.id, view);
   }
 
@@ -393,8 +416,9 @@ export class BoardScreen {
     this.layoutTimer = window.setTimeout(() => this.layout(), 30);
   }
 
+  // 한 장씩 보기는 무한 판에서는 쓰지 않는다 (대신 오른쪽 목록 · '여기 보세요')
   private single(): boolean {
-    return this.store.getSetting<string>('viewMode', 'scroll') === 'single';
+    return false;
   }
 
   private layout() {
@@ -404,10 +428,11 @@ export class BoardScreen {
       const v = this.views.get(id)!;
       let hgt = v.info.h;
       if (v.info.kind === 'text' && v.editorHost) {
-        const content = v.editorHost.scrollHeight + 160;
+        const content = v.editorHost.scrollHeight + (i === 0 ? 0 : 160);
         let objBottom = 0;
         for (const o of this.store.objList(id)) objBottom = Math.max(objBottom, o.y + o.h + 120);
-        hgt = Math.max(TEXT_H, Math.ceil(Math.max(content, objBottom) / 40) * 40);
+        // 무한 판: 노트 카드는 글만큼만. 다른 것들은 판 어디에나 (예전 판의 다음 페이지는 그 아래)
+        hgt = i === 0 ? Math.max(content, objBottom, 400) : Math.max(TEXT_H, Math.ceil(Math.max(content, objBottom) / 40) * 40);
         v.el.style.height = hgt + 'px';
       }
       v.h = hgt;
@@ -419,9 +444,17 @@ export class BoardScreen {
       if (!single) y += hgt + GAP;
     });
     this.pagesHost.style.height = Math.max(0, y - GAP) + 'px';
+    // 학습지 필기층도 되돌리기에 넣는다
+    for (const b of this.wsBoxes()) {
+      if (this.scoped.has(b.id)) continue;
+      this.scoped.add(b.id);
+      this.undo.addToScope([this.store.ink(b.id)]);
+    }
+    this.computeBounds();
     this.ink.invalidate();
     this.vp.set({});
   }
+  private scoped = new Set<string>();
 
   private pageLabel(id: string, i: number): string {
     const v = this.views.get(id)!;
@@ -432,13 +465,35 @@ export class BoardScreen {
     return String(i + 1);
   }
 
+  // 첫 글 페이지 = 무한 판(어디에 그려도 된다). 나머지(예전 판의 자료 페이지)는 그 아래에 쌓인 틀.
+  // + 웹 학습지 위 필기층: 학습지의 지금 단계마다 따로 (id = ws:<물건 id>:<단계>)
   pageBoxes(): PageBox[] {
-    const single = this.single();
-    return this.order.map((id) => {
+    const out: PageBox[] = this.order.map((id, i) => {
       const v = this.views.get(id)!;
-      const reflowHide = v.info.kind === 'text' && this.root.classList.contains('reflow');
-      return { id, x: 0, y: v.y, w: v.info.w, h: v.h, visible: (!single || id === this.currentPage) && !reflowHide };
+      return { id, x: 0, y: v.y, w: v.info.w, h: v.h, visible: true, infinite: i === 0 && v.info.kind === 'text' };
     });
+    return out.concat(this.wsBoxes());
+  }
+
+  private canvasId(): string {
+    return this.order[0] || '';
+  }
+  private isCanvas(id: string): boolean {
+    return id === this.order[0] && this.views.get(id)?.info.kind === 'text';
+  }
+
+  // 웹 학습지 위 필기층 (세상 좌표). 학습지 창의 막대 아래 iframe 자리.
+  wsBoxes(): PageBox[] {
+    const out: PageBox[] = [];
+    for (const id of this.order) {
+      const v = this.views.get(id);
+      if (!v) continue;
+      for (const o of this.store.objList(id)) {
+        if (o.type !== 'html') continue;
+        out.push({ id: wsLayer(o.id, o.step || 1), x: o.x + 1, y: v.y + o.y + OBJ_BAR, w: o.w - 2, h: Math.max(10, o.h - OBJ_BAR - 1), visible: true });
+      }
+    }
+    return out;
   }
 
   private totalHeight(): number {
@@ -447,22 +502,57 @@ export class BoardScreen {
     return last ? last.y + last.h : TEXT_H;
   }
 
-  // 스크롤 한계: 첫 페이지 위 · 마지막 페이지 아래로 반 화면까지만
+  // 무한 판: 어디로든 움직이되, 놓인 것 전체가 화면 밖으로 다 빠져나가지는 않게
+  private bounds: [number, number, number, number] = [0, 0, TEXT_W, TEXT_H];
+  private computeBounds() {
+    let x0 = 0, y0 = 0, x1 = TEXT_W, y1 = 400;
+    for (const id of this.order) {
+      const v = this.views.get(id);
+      if (!v) continue;
+      if (v.info.kind !== 'text' || !this.isCanvas(id)) {
+        y1 = Math.max(y1, v.y + v.h);
+        x1 = Math.max(x1, v.info.w);
+      } else y1 = Math.max(y1, (v.editorHost?.offsetHeight || 0) + v.y);
+      for (const o of this.store.objList(id)) {
+        x0 = Math.min(x0, o.x);
+        y0 = Math.min(y0, v.y + o.y);
+        x1 = Math.max(x1, o.x + o.w);
+        y1 = Math.max(y1, v.y + o.y + o.h);
+      }
+    }
+    const c = this.canvasId();
+    if (c) {
+      for (const st of this.store.ink(c).toArray()) {
+        const p = st.pts;
+        if (p.length < 3) continue;
+        x0 = Math.min(x0, p[0]);
+        x1 = Math.max(x1, p[0]);
+        y0 = Math.min(y0, p[1]);
+        y1 = Math.max(y1, p[1]);
+      }
+    }
+    this.bounds = [x0, y0, x1, y1];
+  }
   private clampView(v: { x: number; y: number; s: number }) {
     const r = this.stage.getBoundingClientRect();
     const W = r.width || window.innerWidth;
     const H = r.height || window.innerHeight;
-    const contentW = TEXT_W * v.s;
-    const contentH = this.totalHeight() * v.s;
+    const [x0, y0, x1, y1] = this.bounds;
+    const m = 120;
     let { x, y } = v;
-    // '이 학생' 패널이 열려 있으면 페이지를 왼쪽 빈 곳 가운데로 (패널이 글을 가리지 않게)
-    const side = this.panelSide();
-    if (contentW <= W - side - 8) x = (W - side - contentW) / 2 - (this.rail && !this.rail.hidden && W > 900 && !side ? 30 : 0);
-    else if (side && contentW <= W - 8) x = Math.max(8, W - side - 12 - contentW);
-    else x = Math.min(W * 0.3, Math.max(W * 0.7 - contentW, x));
-    const top = H * 0.35;
-    y = Math.min(top, Math.max(H * 0.5 - contentH, y));
+    x = Math.min(W - m - x0 * v.s, Math.max(m - x1 * v.s, x));
+    y = Math.min(H - m - y0 * v.s, Math.max(m - y1 * v.s, y));
     return { x, y, s: v.s };
+  }
+
+  // 세상 좌표 네모가 화면에 꽉 차게 (여백 pad)
+  fitRect(x0: number, y0: number, x1: number, y1: number, pad = 40, maxS = 2) {
+    const [W, H] = this.vp.size();
+    const side = this.panelSide();
+    const top = 64, bottom = this.role === 'student' && this.toolbar.hidden ? 24 : 96;
+    const aw = Math.max(80, W - side - pad * 2), ah = Math.max(80, H - top - bottom - pad);
+    const s = Math.min(maxS, Math.max(this.vp.min, Math.min(aw / Math.max(1, x1 - x0), ah / Math.max(1, y1 - y0))));
+    this.vp.set({ s, x: pad + (aw - (x1 - x0) * s) / 2 - x0 * s, y: top + (ah - (y1 - y0) * s) / 2 - y0 * s });
   }
 
   private panelSide(): number {
@@ -472,23 +562,109 @@ export class BoardScreen {
     return this.memPanel.getBoundingClientRect().width + 64;
   }
 
+  // 오른쪽 목록: 판 위의 것들(노트·슬라이드·학습지·사진·영상…) — 누르면 그리로
+  private railItems(): Array<{ key: string; icon: string; label: string; title: string; page: string; rect: [number, number, number, number] }> {
+    const out: Array<{ key: string; icon: string; label: string; title: string; page: string; rect: [number, number, number, number] }> = [];
+    const ICON: Record<string, string> = { slide: '▤', html: '◫', img: '▣', video: '▶', youtube: '▶', audio: '♪' };
+    const NAME: Record<string, string> = { slide: '슬라이드', html: '웹 학습지', img: '사진', video: '영상', youtube: '유튜브', audio: '소리' };
+    this.order.forEach((id, i) => {
+      const v = this.views.get(id)!;
+      if (this.isCanvas(id)) {
+        const nh = Math.min(Math.max(300, v.editorHost?.offsetHeight || 600), 1000);
+        out.push({ key: 'note', icon: '✎', label: '', title: '노트', page: id, rect: [0, v.y, TEXT_W, v.y + nh] });
+        const objs = this.store.objList(id).filter((o) => o.type !== 'box').sort((a, b) => a.y - b.y || a.x - b.x);
+        for (const o of objs) {
+          const mat = o.mid ? this.store.materials.get(o.mid) : null;
+          const title = o.type === 'slide' ? `${mat?.name || '슬라이드'} ${o.n}/${mat?.pages || ''}` : `${NAME[o.type]}${o.name && o.name !== NAME[o.type] ? ' · ' + o.name : ''}`;
+          out.push({ key: o.id, icon: ICON[o.type] || '•', label: o.type === 'slide' ? String(o.n) : '', title, page: id, rect: [o.x, v.y + o.y, o.x + o.w, v.y + o.y + o.h] });
+        }
+      } else out.push({ key: id, icon: '', label: String(i + 1), title: this.pageLabel(id, i), page: id, rect: [0, v.y, v.info.w, v.y + v.h] });
+    });
+    return out;
+  }
+
   private renderRail() {
     if (this.role === 'student' && window.innerWidth < 700) {
       this.rail.hidden = true;
       return;
     }
+    this.rail.hidden = false;
     this.rail.innerHTML = '';
-    this.order.forEach((id, i) => {
-      const v = this.views.get(id)!;
-      const b = h('button', { type: 'button', class: 'rail-item' + (id === this.currentPage ? ' on' : '') + (v.info.kind === 'material' ? ' mat' : ''), title: this.pageLabel(id, i), 'data-page': id }, String(i + 1));
-      b.addEventListener('click', () => this.gotoPage(id));
+    for (const it of this.railItems()) {
+      const b = h('button', { type: 'button', class: 'rail-item' + (it.key === this.railOn ? ' on' : '') + (it.icon ? ' ico' : ''), title: it.title, 'data-key': it.key, 'data-page': it.page }, it.icon ? h('span', { class: 'ri-ico' }, it.icon) : '', it.label ? h('span', { class: 'ri-n' }, it.label) : '');
+      b.addEventListener('click', () => this.gotoItem(it.key));
       this.rail.append(b);
-    });
-    if (this.role === 'teacher') {
-      const add = h('button', { type: 'button', class: 'rail-add', title: '이 페이지 다음에 빈 페이지' }, '+');
-      add.addEventListener('click', () => this.addTextPage());
-      this.rail.append(add);
     }
+  }
+  private railOn = 'note';
+  private railTimer = 0;
+  private renderRailSoon() {
+    window.clearTimeout(this.railTimer);
+    this.railTimer = window.setTimeout(() => this.renderRail(), 120);
+  }
+
+  private findBoxEditor(id: string): Editor | undefined {
+    for (const v of this.views.values()) {
+      const objs = v.objs;
+      if (!objs) continue;
+      const ed = objs.editors.get(id);
+      if (ed) return ed;
+      for (const w of objs.wsObjects()) {
+        const e2 = w.editors.get(id);
+        if (e2) return e2;
+      }
+    }
+    return undefined;
+  }
+
+  // 필기 넣은 학습지: 학생 폴더(수업필기/)에 저장, 안 되면 내려받기
+  async saveWorksheet(page: string, id: string) {
+    const o = this.store.objList(page).find((x) => x.id === id);
+    if (!o) return;
+    const who = this.pack?.name || this.studentNo();
+    const r = annotatedWorksheet(this.store, o, who);
+    if (!r) return;
+    const d = new Date(Number(this.store.meta.get('startedAt') || Date.now()));
+    const name = `${(o.name || '학습지').replace(/[\\/:*?"<>|#\s]+/g, '_').replace(/^_+/, '')}_수업필기_${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.html`;
+    if (this.packFolder) {
+      const saved = await saveToStudentFolder(this.packFolder, '수업필기', name, r.html);
+      if (saved) {
+        toast(`학생 폴더에 저장했어요: 수업필기/${name} (필기 ${r.count}개)`, 4000);
+        return;
+      }
+    }
+    download(name, r.html, 'text/html');
+    toast(`필기 ${r.count}개를 넣은 학습지를 내려받았어요`, 3000);
+  }
+
+  // 물건 하나를 화면에 꽉 차게 (look: 학생 화면도)
+  gotoObj(page: string, id: string, look = false) {
+    const v = this.views.get(page);
+    const o = this.store.objList(page).find((x) => x.id === id);
+    if (!v || !o) return;
+    this.userMovedView();
+    this.fitRect(o.x, v.y + o.y, o.x + o.w, v.y + o.y + o.h, 24);
+    if (look) {
+      this.store.setSetting('look', { x0: o.x, y0: v.y + o.y, x1: o.x + o.w, y1: v.y + o.y + o.h, t: Date.now() });
+    }
+    this.pushViewport();
+  }
+
+  // 목록에서 고른 것을 화면에 꽉 차게
+  gotoItem(key: string) {
+    const it = this.railItems().find((x) => x.key === key);
+    if (!it) return;
+    this.railOn = key;
+    this.currentPage = it.page;
+    this.userMovedView();
+    if (key === 'note') {
+      const [W] = this.vp.size();
+      const s = Math.min(1.2, (W - this.panelSide() - (W > 900 ? 140 : 16)) / TEXT_W);
+      this.vp.set({ s, x: (W - this.panelSide() - TEXT_W * s) / 2, y: 70 - it.rect[1] * s });
+    } else this.fitRect(it.rect[0], it.rect[1], it.rect[2], it.rect[3]);
+    this.renderRail();
+    if (this.role === 'teacher') this.store.log({ kind: 'page', page: it.page, id: key === 'note' ? undefined : key, data: { op: 'show', item: it.title } });
+    this.pushViewport();
   }
 
   addTextPage() {
@@ -510,6 +686,7 @@ export class BoardScreen {
   gotoPage(id: string, log = true) {
     const v = this.views.get(id);
     if (!v) return;
+    if (this.isCanvas(id)) return this.gotoItem('note');
     const prev = this.currentPage;
     this.currentPage = id;
     if (this.single()) this.layout();
@@ -527,31 +704,38 @@ export class BoardScreen {
     this.pushViewport();
   }
 
+  private viewTimer = 0;
   private updateCurrentFromView() {
-    if (this.single()) return;
-    const [, H] = this.vp.size();
-    const [, cy] = this.vp.toWorld(0, this.stage.getBoundingClientRect().top + H * 0.4);
-    let best = this.currentPage;
-    for (const id of this.order) {
-      const v = this.views.get(id)!;
-      if (cy >= v.y - GAP && cy <= v.y + v.h) {
-        best = id;
-        break;
+    window.clearTimeout(this.viewTimer);
+    this.viewTimer = window.setTimeout(() => {
+      const [cx, cy] = this.vp.center();
+      let best: string | null = null;
+      let bestA = Infinity;
+      let page = this.currentPage;
+      for (const it of this.railItems()) {
+        const [x0, y0, x1, y1] = it.rect;
+        if (cx >= x0 && cx <= x1 && cy >= y0 && cy <= y1) {
+          const a = (x1 - x0) * (y1 - y0);
+          if (a < bestA) {
+            bestA = a;
+            best = it.key;
+            page = it.page;
+          }
+        }
       }
-    }
-    if (best !== this.currentPage) {
-      const prev = this.currentPage;
-      this.currentPage = best;
-      this.renderRail();
-      if (prev && this.role === 'teacher') this.store.log({ kind: 'page', page: best, data: { op: 'show', index: this.order.indexOf(best) + 1 } });
-    }
+      if (best && best !== this.railOn) {
+        this.railOn = best;
+        this.renderRail();
+      }
+      if (page !== this.currentPage) this.currentPage = page;
+    }, 150);
   }
 
   // ================= 뷰포트 =================
   private initialView() {
     const [w] = this.vp.size();
-    const s = w < 700 ? (w - 16) / TEXT_W : 1;
-    this.vp.set({ s, x: 0, y: w < 700 ? 64 : 70 });
+    const s = Math.min(1, (w - (w > 900 ? 140 : 16)) / TEXT_W);
+    this.vp.set({ s, x: (w - TEXT_W * s) / 2, y: w < 700 ? 64 : 70 });
   }
 
   private buildZoom(): HTMLElement {
@@ -573,28 +757,17 @@ export class BoardScreen {
       this.vp.zoomAt(cx, cy, 1.2);
       this.userMovedView();
     });
-    pct.addEventListener('click', () => this.fitWidth());
+    pct.title = '전체 보기 (판 위의 것 모두)';
+    pct.addEventListener('click', () => {
+      this.userMovedView();
+      const [x0, y0, x1, y1] = this.bounds;
+      this.fitRect(x0, y0, x1, y1, 30, 1);
+    });
     box.append(minus, pct, plus);
-    if (this.role === 'student') {
-      // 폰에서 글이 작을 때: 이 기기에서만 글을 크게 다시 흘린다 (글 페이지의 필기는 원래 크기에서만 보임)
-      const rf = h('button', { type: 'button', class: 'reflow-btn', title: '큰 글씨 (이 기기만)' }, '큰 글씨');
-      this.reflowBtn = rf;
-      rf.addEventListener('click', () => {
-        this.setReflow(!this.root.classList.contains('reflow'));
-        toast(this.root.classList.contains('reflow') ? '큰 글씨로 보는 중 · 글 위 필기는 끄면 보여요' : '원래 크기로 보는 중');
-      });
-      box.prepend(rf);
-    }
     this.vp.onChange((v) => (pct.textContent = Math.round(v.s * 100) + '%'));
     return box;
   }
 
-  private reflowBtn: HTMLElement | null = null;
-  setReflow(on: boolean) {
-    this.root.classList.toggle('reflow', on);
-    this.reflowBtn?.classList.toggle('on', on);
-    this.layout();
-  }
 
   fitWidth() {
     const [W] = this.vp.size();
@@ -729,6 +902,15 @@ export class BoardScreen {
     };
     stage.addEventListener('pointerup', end, { capture: true });
     stage.addEventListener('pointercancel', end, { capture: true });
+    // 판 바탕 점무늬가 판과 함께 움직인다 (무한 판이라는 느낌)
+    const grid = () => {
+      const { x, y, s: sc } = this.vp.view;
+      const g = 28 * sc;
+      stage.style.backgroundSize = `${g}px ${g}px`;
+      stage.style.backgroundPosition = `${x}px ${y}px`;
+    };
+    this.vp.onChange(grid);
+    grid();
     this.vp.onChange(() => {
       this.pushViewport();
       this.updateCurrentFromView();
@@ -836,7 +1018,9 @@ export class BoardScreen {
 
     // 글상자: 빈 곳 두 번 누르기 (글·선택 도구) · 자료 페이지는 한 번 (글 도구)
     const emptySpot = (t: HTMLElement) => {
+      if (t.closest('.obj-slide') && !t.closest('button')) return true;
       if (t.closest('.obj, .mat-frame')) return false;
+      if (t === this.stage || t === this.world || t === this.pagesHost || t.classList.contains('canvas')) return true;
       if (t.classList.contains('board-doc') || t.classList.contains('page-text') || t.classList.contains('page') || t.classList.contains('page-bg') || t.classList.contains('mat-img') || t.classList.contains('page-objs')) return true;
       return false;
     };
@@ -849,7 +1033,7 @@ export class BoardScreen {
       },
       { capture: true },
     );
-    this.pagesHost.addEventListener('dblclick', (e) => {
+    this.stage.addEventListener('dblclick', (e) => {
       if ((this.tool !== 'text' && this.tool !== 'select') || !canMake()) return;
       const t = e.target as HTMLElement;
       if (!emptySpot(t)) return;
@@ -925,8 +1109,32 @@ export class BoardScreen {
     if (dx || dy) this.vp.panBy(dx, dy);
   }
 
+  // 선생님: 학생 화면을 여기로. 고른 것이 있으면 그것을, 없으면 지금 내 화면을
+  lookHere() {
+    let rect: [number, number, number, number];
+    const sel = this.selObj ? this.store.objList(this.selObj.page).find((o) => o.id === this.selObj!.id) : null;
+    const pv = this.selObj ? this.views.get(this.selObj.page) : null;
+    if (sel && pv) rect = [sel.x, pv.y + sel.y, sel.x + sel.w, pv.y + sel.y + sel.h];
+    else {
+      const [W, H] = this.vp.size();
+      const [x0, y0] = this.vp.toWorld(this.stage.getBoundingClientRect().left, this.stage.getBoundingClientRect().top + 56);
+      const s = this.vp.view.s;
+      rect = [x0, y0, x0 + (W - this.panelSide()) / s, y0 + (H - 56 - 90) / s];
+    }
+    const [x0, y0, x1, y1] = rect.map((v) => Math.round(v));
+    this.store.setSetting('look', { x0, y0, x1, y1, t: Date.now() });
+    toast('학생 화면을 여기로 옮겼어요');
+  }
+
+  private flashLook() {
+    const el = h('div', { class: 'look-flash' }, '👀 선생님: 여기 보세요');
+    this.root.append(el);
+    window.setTimeout(() => el.remove(), 1800);
+  }
+
   private userMovedView() {
     if (this.role === 'teacher') return;
+    this.followOnce = false;
     if (this.following) {
       this.following = false;
       this.followBtn.hidden = false;
@@ -958,9 +1166,15 @@ export class BoardScreen {
       this.gotoPage(this.currentPage, false);
       return;
     }
-    const [w] = this.vp.size();
-    if (w < 700) this.vp.centerOn(TEXT_W / 2, t.cy, (w - 16) / TEXT_W);
-    else this.vp.centerOn(t.cx, t.cy, Math.min(this.vp.max, Math.max(this.vp.min, t.s * (w / t.w))));
+    // 선생님 화면에 보이는 세상 네모가 내 화면에 다 들어오게 (기기마다 크기는 달라도 내용·위치는 같다)
+    let tw = t.w / t.s, th = t.h / t.s;
+    // 폰처럼 좁은 화면: 선생님 화면 가운데 60% 만 (다 넣으면 글이 너무 작다)
+    const [W] = this.vp.size();
+    if (W < 700 && t.w > W * 1.4) {
+      tw *= 0.6;
+      th *= 0.6;
+    }
+    this.fitRect(t.cx - tw / 2, t.cy - th / 2, t.cx + tw / 2, t.cy + th / 2, 8, this.vp.max);
   }
 
   private bindAwareness() {
@@ -973,7 +1187,15 @@ export class BoardScreen {
       }
       if (found && JSON.stringify(found) !== JSON.stringify(this.teacherView)) {
         this.teacherView = found;
-        if (this.role !== 'teacher' && this.following) this.applyTeacherView();
+        if (this.role !== 'teacher' && this.following) {
+          this.applyTeacherView();
+          // 처음 들어올 때 한 번만 선생님 화면으로. 그 뒤로는 각자 (선생님이 '따라오기'를 켰거나 '여기 보세요'를 누르면 다시)
+          if (!this.store.getSetting('followAll', false) && this.followOnce) {
+            this.followOnce = false;
+            this.following = false;
+            this.followBtn.hidden = false;
+          }
+        }
       }
       this.renderChip();
     };
@@ -1002,6 +1224,23 @@ export class BoardScreen {
       this.root.classList.add('mat-locked');
     }
     this.root.classList.toggle('hide-carets', !showCaret && this.role === 'student');
+    // '여기 보세요': 학생 화면을 선생님이 고른 곳으로 (그 뒤로는 학생이 움직이기 전까지 따라감)
+    const look = this.store.getSetting<{ x0: number; y0: number; x1: number; y1: number; t: number } | null>('look', null);
+    if (this.role !== 'teacher' && look && look.t !== this.lookSeen) {
+      const first = this.lookSeen === 0 && Date.now() - look.t > 15000; // 늦게 들어온 학생에게 옛날 것은 다시 안 함
+      this.lookSeen = look.t;
+      if (!first) {
+        this.following = true;
+        this.followBtn.hidden = true;
+        this.fitRect(look.x0, look.y0, look.x1, look.y1, 16, this.vp.max);
+        this.flashLook();
+      }
+    }
+    if (this.role !== 'teacher' && this.store.getSetting('followAll', false) && !this.following) {
+      this.following = true;
+      this.followBtn.hidden = true;
+      this.applyTeacherView();
+    }
     const single = this.single();
     this.root.classList.toggle('mode-single', single);
     this.singleNav.hidden = !single;
@@ -1248,9 +1487,25 @@ export class BoardScreen {
     else if (closeEnds && w > 16 && hh > 12 && pathLen > diag * 1.8) shape = 'circle';
     else if (pathLen < diag * 1.25 && diag > 40) shape = 'line';
     else if (pathLen > diag * 3.5) shape = 'scribble';
+    if (pageId.startsWith('ws:')) return { shape, block: pageId };
     const v = this.views.get(pageId);
     if (!v) return { shape };
     const s = this.vp.view.s;
+    // 무한 판 위 슬라이드 쪽: 그 쪽 글자층에서 겹치는 낱말
+    if (this.isCanvas(pageId)) {
+      const sl = this.store.objList(pageId).find((o) => o.type === 'slide' && x0 < o.x + o.w && x1 > o.x && y0 < o.y + o.h && y1 > o.y);
+      if (sl) {
+        const md = this.store.matdata.get(`${sl.mid}/${sl.n}`);
+        const k = md ? md.w / sl.w : 1;
+        const [a0, a1, b0, b1] = [(x0 - sl.x) * k, (x1 - sl.x) * k, (y0 - sl.y) * k, (y1 - sl.y) * k];
+        const pad = shape === 'underline' ? 14 : 2;
+        const hit = (md?.text || []).filter((t) => t.x < a1 && t.x + t.w > a0 && t.y < b1 && t.y + t.h + pad > b0 - (shape === 'underline' ? 18 : 0));
+        const txt = joinText(hit).replace(/\n/g, ' ').slice(0, 80);
+        return { shape, text: txt || undefined, block: `mat:${sl.mid}:${sl.n}` };
+      }
+      const box = this.store.objList(pageId).find((o) => o.type !== 'box' && x0 < o.x + o.w && x1 > o.x && y0 < o.y + o.h && y1 > o.y);
+      if (box) return { shape, block: `obj:${box.id}` };
+    }
     if (v.info.kind === 'text' && v.editor) {
       const view = v.editor.view;
       // 화면 좌표에서 글 위치 찾기: 밑줄은 조금 위, 동그라미는 가운데 줄
@@ -1427,14 +1682,13 @@ export class BoardScreen {
       return el;
     };
     menu.append(
-      item('사진', '지금 페이지 위에 놓여요 · 끌어서 옮기고 모서리로 크기', () => this.pickFile('image/*', true, (files) => void this.insertImages(files))),
-      item('PDF · 슬라이드', '한 쪽씩 페이지로 들어가요 · PPT는 PDF로 저장해서', () => this.pickFile('application/pdf,.pdf', false, (files) => void this.importPdfFile(files[0]))),
-      item('웹 학습지', '.html 파일 · 지금 페이지 위에 창으로, 옮기고 크기 바꾸기', () => this.pickFile('.html,.htm,text/html', false, (files) => void this.importHtmlFile(files[0]))),
-      item('문서 (.md · .txt)', '새 페이지에 글로 들어가요 · 고칠 수 있어요', () => this.pickFile('.md,.markdown,.txt,text/markdown,text/plain', false, (files) => void this.handleFiles(files))),
-      item('소리 · 영상', '페이지 위 재생기로 · mp3 · m4a · mp4 …', () => this.pickFile('audio/*,video/*', true, (files) => void this.handleFiles(files))),
+      item('웹 학습지', '.html · 학생이 직접 누르고, 그 위에 필기 (단계마다 따로 저장)', () => this.pickFile('.html,.htm,text/html', false, (files) => void this.importHtmlFile(files[0]))),
+      item('사진', '지금 보는 곳에 · 끌어서 옮기고 모서리로 크기', () => this.pickFile('image/*', true, (files) => void this.insertImages(files))),
+      item('PDF · 슬라이드', '쪽마다 한 장씩 판 위에 가로로 · PPT는 PDF로 저장해서', () => this.pickFile('application/pdf,.pdf', false, (files) => void this.importPdfFile(files[0]))),
+      item('소리 · 영상', '판 위 재생기로 · mp3 · m4a · mp4 …', () => this.pickFile('audio/*,video/*', true, (files) => void this.handleFiles(files))),
       item('유튜브 링크', '작은 창으로 · ⤢ 크게 하면 학생 화면에도', () => this.askYoutube()),
+      item('문서 (.md · .txt)', '고칠 수 있는 큰 글상자로', () => this.pickFile('.md,.markdown,.txt,text/markdown,text/plain', false, (files) => void this.handleFiles(files))),
       item(this.recorder ? '녹음 끝내기' : '녹음하기', '내 목소리를 소리 재생기로', () => void this.toggleRecord()),
-      item('빈 페이지', '이 페이지 다음에', () => this.addTextPage()),
     );
     this.showPanel(menu, anchor);
   }
@@ -1566,14 +1820,15 @@ export class BoardScreen {
     const { marked } = await import('marked');
     const DOMPurify = (await import('dompurify')).default;
     const html = DOMPurify.sanitize(marked.parse(text.replace(/^---\n[\s\S]*?\n---\n/, ''), { async: false, gfm: true }) as string);
-    const idx = this.order.indexOf(this.currentPage);
-    const p = this.store.addPage({ kind: 'text', w: TEXT_W, h: TEXT_H }, idx + 1);
-    this.store.log({ kind: 'material', page: p.id, data: { op: 'import', type: 'md', name, chars: text.length } });
-    this.syncPages();
-    const ed = this.editors.get(p.id);
+    // 무한 판: 문서는 고칠 수 있는 큰 글상자로
+    const c = this.canvasId();
+    const [x, y] = this.spotOnPage(c, 560, 400);
+    const o = this.store.addObj(c, { type: 'box', x, y, w: 560, h: 44, name });
+    this.store.log({ kind: 'material', page: c, id: o.id, data: { op: 'import', type: 'md', name, chars: text.length } });
+    const ed = this.views.get(c)?.objs?.editors.get(o.id);
     if (ed) ed.chain().insertContent(html).run();
-    this.gotoPage(p.id);
-    return p.id;
+    window.setTimeout(() => this.gotoObj(c, o.id), 60);
+    return o.id;
   }
 
   // 모두의 화면에 크게 (사진·영상·유튜브)
@@ -1678,6 +1933,7 @@ export class BoardScreen {
     if (!v) return [40, 40];
     const r = this.stage.getBoundingClientRect();
     const [cx, cy] = this.vp.toWorld(r.left + (r.width - this.panelSide()) / 2, r.top + r.height / 2);
+    if (this.isCanvas(page)) return this.freeSpot(page, cx - w / 2, cy - v.y - hh / 2, w, hh);
     const px = Math.max(16, Math.min(v.info.w - w - 16, cx - w / 2));
     let py = Math.max(16, Math.min(Math.max(16, v.h - hh - 16), cy - v.y - hh / 2));
     // 글 페이지: 이미 쓴 글·놓인 것 아래로 (가리지 않게, 페이지는 알아서 길어진다)
@@ -1691,13 +1947,28 @@ export class BoardScreen {
     return [Math.round(px), Math.round(py)];
   }
 
+  // 무한 판: 화면 가운데 근처의 빈자리 (노트 카드·다른 것과 겹치지 않게)
+  private freeSpot(page: string, x: number, y: number, w: number, hh: number): [number, number] {
+    const v = this.views.get(page)!;
+    const note: [number, number, number, number] = [0, 0, TEXT_W, (v.editorHost?.offsetHeight || 400) + 20];
+    const rects: Array<[number, number, number, number]> = [note, ...this.store.objList(page).map((o) => [o.x, o.y, o.x + o.w, o.y + o.h] as [number, number, number, number])];
+    const hit = (px: number, py: number) => rects.some(([a, b, c, d]) => px < c + 16 && px + w > a - 16 && py < d + 16 && py + hh > b - 16);
+    let px = Math.round(x), py = Math.round(y);
+    // 노트 위에 떨어지면 노트 오른쪽으로
+    if (px < note[2] && px + w > note[0] && py < note[3]) px = note[2] + 48;
+    for (let k = 0; k < 200 && hit(px, py); k++) py += 40;
+    return [Math.round(px), Math.round(py)];
+  }
+
   private pageAt(clientX: number, clientY: number): { page: string; x: number; y: number } | null {
     const [wx, wy] = this.vp.toWorld(clientX, clientY);
     for (const b of this.pageBoxes()) {
-      if (!b.visible) continue;
+      if (!b.visible || b.infinite || b.id.startsWith('ws:')) continue;
       if (wx >= b.x && wx <= b.x + b.w && wy >= b.y && wy <= b.y + b.h) return { page: b.id, x: wx - b.x, y: wy - b.y };
     }
-    return null;
+    const c = this.canvasId();
+    const cv = this.views.get(c);
+    return cv ? { page: c, x: wx, y: wy - cv.y } : null;
   }
 
   // 글상자: 그 자리에 바로 쓰기
@@ -1705,7 +1976,8 @@ export class BoardScreen {
     const v = this.views.get(page);
     if (!v) return;
     const w = Math.min(BOX_W, v.info.w - 24);
-    const o = this.store.addObj(page, { type: 'box', x: Math.round(Math.max(8, Math.min(v.info.w - w - 8, x - 12))), y: Math.round(Math.max(8, y - 18)), w, h: 44 });
+    const free = this.isCanvas(page);
+    const o = this.store.addObj(page, { type: 'box', x: Math.round(free ? x - 12 : Math.max(8, Math.min(v.info.w - w - 8, x - 12))), y: Math.round(free ? y - 18 : Math.max(8, y - 18)), w, h: 44 });
     this.currentPage = page;
     if (this.tool !== 'text') this.setTool('text');
     this.selectObj(page, o.id);
@@ -1745,12 +2017,31 @@ export class BoardScreen {
     return false;
   }
 
+  // PDF·슬라이드 → 판 위에 쪽마다 한 장씩 가로로 (지금까지 놓인 것 아래 줄)
+  private slidePlacer() {
+    const c = this.canvasId();
+    const [, , , by] = this.bounds;
+    const cv = this.views.get(c);
+    const y0 = Math.round(by - (cv?.y || 0) + 120);
+    let x = 0;
+    return (mid: string, n: number, w: number, hh: number) => {
+      const o = this.store.addObj(c, { type: 'slide', x, y: y0, w, h: hh, mid, n });
+      x += w + 48;
+      return o.id;
+    };
+  }
+  async importPdfToCanvas(data: File | ArrayBuffer, name: string): Promise<string[]> {
+    const ids = await importPdf(this.store, data, name, 0, (d, n) => toast(`PDF ${d}/${n}쪽`, 60000), this.slidePlacer());
+    this.layout();
+    const first = ids[0];
+    if (first) window.setTimeout(() => this.gotoItem(first), 60);
+    return ids;
+  }
+
   private async importPdfFile(file: File) {
     const t = toast('PDF 가져오는 중…', 60000);
     try {
-      const ids = await importPdf(this.store, file, file.name.replace(/\.pdf$/i, ''), this.order.indexOf(this.currentPage), (d, n) => toast(`PDF ${d}/${n}쪽`, 60000));
-      this.syncPages();
-      if (ids[0]) this.gotoPage(ids[0]);
+      const ids = await this.importPdfToCanvas(file, file.name.replace(/\.pdf$/i, ''));
       toast(`${ids.length}쪽을 가져왔어요`);
     } catch (e) {
       console.error(e);
@@ -1761,9 +2052,7 @@ export class BoardScreen {
 
   async importPdfBytes(b64: string, name: string) {
     const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-    const ids = await importPdf(this.store, bin.buffer, name, this.order.indexOf(this.currentPage));
-    this.syncPages();
-    return ids;
+    return this.importPdfToCanvas(bin.buffer, name);
   }
 
   private async importHtmlFile(file: File) {
@@ -1924,113 +2213,111 @@ export class BoardScreen {
     else if (f.kind === 'text') this.placeTextBox(await file.text());
     else if (f.kind === 'md') await this.importDoc(await file.text(), base);
     else if (f.kind === 'img') await this.insertImages([file]);
-    else if (f.kind === 'pdf') {
-      const ids = await importPdf(this.store, await file.arrayBuffer(), base, this.order.indexOf(this.currentPage));
-      this.syncPages();
-      if (ids[0]) this.gotoPage(ids[0]);
-    }
+    else if (f.kind === 'pdf') await this.importPdfToCanvas(await file.arrayBuffer(), base);
   }
 
-  // 체험: 수업에 쓸 수 있는 자료를 종류마다 한 페이지씩 깔아 둔다
+  // 체험: 무한 판 위에 수업 자료를 종류마다 한 자리씩 깔아 둔다
+  //  노트(왼쪽) │ 수업 페이지(인터랙티브 웹 학습지) │ 사진·유튜브 │ 듣기 │ 지난 과제
   private async seedDemo(pack: StudentPack) {
-    this.store.doc.transact(() => this.store.meta.set('demoSeeded', Date.now()), 'meta');
-    this.store.doc.transact(() => this.store.meta.set('headerAt', Date.now()), 'meta');
+    this.store.doc.transact(() => {
+      this.store.meta.set('demoSeeded', Date.now());
+      this.store.meta.set('headerAt', Date.now());
+    }, 'meta');
     toast('체험 판을 꾸미는 중…', 30000);
+    const c = this.canvasId();
     const find = (re: RegExp) => pack.files.find((f) => re.test(f.name)) || pack.hwFiles.find((f) => re.test(f.name));
     const file = async (re: RegExp) => {
       const f = find(re);
       return f ? readPackFile(this.packFolder, f.path) : null;
     };
-    const last = () => (this.currentPage = this.order[this.order.length - 1]);
     const T = (text: string) => ({ type: 'text', text });
-    const P = (...c: unknown[]) => ({ type: 'paragraph', content: c });
+    const P = (...cc: unknown[]) => ({ type: 'paragraph', content: cc });
     const H = (level: number, text: string) => ({ type: 'heading', attrs: { level }, content: [T(text)] });
-    const newPage = (title: string, note: string) => {
-      const p = this.store.addPage({ kind: 'text', w: TEXT_W, h: TEXT_H }, this.order.length);
-      this.syncPages();
-      this.currentPage = p.id;
-      this.editors.get(p.id)?.chain().insertContent([H(2, title), P(T(note))]).run();
-      return p.id;
+    const label = (x: number, y: number, text: string, w = 420) => {
+      const o = this.store.addObj(c, { type: 'box', x, y, w, h: 44 });
+      const frag = this.store.boxFragment(o.id);
+      this.store.doc.transact(() => {
+        const hh = new Y.XmlElement('heading');
+        hh.setAttribute('level', 3 as unknown as string);
+        hh.insert(0, [new Y.XmlText(text)]);
+        frag.push([hh]);
+      }, LOCAL);
     };
+    const X = TEXT_W + 80;
     try {
-      const first = this.order[0];
-      const ed = this.editors.get(first);
+      // 노트: 선생님이 수업 중에 쓰는 곳. 위는 지난 과제에서 고칠 것, 아래는 오늘 할 것
+      const ed = this.editors.get(c);
       const blank = (answer: string) => ({ type: 'blank', attrs: { answer } });
       const cell = (t: string, head = false) => ({ type: head ? 'tableHeader' : 'tableCell', content: [P(T(t))] });
       ed?.chain()
         .insertContentAt(0, [
           H(1, '#12 추석에 뭐 했어요?'),
           P(T('오늘 목표: 추석에 한 일 3문장 말하기 (-았/었어요) · 맛 형용사 4개')),
+          H(3, '과제 피드백 — 지난 수업 뒤 6일 과제에서'),
+          { type: 'correction', attrs: { original: '조금 비쌋지만 맛있었어요.' }, content: [T('조금 비쌌지만 맛있었어요.')] },
+          { type: 'correction', attrs: { original: '친구를 만나요 가요.' }, content: [T('친구를 만나러 가요.')] },
           H(3, '빈칸 — 학생이 채워요'),
           P(T('추석에 송편을 '), blank('만들었어요'), T('.')),
           P(T('김치는 조금 '), blank('매워요'), T('.')),
-          H(3, '교정 — 지난 숙제에서'),
-          { type: 'correction', attrs: { original: '조금 비쌋지만 맛있었어요.' }, content: [T('조금 비쌌지만 맛있었어요.')] },
           H(3, '맛 형용사'),
           { type: 'table', content: [{ type: 'tableRow', content: [cell('말', true), cell('뜻', true), cell('예', true)] }, { type: 'tableRow', content: [cell('달아요'), cell('sweet'), cell('송편은 달아요.')] }, { type: 'tableRow', content: [cell('매워요'), cell('spicy'), cell('김치는 매워요.')] }] },
-          P(T('→ 오른쪽 숫자를 눌러 다음 페이지: 슬라이드 · 사진·유튜브 · 웹 학습지 · 읽기 PDF · 읽을거리 · 듣기 · 학생 과제')),
         ])
         .run();
-      this.currentPage = first;
-      // 슬라이드 PDF
-      const slides = find(/슬라이드\.pdf$/);
-      if (slides) {
-        last();
-        await this.placePackFile(slides);
-      }
-      // 사진 + 유튜브
-      const pg = newPage('사진 자료 · 유튜브', '사진은 끌어서 옮기고 모서리로 크기. 유튜브는 ⤢ 크게 를 누르면 학생 화면에도 크게 떠요.');
-      const photo = await file(/시장사진/);
-      if (photo) await this.insertImages([photo], pg);
-      this.addYoutube('https://www.youtube.com/watch?v=aqz-KE-bpKQ', pg);
-      const [bx, by] = this.spotOnPage(pg, 300, 60);
-      const bo = this.store.addObj(pg, { type: 'box', x: bx, y: by, w: 300, h: 44 });
-      const frag = this.store.boxFragment(bo.id);
-      this.store.doc.transact(() => {
-        for (const line of ['글상자: 빈 곳을 두 번 누르면 생겨요', '위 막대를 끌어 옮겨요']) {
-          const p = new Y.XmlElement('paragraph');
-          p.insert(0, [new Y.XmlText(line)]);
-          frag.push([p]);
-        }
-      }, LOCAL);
-      // 웹 학습지
+      // 1) 수업 페이지 (인터랙티브): 학생이 직접 누르고, 그 위에 단계마다 필기
       const ws = await file(/수업페이지\.html$/);
-      const wp = newPage('웹 학습지', '학생이 고른 답은 수업 기록에 남아요. 위에서 Ctrl+휠로 확대.');
-      if (ws) this.placeHtml(await ws.text(), '#12 수업 페이지', wp);
-      // 읽기 PDF
-      const rd = find(/읽기자료\.pdf$/);
-      if (rd) {
-        last();
-        await this.placePackFile(rd);
+      if (ws) {
+        label(X, -60, '① 수업 페이지 — 학생이 직접 눌러요 · 단계마다 필기가 따로 남아요', 760);
+        const mid = randomId(8);
+        const html = await ws.text();
+        this.store.doc.transact(() => {
+          this.store.materials.set(mid, { id: mid, name: '#12 수업 페이지', type: 'html', pages: 1 });
+          this.store.matdata.set(`${mid}/1`, { html, w: 960, h: 600 });
+        }, 'import');
+        this.store.addObj(c, { type: 'html', x: X, y: 0, w: 962, h: 634, mid, name: '#12 수업 페이지', step: 1, steps: 7 });
       }
-      // 마크다운
-      const md = find(/읽을거리\.md$/);
-      if (md) {
-        last();
-        await this.placePackFile(md);
+      // 2) 사진 · 유튜브
+      const Y2 = 720;
+      label(X, Y2 - 60, '② 사진 · 유튜브 — ⤢ 크게 누르면 학생 화면에도');
+      const photo = await file(/시장사진/);
+      if (photo) {
+        const url = await fileToDataUrl(photo);
+        this.store.addObj(c, { type: 'img', x: X, y: Y2, w: 450, h: 300, ratio: 1.5, src: url, name: '추석 시장' });
       }
-      // 듣기: 영상 + 소리
-      newPage('듣기', '영상과 소리는 판 안에서 바로 재생해요. 영상은 ⤢ 크게.');
+      this.store.addObj(c, { type: 'youtube', x: X + 490, y: Y2, w: 472, h: Math.round((472 * 9) / 16) + 32, url: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ', name: '유튜브' });
+      // 3) 듣기
+      const Y3 = 1120;
+      label(X, Y3 - 60, '③ 듣기 — 판 안에서 바로 재생');
       const vid = await file(/듣기영상\.mp4$/);
-      if (vid) await this.insertMedia(vid, 'video', '듣기 영상');
+      if (vid) {
+        this.currentPage = c;
+        await this.insertMedia(vid, 'video', '듣기 영상');
+        const o = this.store.objList(c).find((x) => x.type === 'video');
+        if (o) this.store.updateObj(c, o.id, { x: X, y: Y3 });
+      }
       const au = await file(/듣기\.ogg$/);
-      if (au) await this.insertMedia(au, 'audio', '듣기 소리');
-      // 학생 과제
-      newPage('학생이 낸 과제 (#11)', '손글씨 사진 · 녹음 · 쓴 글. 이 학생 → 과제 탭에서 하나씩 넣을 수도 있어요.');
-      const hwp = this.currentPage;
+      if (au) {
+        await this.insertMedia(au, 'audio', '듣기 소리');
+        const o = this.store.objList(c).filter((x) => x.type === 'audio').pop();
+        if (o) this.store.updateObj(c, o.id, { x: X + 520, y: Y3 });
+      }
+      // 4) 지난 과제 (학생이 낸 손글씨·녹음·글) — 과제 탭에서 하나씩 넣을 수도 있다
+      const Y4 = 1560;
+      label(X, Y4 - 60, '④ 학생이 낸 과제 — 이 학생 → 과제 탭에 날마다 다 있어요', 760);
       const hwImg = await file(/숙제_손글씨/);
-      if (hwImg) await this.insertImages([hwImg], hwp);
-      this.currentPage = hwp;
+      if (hwImg) this.store.addObj(c, { type: 'img', x: X, y: Y4, w: 420, h: 319, ratio: 1000 / 760, src: await fileToDataUrl(hwImg), name: '숙제 손글씨' });
       const hwAu = await file(/숙제_녹음/);
-      if (hwAu) await this.insertMedia(hwAu, 'audio', '숙제 녹음');
-      const hwTx = await file(/숙제_글\.txt$/);
-      if (hwTx) {
-        this.currentPage = hwp;
-        this.placeTextBox(await hwTx.text());
+      if (hwAu) {
+        await this.insertMedia(hwAu, 'audio', '숙제 녹음');
+        const o = this.store.objList(c).filter((x) => x.type === 'audio').pop();
+        if (o) this.store.updateObj(c, o.id, { x: X + 460, y: Y4 });
       }
       this.clearSelection();
-      this.gotoPage(first);
-      toast(`체험 판: ${this.order.length}페이지를 깔았어요`, 3000);
+      this.layout();
+      this.gotoItem('note');
+      const [x0, y0, x1, y1] = this.bounds;
+      this.fitRect(x0, y0 - 80, x1, y1, 30, 1);
+      toast('체험 판을 깔았어요 · 오른쪽 목록으로 하나씩 가 보세요', 3500);
+      this.store.doc.transact(() => this.store.meta.set('demoReady', Date.now()), 'meta');
     } catch (e) {
       console.error('demo seed', e);
       toast('체험 자료 일부를 넣지 못했어요');
@@ -2061,7 +2348,25 @@ export class BoardScreen {
             return file ? URL.createObjectURL(file) : '';
           },
           hwConnected: () => !!hwConfig(),
-          loadHomework: async () => (await homeworkFor(this.pack?.name || '', this.pack?.id || '')).groups,
+          loadHistory: () => historyFromApp(this.pack?.name || '', this.pack?.id || ''),
+          mediaUrl: async (m) => {
+            if (m.fileId) {
+              const r = await hwMedia(m.fileId);
+              return { url: r.dataUrl, mime: r.mime };
+            }
+            const file = m.src ? await readPackFile(this.packFolder, ['과제', m.src]) : null;
+            return file ? { url: URL.createObjectURL(file), mime: file.type } : { url: '', mime: '' };
+          },
+          placeMedia: async (m, label) => {
+            let file: File | null = null;
+            if (m.fileId) {
+              const r = await hwMedia(m.fileId);
+              file = new File([await (await fetch(r.dataUrl)).blob()], label, { type: r.mime });
+            } else if (m.src) file = await readPackFile(this.packFolder, ['과제', m.src]);
+            if (!file) return;
+            if (m.kind === 'img') await this.insertImages([file]);
+            else await this.insertMedia(file, 'audio', label);
+          },
           hwMedia: (fid) => hwMedia(fid),
           placeData: async (dataUrl, mime, name) => {
             const blob = await (await fetch(dataUrl)).blob();
@@ -2070,6 +2375,10 @@ export class BoardScreen {
             else await this.insertMedia(file, mime.startsWith('video/') ? 'video' : 'audio', name);
           },
           placeText: (text) => this.placeTextBox(text),
+          startTimer: (sec, label) => {
+            this.startTimer(sec);
+            toast(`${label} ${Math.round(sec / 60)}분 타이머`);
+          },
         },
       );
       return;
@@ -2240,13 +2549,13 @@ export class BoardScreen {
       toggle('학습지 버튼 누르기', 'studentMaterial', false),
       h('div', { class: 'mi-sep' }),
       toggle('학생에게 내 커서 보이기', 'showCaret', true),
-      item(this.single() ? '스크롤로 보기' : '한 장씩 보기', () => s.setSetting('viewMode', this.single() ? 'scroll' : 'single'), { sub: this.single() ? '' : '← → 로 넘김' }),
+      toggle('학생이 내 화면 따라오기', 'followAll', false),
       timers,
       item('수업 요약 보기', () => this.openSummary()),
       item('지금 기록 저장', () => void this.saveBundleNow(), { sub: saved }),
       item('학생 링크', () => this.openLinks()),
       item('더 보기…', () => this.openMoreMenu(anchor)),
-      ...(this.order.length > 1 && cur ? [h('div', { class: 'mi-sep' }), item(`${this.order.indexOf(this.currentPage) + 1}페이지 지우기…`, () => this.confirmDeletePage(), { danger: true })] : []),
+      ...(this.order.length > 1 && cur && !this.isCanvas(this.currentPage) ? [h('div', { class: 'mi-sep' }), item(`${this.order.indexOf(this.currentPage) + 1}페이지 지우기…`, () => this.confirmDeletePage(), { danger: true })] : []),
     );
     this.showPanel(menu, anchor);
   }
@@ -2455,7 +2764,7 @@ export class BoardScreen {
     const facts: string[] = [];
     const hm = (t: number) => new Date(t).toTimeString().slice(0, 5);
     if (st && en) facts.push(`${hm(st)}–${hm(en)} (${Math.max(1, Math.round((en - st) / 60000))}분)`);
-    facts.push(`페이지 ${this.order.length}`);
+    if (this.order.length > 1) facts.push(`페이지 ${this.order.length}`);
     facts.push(`선생님 글 ${count('teacher', 'text')}줄 · 손글씨 ${count('teacher', 'ink')}획`);
     facts.push(`학생 글 ${count('student', 'text')}줄 · 손글씨 ${count('student', 'ink')}획`);
     box.append(h('p', { class: 'sum-facts' }, facts.join(' · ')));
@@ -2485,7 +2794,16 @@ export class BoardScreen {
         const m = v.info.mid ? this.store.materials.get(v.info.mid) : null;
         if (m && v.info.n === 1) mats.push(`${i + 1}쪽 PDF ${m.name}`);
       }
-      for (const o of this.store.objList(id)) if (KIND[o.type]) mats.push(`${i + 1}쪽 ${KIND[o.type]}${o.name && o.name !== KIND[o.type] ? ' ' + o.name : ''}`);
+      const at = this.isCanvas(id) ? '' : `${i + 1}쪽 `;
+      const slideMats = new Set<string>();
+      for (const o of this.store.objList(id)) {
+        if (o.type === 'slide') {
+          if (o.mid && !slideMats.has(o.mid)) {
+            slideMats.add(o.mid);
+            mats.push(`${at}슬라이드 ${this.store.materials.get(o.mid)?.name || ''}`);
+          }
+        } else if (KIND[o.type]) mats.push(`${at}${KIND[o.type]}${o.name && o.name !== KIND[o.type] ? ' ' + o.name : ''}`);
+      }
     });
     if (mats.length) box.append(h('h4', {}, `보여 준 자료 ${mats.length}`), ...mats.slice(0, 20).map((t) => h('div', { class: 'sum-row' }, t)));
     // 교정·빈칸

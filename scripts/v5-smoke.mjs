@@ -68,8 +68,9 @@ const pick = async (label, file) => {
   await ch.setFiles(file);
 };
 await pick('문서', mdPath);
-await p.waitForFunction(() => window.__kwd.pages().length === 2);
-res.mdPage = await p.evaluate(() => document.querySelector(`[data-page="${window.__kwd.pages()[1].id}"] .ProseMirror`).innerHTML.slice(0, 200));
+// 무한 판: 문서는 고칠 수 있는 큰 글상자로
+await p.waitForFunction(() => window.__kwd.objs(window.__kwd.pages()[0].id).some((o) => o.type === 'box' && o.name === 'notes'));
+res.mdPage = await p.evaluate(() => { const o = window.__kwd.objs(window.__kwd.pages()[0].id).find((x) => x.name === 'notes'); return document.querySelector(`[data-obj="${o.id}"] .ProseMirror`).innerHTML.slice(0, 200); });
 // 4) 소리 가져오기 → 재생기
 const aud = 'public/demo/work/' + JSON.parse(fs.readFileSync('public/demo/manifest.json', 'utf8')).files.find((f) => f.p.endsWith('듣기.ogg')).f;
 const audCopy = `${OUT}/listen.ogg`; // (한글 파일 이름은 Playwright setFiles 가 조용히 실패해서 영어 이름으로)
@@ -100,7 +101,9 @@ await ctx.route('https://hw.test/**', async (route) => {
   calls.push(body.action + (body.tkey === 'secret-k' ? ':key' : ':nokey'));
   const ok = (data) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ ok: true, data }) });
   if (body.action === 'teacher.board') return ok({ students: [{ student_id: 'stu9', name: 'Mina K.', preply_id: '9000001' }] });
-  if (body.action === 'teacher.queue') return ok({ queue: [{ key: 'g1', task_id: 't1', student_id: 'stu9', oldest: '2026-10-16T20:10:00', task: { title_ko: '추석 이야기 3문장' }, steps: [{ step_id: 's1', kind: 'write', label_ko: '쓰기', sub: { submission_id: 'x1', grade_status: 'pending', answer: { text: '추석에 송편을 만들었어요.' } } }, { step_id: 's2', kind: 'photo', label_ko: '손글씨 사진', sub: { submission_id: 'x2', grade_status: 'pending', media_file_id: 'F1' } }] }, { key: 'g2', task_id: 't2', student_id: 'other', steps: [] }] });
+  // 숙제 앱에 지금 있는 기능만으로: teacher.student(날마다 기록) + teacher.day(그날 과제·답·피드백)
+  if (body.action === 'teacher.student') return ok({ analytics: { days: [{ date: '2026-10-16', status: 'on_time', dayset_id: 'd16' }, { date: '2026-10-15', status: 'none' }], progress: { since_lesson: { lesson_at: '2026-10-12T10:00:00Z' } } } });
+  if (body.action === 'teacher.day') return ok({ day: { tasks: [{ title_ko: '추석 이야기 3문장', type: 'write', steps: [{ label_ko: '쓰기', kind: 'write', sub: { answer: { text: '추석에 송편을 만들었어요.' }, grade_status: 'needs_teacher_review' } }, { label_ko: '손글씨 사진', kind: 'hand', sub: { media_file_id: 'F1', grade_status: 'teacher_ok', score: 1, feedback: [{ text: '글씨가 예뻐요' }] } }] }] } });
   if (body.action === 'media.get') return ok({ mime: 'image/jpeg', b64: png1 });
   return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: false, error: 'unknown' }) });
 });
@@ -110,17 +113,17 @@ await p.evaluate(() => localStorage.setItem('kwd.hw', JSON.stringify({ url: 'htt
 await p.click('.demo-card.main');
 await p.waitForSelector('.lesson-row');
 await p.click('.lesson-row.next');
-await p.waitForFunction(() => window.__kwd?.store?.meta?.get('demoSeeded') && window.__kwd.pages().length > 8, null, { timeout: 30000 });
+await p.waitForFunction(() => window.__kwd?.store?.meta?.get('demoReady'), null, { timeout: 30000 });
 await p.click('.mem-btn');
 await p.click('.mp-tab[data-tab="hw"]');
-await p.click('.mp-ins:has-text("숙제 불러오기")');
-await p.waitForSelector('.mp-hwg', { timeout: 6000 }).catch(async () => { console.log('PANEL', await p.locator('.mp-body').innerText(), JSON.stringify(calls)); });
-res.hwGroups = (await p.locator('.mp-hwg').allInnerTexts()).map((t) => t.replace(/\n+/g, ' | '));
+await p.click('.hw-app .mp-ins');
+await p.waitForSelector('.hw-sum:has-text("10/12")', { timeout: 8000 });
+res.hwSum = await p.locator('.hw-sum').innerText();
+res.hwGroups = (await p.locator('.hw-dayb').allInnerTexts()).map((t) => t.replace(/\n+/g, ' | ').slice(0, 200));
 const objsBefore = await p.evaluate(() => window.__kwd.objs(window.__kwd.pages()[0].id).length);
-await p.locator('.mp-hwg .mp-row', { hasText: '쓰기' }).locator('.mp-ins:has-text("판에 넣기")').click();
-await p.locator('.mp-hwg .mp-row', { hasText: '손글씨' }).locator('.mp-ins:has-text("보기")').click();
-await p.waitForSelector('.mp-hwg .mp-thumb');
-await p.locator('.mp-hwg .mp-prev .mp-ins:has-text("판에 넣기")').click();
+await p.locator('.hw-days .hw-item', { hasText: '추석에 송편을' }).first().locator('> .mp-ins').click();
+await p.waitForSelector('.hw-days .hw-item .mp-thumb');
+await p.locator('.hw-days .hw-item', { hasText: '손글씨' }).first().locator('.hw-m .mp-ins').click();
 await p.waitForTimeout(800);
 res.hwPlaced = await p.evaluate((n) => window.__kwd.objs(window.__kwd.pages()[0].id).slice(n).map((o) => o.type), objsBefore);
 res.hwCalls = calls;

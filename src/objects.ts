@@ -21,6 +21,10 @@ export interface ObjectHost {
   onText(pageId: string, block: string, kind: string, text: string): void;
   onBoxFocus(editor: Editor, pageId: string): void;
   openPopup(pageId: string, id: string): void; // 모두의 화면에 크게
+  focusObj(pageId: string, id: string): void; // 화면에 꽉 차게 (선생님: 학생 화면도 '여기 보세요')
+  canDrive(): boolean; // 웹 학습지 단계를 넘기고 고를 수 있나 (선생님, 또는 허락받은 학생)
+  addWsBox?(layerId: string, x: number, y: number): void; // 학습지 위 글상자
+  saveWs?(pageId: string, objId: string): void; // 필기 넣은 학습지 저장
   onHtmlEvent(pageId: string, mid: string, d: { type?: string; name?: string; value?: unknown; score?: unknown; text?: string }): void;
 }
 
@@ -29,7 +33,10 @@ interface ObjView {
   data: PageObject;
   editor?: Editor;
   frame?: HTMLIFrameElement;
+  ws?: { layer: HTMLElement; objs: PageObjects | null; step: number; frameStep: number; stepEl: HTMLElement };
 }
+
+export const wsLayerId = (objId: string, step: number) => `ws:${objId}:${step}`;
 
 export const BOX_W = 260;
 
@@ -83,6 +90,7 @@ export class PageObjects {
 
   private place(v: ObjView) {
     const o = v.data;
+    if (v.ws) this.syncWs(v);
     v.el.style.left = o.x + 'px';
     v.el.style.top = o.y + 'px';
     v.el.style.width = o.w + 'px';
@@ -90,13 +98,39 @@ export class PageObjects {
     else v.el.style.height = o.h + 'px';
   }
 
+  // 학습지 단계가 바뀌면: iframe 을 그 단계로, 필기층(글상자)을 그 단계 것으로
+  private syncWs(v: ObjView) {
+    const ws = v.ws!;
+    const st = v.data.step || 1;
+    ws.stepEl.textContent = v.data.steps && v.data.steps > 1 ? `${st}/${v.data.steps}` : '';
+    if (ws.frameStep && ws.frameStep !== st) {
+      ws.frameStep = st;
+      v.frame?.contentWindow?.postMessage({ type: 'kwd:goto', n: st }, '*');
+    }
+    if (ws.step !== st) {
+      ws.step = st;
+      ws.objs?.destroy();
+      ws.objs = new PageObjects(wsLayerId(v.data.id, st), ws.layer, this.ctx);
+    }
+  }
+
+  wsObjects(): PageObjects[] {
+    const out: PageObjects[] = [];
+    for (const v of this.views.values()) if (v.ws?.objs) out.push(v.ws.objs);
+    return out;
+  }
+
   refreshSelection() {
     const sel = this.ctx.selected();
-    for (const [id, v] of this.views) v.el.classList.toggle('sel', id === sel);
+    for (const [id, v] of this.views) {
+      v.el.classList.toggle('sel', id === sel);
+      v.ws?.objs?.refreshSelection();
+    }
   }
 
   setEditable(on: boolean) {
     for (const ed of this.editors.values()) ed.setEditable(on, false);
+    for (const v of this.views.values()) v.ws?.objs?.setEditable(on);
   }
 
   private create(o: PageObject) {
@@ -159,6 +193,28 @@ export class PageObjects {
       el.append(img, del, big, size);
       this.bindMove(v, el);
       this.bindResize(v, size, true);
+    } else if (o.type === 'slide') {
+      // PDF·슬라이드 한 쪽: 판 위의 그림 (필기는 판 좌표로 그 위에 그대로 붙는다)
+      const img = h('img', { class: 'obj-img-el slide-img', alt: '', draggable: 'false' }) as HTMLImageElement;
+      const setSrc = () => {
+        const md = this.ctx.store.matdata.get(`${o.mid}/${o.n}`);
+        if (md?.img) img.src = this.ctx.store.resolveImg(md.img);
+        return !!md?.img;
+      };
+      if (!setSrc()) {
+        const obs = () => setSrc() && this.ctx.store.matdata.unobserve(obs);
+        this.ctx.store.matdata.observe(obs);
+      }
+      const mat = o.mid ? this.ctx.store.materials.get(o.mid) : null;
+      const label = h('div', { class: 'slide-label' }, `${mat?.name || '슬라이드'} · ${o.n}${mat?.pages ? '/' + mat.pages : ''}`);
+      const big = h('button', { type: 'button', class: 'obj-big', title: this.ctx.role === 'teacher' ? '이 쪽을 크게 (학생 화면도)' : '이 쪽을 크게' }, '⤢ 크게');
+      big.addEventListener('pointerdown', (e) => e.stopPropagation());
+      big.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.ctx.focusObj(this.pageId, o.id);
+      });
+      el.append(label, img, big, del);
+      this.bindMove(v, el, true);
     } else if (o.type === 'audio' || o.type === 'video' || o.type === 'youtube') {
       const icon = o.type === 'audio' ? '🔊' : o.type === 'video' ? '🎬' : '▶';
       const bar = h('div', { class: 'obj-bar' }, h('span', { class: 'obj-name' }, `${icon} ${o.name || (o.type === 'youtube' ? '유튜브' : o.type === 'audio' ? '소리' : '영상')}`));
@@ -186,24 +242,80 @@ export class PageObjects {
       this.bindMove(v, bar);
       this.bindResize(v, size, o.type !== 'audio' && o.type !== 'youtube' ? false : false);
     } else {
-      const bar = h('div', { class: 'obj-bar' }, h('span', { class: 'obj-name' }, o.name || '웹 학습지'));
+      // 웹 학습지: 학생이 직접 누르고, 그 위에 필기·글상자. 학습지의 단계(쪽)마다 필기가 따로 남는다.
+      const stepEl = h('span', { class: 'ws-step', title: '학습지 단계' });
+      const bar = h('div', { class: 'obj-bar' }, h('span', { class: 'obj-name' }, o.name || '웹 학습지'), stepEl);
       const frame = h('iframe', { class: 'mat-frame obj-frame', sandbox: 'allow-scripts allow-forms', title: o.name || '자료' }) as HTMLIFrameElement;
       const md = o.mid ? this.ctx.store.matdata.get(`${o.mid}/1`) : undefined;
       if (md?.html != null) frame.srcdoc = htmlWithBridge(md.html);
+      const btn = (label: string, title: string, fn: () => void, cls = '') => {
+        const b = h('button', { type: 'button', class: 'obj-bt ' + cls, title }, label);
+        b.addEventListener('pointerdown', (e) => e.stopPropagation());
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          fn();
+        });
+        return b;
+      };
+      const layer = h('div', { class: 'ws-layer' });
       bar.prepend(grip);
+      if (this.ctx.canType() && this.ctx.addWsBox) bar.append(btn('T', '이 단계 위에 글상자', () => this.ctx.addWsBox!(wsLayerId(o.id, v.data.step || 1), Math.max(16, v.data.w / 2 - 130), 40), 'ws-t'));
+      bar.append(btn('⤢', this.ctx.role === 'teacher' ? '학습지를 크게 (학생 화면도)' : '학습지를 크게', () => this.ctx.focusObj(this.pageId, o.id)));
+      if (this.ctx.role === 'teacher' && this.ctx.saveWs) bar.append(btn('💾', '필기 넣은 학습지 저장 (학생 폴더 또는 내려받기)', () => this.ctx.saveWs!(this.pageId, o.id)));
       bar.append(del);
-      el.append(bar, frame, size);
+      el.append(bar, frame, layer, size);
       v.frame = frame;
+      v.ws = { layer, objs: null, step: 0, frameStep: 0, stepEl };
       this.bindMove(v, bar);
       this.bindMove(v, el, true);
       this.bindResize(v, size, false);
+      const states = this.ctx.store.doc.getMap<unknown>('wsstate:' + o.id);
+      const post = (msg: Record<string, unknown>) => frame.contentWindow?.postMessage(msg, '*');
+      // 새로 열린 학습지는 먼저 판의 단계로 맞춘다 (그 전에 학습지가 알려 오는 '1단계'로 판을 되돌리지 않게)
+      let synced = false;
+      let syncTimer = 0;
+      const pushAll = () => {
+        synced = false;
+        window.clearTimeout(syncTimer);
+        syncTimer = window.setTimeout(() => (synced = true), 1500);
+        for (const [key, val] of states) post({ type: 'kwd:state', key, val });
+        const st = v.data.step || 1;
+        v.ws!.frameStep = st;
+        post({ type: 'kwd:goto', n: st });
+      };
       const onMsg = (e: MessageEvent) => {
         if (e.source !== frame.contentWindow || !e.data || typeof e.data !== 'object') return;
-        const t = (e.data as { type?: string }).type;
+        const d = e.data as { type?: string; n?: number; total?: number; key?: string; val?: unknown };
+        const t = d.type;
         if (t === 'kwd:event' || t === 'kwd:text') this.ctx.onHtmlEvent(this.pageId, o.mid || '', e.data);
+        else if (t === 'kwd:hello') pushAll();
+        else if (t === 'kwd:step' && typeof d.n === 'number') {
+          v.ws!.frameStep = d.n;
+          if (!synced) {
+            if (d.total && !v.data.steps && this.ctx.role === 'teacher') this.ctx.store.updateObj(this.pageId, o.id, { steps: d.total });
+            if (d.n === (v.data.step || 1)) synced = true;
+            else post({ type: 'kwd:goto', n: v.data.step || 1 });
+            return;
+          }
+          if (this.ctx.canDrive() && (d.n !== v.data.step || (d.total && d.total !== v.data.steps))) {
+            this.ctx.store.updateObj(this.pageId, o.id, { step: d.n, ...(d.total ? { steps: d.total } : {}) });
+            this.ctx.onHtmlEvent(this.pageId, o.mid || '', { type: 'kwd:event', name: 'step', value: d.n });
+          }
+        } else if (t === 'kwd:state' && d.key && this.ctx.canDrive()) {
+          if (JSON.stringify(states.get(d.key)) !== JSON.stringify(d.val)) this.ctx.store.doc.transact(() => states.set(d.key!, d.val), 'ws');
+        }
       };
+      const onState = (ev: Y.YMapEvent<unknown>, tr: Y.Transaction) => {
+        if (tr.local) return;
+        for (const key of ev.keysChanged) post({ type: 'kwd:state', key, val: states.get(key) });
+      };
+      states.observe(onState);
       window.addEventListener('message', onMsg);
-      (v as ObjView & { off?: () => void }).off = () => window.removeEventListener('message', onMsg);
+      (v as ObjView & { off?: () => void }).off = () => {
+        window.removeEventListener('message', onMsg);
+        states.unobserve(onState);
+        v.ws?.objs?.destroy();
+      };
     }
     el.addEventListener('pointerdown', () => {
       if (this.ctx.interactive()) this.ctx.select(this.pageId, o.id);

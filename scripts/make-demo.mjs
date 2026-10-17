@@ -52,38 +52,12 @@ const slides = [
 ];
 put(S + '수업준비/#12_슬라이드.pdf', await pdf(`<html><body style="margin:0">${slides.join('')}</body></html>`, { width: '1280px', height: '720px' }));
 
-// 2) 읽기 자료 PDF (A4 2쪽)
-put(
-  S + '수업준비/#12_읽기자료.pdf',
-  await pdf(
-    `<html><body style="margin:0;${FONT}"><div style="padding:60px 70px;font-size:19px;line-height:1.9;page-break-after:always"><h1 style="font-size:30px">읽기 — 민수 씨의 추석</h1><p>민수 씨는 추석에 고향에 갔어요. 고향은 전주예요. 기차로 세 시간 걸렸어요.</p><p>할머니 집에서 가족들하고 송편을 만들었어요. 송편은 조금 달았어요. 저녁에는 보름달을 봤어요. 정말 컸어요!</p><p>다음 날 아침에 차례를 지냈어요. 그리고 친척들하고 성묘를 갔어요.</p><p>민수 씨는 내년에도 고향에 갈 거예요.</p><hr><h2 style="font-size:22px">질문</h2><ol><li>민수 씨 고향은 어디예요?</li><li>무엇을 만들었어요?</li><li>송편은 맛이 어땠어요?</li><li>내년에 뭐 할 거예요?</li></ol></div><div style="padding:60px 70px;font-size:19px;line-height:1.9"><h1 style="font-size:28px">연습 — 알맞게 바꾸세요</h1><table style="width:100%;border-collapse:collapse;font-size:19px">${['가다', '먹다', '보다', '만들다', '하다', '맵다'].map((w) => `<tr><td style="border:1px solid #bbb;padding:10px 14px;width:40%">${w}</td><td style="border:1px solid #bbb;padding:10px 14px">-았/었어요: ____________</td></tr>`).join('')}</table><h2 style="font-size:22px;margin-top:40px">써 보세요</h2><p>추석에 나는 ________________________.</p><p>음식은 ________________ 맛이었어요.</p></div></body></html>`,
-    { format: 'A4' },
-  ),
-);
-
-// 3) 웹 학습지 (선택·빈칸, kwd.event 로 결과가 판 기록에 남음)
-put(
-  S + '수업준비/#12_수업페이지.html',
-  `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>#12 수업 페이지</title><style>
-body{${FONT};margin:0;padding:28px;background:#14202c;color:#eef3f8;font-size:22px}
-h2{margin:0 0 12px;color:#ffd27a}.q{background:#1e3042;border-radius:14px;padding:18px 20px;margin:14px 0}
-button{font:inherit;font-size:20px;padding:10px 18px;margin:6px;border-radius:12px;border:2px solid #4b6a88;background:#22384d;color:#fff;cursor:pointer}
-button.ok{background:#2e7d4f;border-color:#58c08a}button.no{background:#7d2e2e;border-color:#c05858}
-input{font:inherit;font-size:20px;padding:8px 12px;border-radius:10px;border:2px solid #4b6a88;background:#0f1923;color:#fff;width:9em}
-.r{min-height:1.4em;font-weight:700;margin-top:6px}</style></head><body>
-<h2>#12 추석 — 오늘의 문제</h2>
-<div class="q">1. 추석에 송편을 ____.<br><button onclick="pick(this,1,0)">만들어요</button><button onclick="pick(this,1,1)">만들었어요</button><button onclick="pick(this,1,0)">만들 거예요</button><div class="r" id="r1"></div></div>
-<div class="q">2. 내년에 고향에 ____.<br><button onclick="pick(this,2,0)">갔어요</button><button onclick="pick(this,2,1)">갈 거예요</button><div class="r" id="r2"></div></div>
-<div class="q">3. 김치는 조금 ____ (맵다). <input id="a3" placeholder="여기에 쓰기" onkeydown="if(event.key==='Enter')chk()"><button onclick="chk()">확인</button><div class="r" id="r3"></div></div>
-<script>
-function pick(el,n,ok){[...el.parentNode.querySelectorAll('button')].forEach(b=>b.className='');el.className=ok?'ok':'no';document.getElementById('r'+n).textContent=ok?'정답!':'다시 해 봐요';if(window.kwd)window.kwd.event('answer',n+': '+el.textContent,ok)}
-function chk(){const v=document.getElementById('a3').value.trim();const ok=/매워요|매웠어요/.test(v);document.getElementById('r3').textContent=ok?'정답!':'힌트: 맵다 → 매워요';if(window.kwd)window.kwd.event('answer','3: '+v,ok)}
-</script></body></html>`,
-);
+// 2) 수업 페이지: 인터랙티브 웹 학습지 (7단계 · 애니메이션 · 고르기 · 끌어다 놓기 · 문장 만들기)
+//    학습지가 단계를 판에 알려 주면(kwd.step) 판은 그 단계의 필기만 보여 주고, 고른 것은 학생·선생님 화면이 같이 움직인다(kwd.state)
+put(S + '수업준비/#12_수업페이지.html', fs.readFileSync('scripts/demo-lesson.html', 'utf8'));
 
 // 4) 읽을거리 (마크다운) · 수업안 · 과제 초안
-put(S + '수업준비/#12_읽을거리.md', `# 한국의 추석\n\n추석은 음력 8월 15일이에요. **보름달**이 제일 큰 날이에요.\n\n## 추석에 하는 일\n\n- 고향에 가요\n- 송편을 만들어요\n- 차례를 지내요\n- 성묘를 가요\n\n| 음식 | 맛 |\n|---|---|\n| 송편 | 달아요 |\n| 전 | 고소해요 |\n| 식혜 | 달고 시원해요 |\n\n> 추석 인사: "즐거운 추석 보내세요!"\n`);
-put(S + '수업준비/#12_수업안.md', `# #12 수업안 — 추석 이야기\n\n## 목표\n- -았/었어요로 추석에 한 일 3문장 말하기\n- 맛 형용사 4개 (달다·짜다·맵다·시다)\n\n## 흐름 (50분)\n1. 워밍업 5분 — 주말 이야기\n2. 새 단어 10분 — 슬라이드 3쪽\n3. 문형 15분 — 슬라이드 4쪽, 읽기 자료 2쪽 표\n4. 웹 학습지 10분\n5. 듣기 영상 5분\n6. 숙제 설명 5분\n\n## 복습\n- 지난 시간: 날씨, 맛있어요, -고 싶어요\n`);
+put(S + '수업준비/#12_수업안.md', `# #12 수업안 — 추석 이야기\n\n## 목표\n- -았/었어요로 추석에 한 일 3문장 말하기\n- 맛 형용사 4개 (달다·짜다·맵다·시다)\n\n## 흐름 (50분)\n1. 대화 8분 — 주말·추석 이야기\n2. 과제 피드백 10분 — 받침 ㅆ, 녹음 발음 2개\n3. 수업 27분 — 수업 페이지 1→6단계, 듣기 영상\n4. 마무리 5분 — 오늘 과제 안내\n\n## 복습\n- 지난 시간: 날씨, 맛있어요, -고 싶어요\n`);
 put(S + '수업준비/#12_과제_초안.md', `# #12 과제\n\n1. 추석에 한 일 3문장 쓰기 (-았/었어요)\n2. 쓴 것을 읽고 녹음하기\n3. 좋아하는 한국 음식 사진 1장 + 맛 한 줄\n`);
 
 // 5) 사진 자료 (수업에 보여 줄 그림)
@@ -105,6 +79,39 @@ put(
     760,
   ),
 );
+// 손글씨 한 장 더 (다른 날)
+const hand = (lines, mark) => `<body style="margin:0;width:900px;height:640px;background:#5d4a37;display:flex;align-items:center;justify-content:center"><div style="width:780px;height:540px;transform:rotate(1.4deg);background:repeating-linear-gradient(#fdfbf3 0 46px,#c7d8ea 46px 48px);box-shadow:0 18px 40px rgba(0,0,0,.45);padding:34px 44px;box-sizing:border-box;font-family:'Noto Serif CJK KR',serif;font-size:32px;line-height:48px;color:#203a7a"><div style="color:#b33;font-size:24px">${mark}</div>${lines.join('<br>')}</div></body>`;
+put(S + '과제/hand_d2.jpg', await jpg(hand(['추석에 고향에 갔어요.', '할머니하고 송편을 만들었어요.', '송편이 달았어요.'], '숙제 — 문장 쓰기'), 900, 640));
+put(S + '과제/hand_d5.jpg', await jpg(hand(['김치는 매워요.', '레몬은 셔요.', '간장은 짜요.', '꿀은 달아요.'], '숙제 — 맛 형용사'), 900, 640));
+// 날마다 낸 과제와 피드백 (숙제 플랫폼이 내보내는 모양 — 판의 과제 탭이 읽는다)
+const HW = {
+  student: 'Mina K.',
+  lastLesson: '@D-7@',
+  days: [
+    { date: '@D-1@', status: 'partial', minutes: 9, tasks: [
+      { title: '말하기 — 추석 이야기 녹음', type: 'speak', items: [
+        { label: '추석에 한 일을 말해 보세요', kind: 'speak', media: [{ kind: 'audio', src: '#11_숙제_녹음.ogg' }], ai: '받아쓰기: "저는 주말에 부산에 갔어요…" — 비쌌지만[비싿찌만] 발음 확인', status: 'wait' } ] } ] },
+    { date: '@D-2@', status: 'done', minutes: 21, tasks: [
+      { title: '맛 형용사 쓰기 (손글씨)', type: 'hand', items: [
+        { label: '음식마다 맛을 쓰세요', kind: 'hand', media: [{ kind: 'img', src: 'hand_d5.jpg' }], text: '김치는 매워요. 레몬은 셔요. 간장은 짜요. 꿀은 달아요.', teacher: '완벽해요! 👏', status: 'ok', score: 1 } ] },
+      { title: '단어 카드', type: 'cards', items: [
+        { label: '복습 12장', text: '10장 맞음 · 비싸다/짜다 헷갈림', status: 'fix', score: 0.83, ai: '비싸다(expensive) ↔ 짜다(salty) 다시 보기' } ] } ] },
+    { date: '@D-3@', status: 'skipped', tasks: [] },
+    { date: '@D-4@', status: 'late', minutes: 18, note: '밤 11시에 함', tasks: [
+      { title: '한 → 영', type: 'sp_ko_en', items: [
+        { label: '친구를 만나러 가요.', text: 'I go to meet a friend.', status: 'ok', score: 1 },
+        { label: '송편이 달았어요.', text: 'The rice cake is sweet.', ai: '과거형: was sweet', model: 'The songpyeon was sweet.', status: 'fix', score: 0.5 } ] } ] },
+    { date: '@D-5@', status: 'done', minutes: 22, tasks: [
+      { title: '문장 쓰기 — -았/었어요 (손글씨)', type: 'hand', items: [
+        { label: '추석에 한 일 3문장', kind: 'hand', media: [{ kind: 'img', src: 'hand_d2.jpg' }], text: '추석에 고향에 갔어요. 할머니하고 송편을 만들었어요. 송편이 달았어요.', teacher: '좋아요. "고향에" 대신 "고향에 내려갔어요"도 써 봐요.', status: 'ok', score: 1 } ] } ] },
+    { date: '@D-6@', status: 'done', minutes: 20, tasks: [
+      { title: '문 → 답', type: 'sp_qa', items: [
+        { label: '주말에 뭐 했어요?', kind: 'hand', media: [{ kind: 'img', src: '#11_숙제_손글씨.jpg' }], text: '저는 주말에 부산에 갔어요. 바다가 정말 예뻤어요. 친구하고 회를 먹었어요. 조금 비쌋지만 맛있었어요.', ai: '비쌋지만 → 비쌌지만 (받침 ㅆ)', status: 'fix', score: 0.75 } ] } ] },
+    { date: '@D-8@', status: 'done', minutes: 19, tasks: [ { title: '단어 카드', type: 'cards', items: [ { label: '복습 10장', text: '10장 모두 맞음', status: 'ok', score: 1 } ] } ] },
+    { date: '@D-9@', status: 'done', minutes: 20, tasks: [ { title: '영 → 한', type: 'sp_en_ko', items: [ { label: 'I want to eat tteokbokki.', text: '떡볶이를 먹고 싶어요.', status: 'ok', score: 1 } ] } ] },
+  ],
+};
+put(S + '과제/hw_history.json', JSON.stringify(HW));
 put(S + '과제/#11_숙제_글.txt', '저는 주말에 부산에 갔어요. 바다가 정말 예뻤어요. 친구하고 회를 먹었어요. 조금 비쌋지만 맛있었어요.\n');
 if (AUD && fs.existsSync(path.join(AUD, 'hw.ogg'))) put(S + '과제/#11_숙제_녹음.ogg', fs.readFileSync(path.join(AUD, 'hw.ogg')));
 
@@ -122,11 +129,11 @@ if (AUD && fs.existsSync(path.join(AUD, 'listen.ogg'))) {
 put(S + 'Student_Profile_Mina K.md', `# Student Profile: Mina K. (체험용 가상 학생)\n\n- 나라: 캐나다 · 시간대: 토론토\n- 레벨: 초급 2 (TOPIK 1 준비)\n- 관심: 요리, 여행, K-드라마\n- 목표: 내년 봄 서울 여행에서 식당·시장 대화\n- 수업: 주 2회 50분, 지금까지 11번\n\n## 잘하는 것\n- 발음이 또렷함, 새 단어를 빨리 외움\n\n## 어려워하는 것\n- 받침 있는 과거형 (-었어요), 조사 은/는·이/가\n`);
 put(S + 'student_roadmap_current.md', `# 로드맵 (체험용)\n\n| 단계 | 내용 | 상태 |\n|---|---|---|\n| 1 | 자기소개·숫자 | 끝 |\n| 2 | 음식·맛 | 진행 중 |\n| 3 | 과거형 이야기 | 진행 중 |\n| 4 | 미래 계획 -(으)ㄹ 거예요 | 다음 |\n| 5 | 식당에서 주문하기 | 다음 |\n`);
 put(S + 'Current_Learning_Status.md', `# 지금 배우는 상태\n\n- 과거형: 규칙 동사는 익숙, ㅂ불규칙(맵다→매웠어요) 아직\n- 조사: 이/가 와 은/는 자주 헷갈림\n- 숙제: 3번 연속 냄, 녹음도 함\n`);
-put(S + '#10_Mina K_2026-10-10-19-00.md', `# #10 수업 (10/10)\n\n## 배운 것\n- 맛있어요, 매워요, 반찬\n- -고 싶어요\n\n## 교정\n- 친구를 만나요 가요 → 친구를 만나러 가요\n\n## 숙제\n- 맛 일기 3줄\n`);
-put(S + '#11_Mina K_2026-10-15-19-00.md', `# #11 수업 (10/15)\n\n## 배운 것\n- 날씨, 바다, 회, 비싸다\n- -았/었어요 (규칙)\n\n## 교정\n- 비쌋지만 → 비쌌지만\n- 부산에 갔어요 ✓\n\n## 다음\n- 추석 이야기, 맛 형용사, -(으)ㄹ 거예요 맛보기\n`);
+put(S + '#10_Mina K_@D-14@-19-00.md', `# #10 수업\n\n## 배운 것\n- 맛있어요, 매워요, 반찬\n- -고 싶어요\n\n## 교정\n- 친구를 만나요 가요 → 친구를 만나러 가요\n\n## 숙제\n- 맛 일기 3줄\n`);
+put(S + '#11_Mina K_@D-7@-19-00.md', `# #11 수업\n\n## 배운 것\n- 날씨, 바다, 회, 비싸다\n- -았/었어요 (규칙)\n\n## 교정\n- 비쌋지만 → 비쌌지만\n- 부산에 갔어요 ✓\n\n## 다음\n- 추석 이야기, 맛 형용사, -(으)ㄹ 거예요 맛보기\n`);
 const ld = (n, date, vocab, pats, corr) => JSON.stringify({ meta: { preply_id: '9000001', lesson_number: n, date, lesson_id: `M_${date}_L${n}` }, lesson_overview: { summary_en: `Lesson ${n}` }, vocabulary: vocab.map(([kr, en, st]) => ({ kr, en, student_status: st || 'introduced' })), grammar_patterns: pats.map(([p, e, ex]) => ({ pattern_kr: p, name_en: e, examples: [ex] })), corrections: corr.map(([a, c]) => ({ correction_kind: '형태', student_said_kr: a, correction_kr: c })), next_steps: { homework_items: ['추석 이야기 3문장'] } });
-put(S + '.lesson_data_10.json', ld(10, '2026-10-10', [['맛있어요', 'tasty', 'practiced'], ['매워요', 'spicy'], ['반찬', 'side dish', 'uncertain'], ['송편', 'rice cake']], [['-고 싶어요', 'want to', '먹고 싶어요']], [['친구를 만나요 가요', '친구를 만나러 가요']]));
-put(S + '.lesson_data_11.json', ld(11, '2026-10-15', [['날씨', 'weather', 'practiced'], ['바다', 'sea'], ['회', 'raw fish'], ['비싸다', 'expensive', 'uncertain'], ['예쁘다', 'pretty']], [['-았/었어요', 'past tense', '부산에 갔어요']], [['비쌋지만', '비쌌지만']]));
+put(S + '.lesson_data_10.json', ld(10, '@D-14@', [['맛있어요', 'tasty', 'practiced'], ['매워요', 'spicy'], ['반찬', 'side dish', 'uncertain'], ['송편', 'rice cake']], [['-고 싶어요', 'want to', '먹고 싶어요']], [['친구를 만나요 가요', '친구를 만나러 가요']]));
+put(S + '.lesson_data_11.json', ld(11, '@D-7@', [['날씨', 'weather', 'practiced'], ['바다', 'sea'], ['회', 'raw fish'], ['비싸다', 'expensive', 'uncertain'], ['예쁘다', 'pretty']], [['-았/었어요', 'past tense', '부산에 갔어요']], [['비쌋지만', '비쌌지만']]));
 
 // 9) 중앙 DB 묶음 (kwd_board_export.py 와 같은 꼴, 지어낸 것)
 const V = (w, en, cat, first, last, seen, status, rel, chapter) => ({ w, en, cat, pos: '', topik: 1, first, last, seen, status, chapter, rel });
@@ -177,7 +184,7 @@ put(
     schema: 'brief-data/v1',
     generated_at: 'TODAYT06:50:00',
     lessons: [
-      { time: 'NOW+5', name: 'Mina K.', folder: 'Mina K (9000001)', last_lesson: 11, next_lesson: 12, level_hint: '초급 2', rapport: [{ date: '2026-10-15', lesson: 11, text: '주말에 부산에 가서 회를 먹었다고 함', follow_up: '부산 사진 있으면 보여 달라고 하기' }, { date: '2026-10-10', lesson: 10, text: '추석에 캐나다 친구들과 송편 만들 계획' }], promises: { tutor: [{ text: '추석 슬라이드 준비', status: 'done' }], homework: [{ text: '부산 여행 3문장 + 녹음' }], submissions: '10/15 손글씨 사진·녹음 냄', homework_status: '제출함' }, next_focus: '-았/었어요로 추석 이야기 3문장, 맛 형용사 4개', warmup_recent: [{ kr: '바다', en: 'sea' }, { kr: '비싸다', en: 'expensive' }, { kr: '송편', en: 'rice cake' }, { kr: '매워요', en: 'spicy' }], last_core: { taught: ['날씨', '바다', '회', '비싸다'], patterns: ['-았/었어요'], corrections: ['비쌋지만 → 비쌌지만'], overview: '부산 여행 이야기로 과거형 연습. 규칙 동사는 잘 하지만 ㅆ 받침 철자를 헷갈림.' }, prep: { summary: ['오늘 목표: 추석에 한 일 3문장 말하기 (-았/었어요)', '맛 형용사 4개: 달아요·짜요·매워요·셔요', '복습: 바다, 비싸다, 송편'] } },
+      { time: 'NOW+5', name: 'Mina K.', folder: 'Mina K (9000001)', last_lesson: 11, next_lesson: 12, level_hint: '초급 2', rapport: [{ date: '@D-7@', lesson: 11, text: '주말에 부산에 가서 회를 먹었다고 함', follow_up: '부산 사진 있으면 보여 달라고 하기' }, { date: '@D-14@', lesson: 10, text: '추석에 캐나다 친구들과 송편 만들 계획' }], promises: { tutor: [{ text: '추석 수업 페이지 준비', status: 'done' }], homework: [{ text: '매일 과제 (쓰기·말하기·단어)' }], submissions: '6일 중 5일 냄 · 확인 기다림 1', homework_status: '제출함' }, next_focus: '-았/었어요로 추석 이야기 3문장, 맛 형용사 4개', warmup_recent: [{ kr: '바다', en: 'sea' }, { kr: '비싸다', en: 'expensive' }, { kr: '송편', en: 'rice cake' }, { kr: '매워요', en: 'spicy' }], last_core: { taught: ['날씨', '바다', '회', '비싸다'], patterns: ['-았/었어요'], corrections: ['비쌋지만 → 비쌌지만'], overview: '부산 여행 이야기로 과거형 연습. 규칙 동사는 잘 하지만 ㅆ 받침 철자를 헷갈림.' }, prep: { summary: ['오늘 목표: 추석에 한 일 3문장 말하기 (-았/었어요)', '맛 형용사 4개: 달아요·짜요·매워요·셔요', '복습: 바다, 비싸다, 송편'], plan: [{ part: '대화', min: 8, what: '주말·추석 이야기 — 부산 사진 있으면 보여 달라고 하기' }, { part: '과제 피드백', min: 10, what: '비쌋지만→비쌌지만 (받침 ㅆ) · 송편이 달았어요 영어 과거형 · 녹음 1개 듣기' }, { part: '수업', min: 27, what: '수업 페이지 1→6단계 (새 단어 → -았/었어요 → 맛) · 듣기 영상' }, { part: '마무리', min: 5, what: '이번 주 과제 안내 (7단계)' }] } },
       { time: 'NOW+65', name: 'Tom', folder: 'Tom (pending-student-demo)', last_lesson: 0, level_hint: '체험 수업' },
     ],
   }),

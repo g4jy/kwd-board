@@ -5,7 +5,7 @@ import DOMPurify from 'dompurify';
 import { h, fmtDate } from './ui';
 import { vocabNote, type StudentMemory } from './memory';
 import type { StudentPack, PackFile, BoardData } from './kwdfolder';
-import { answerText, type HwGroup } from './homework';
+import { type HwHistory, type HwMedia, type HwDay, type HwItem } from './homework';
 
 export interface PanelActions {
   insertLine(line: string): void; // 판의 지금 줄 아래에
@@ -15,14 +15,17 @@ export interface PanelActions {
   close(): void;
   previewUrl(f: PackFile): Promise<string>; // 과제 미리 보기 (사진·소리)
   hwConnected(): boolean;
-  loadHomework(): Promise<HwGroup[]>;
   hwMedia(fileId: string): Promise<{ mime: string; dataUrl: string }>;
   placeData(dataUrl: string, mime: string, name: string): Promise<void>;
   placeText(text: string): void;
+  loadHistory(): Promise<HwHistory | null>; // KWD 숙제 앱에서 날마다 과제·피드백
+  mediaUrl(m: HwMedia): Promise<{ url: string; mime: string }>;
+  startTimer(seconds: number, label: string): void;
+  placeMedia(m: HwMedia, label: string): Promise<void>;
 }
 
 // 숙제 앱에서 불러온 것 (패널이 다시 그려져도 남게, 이 창에서만)
-const hwCache = new Map<string, HwGroup[]>();
+const hwCache = new Map<string, HwHistory | null>();
 
 export type PanelTab = 'today' | 'plan' | 'hw' | 'student' | 'lessons' | 'vocab';
 
@@ -81,6 +84,19 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
   };
 
   if (tab === 'today') {
+    // 오늘 수업 시간 나누기 (대화 · 과제 피드백 · 수업 · 마무리) — 누르면 그 시간만큼 타이머
+    const plan = b?.prep?.plan || [];
+    if (plan.length) {
+      const total = plan.reduce((a, p) => a + (p.min || 0), 0) || 1;
+      const bar = h('div', { class: 'plan-bar' });
+      plan.forEach((p, i) => {
+        const seg = h('button', { type: 'button', class: 'plan-seg c' + (i % 5), style: `flex:${p.min}`, title: `${p.part} ${p.min}분${p.what ? ' — ' + p.what : ''} · 누르면 타이머` }, h('b', {}, p.part), h('span', {}, `${p.min}분`));
+        seg.addEventListener('click', () => act.startTimer(p.min * 60, p.part));
+        bar.append(seg);
+      });
+      const rows = plan.filter((p) => p.what).map((p) => h('div', { class: 'plan-row' }, h('b', {}, p.part), ' ', p.what!));
+      body.append(section(`오늘 ${total}분`, bar, ...rows));
+    }
     if (b) {
       const goals = (b.prep?.summary || []).filter(Boolean);
       if (goals.length) body.append(section('오늘 수업', ...goals.map((g) => h('p', { class: 'mp-p' }, g.replace(/`|\*\*/g, '')))));
@@ -185,112 +201,7 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
     if (boards.length) list.append(h('h4', { class: 'mp-h4' }, '이 학생의 다른 판'), ...boards.map((bb) => h('a', { class: 'mp-row mp-link', href: `#/b/${bb.id}?r=t`, target: '_blank', rel: 'noopener' }, h('div', { class: 'mp-main' }, `판 ${fmtDate(bb.createdAt)}`), h('div', { class: 'mp-rsub' }, bb.id))));
     body.append(list, viewer);
   } else if (tab === 'hw') {
-    // 1) 학생 폴더의 과제/ (사진·녹음·글)
-    if (pack.hwFiles.length) {
-      const list = h('div', {});
-      for (const f of pack.hwFiles.slice(0, 30)) {
-        const r = h('div', { class: 'mp-row mp-hw' }, h('div', { class: 'mp-main' }, f.name.replace(/\.[^.]+$/, '')), h('div', { class: 'mp-rsub' }, [{ img: '사진', audio: '녹음', video: '영상', text: '글', pdf: 'PDF', html: '웹', md: '문서' }[f.kind], f.mtime ? new Date(f.mtime).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : ''].filter(Boolean).join(' · ')));
-        const prev = h('div', { class: 'mp-prev' });
-        if (f.kind === 'img' || f.kind === 'audio') {
-          void act.previewUrl(f).then((u) => {
-            if (f.kind === 'img') {
-              const im = h('img', { alt: f.name, class: 'mp-thumb' }) as HTMLImageElement;
-              im.src = u;
-              prev.append(im);
-            } else {
-              const au = h('audio', { controls: '', preload: 'none', class: 'mp-audio' }) as HTMLAudioElement;
-              au.src = u;
-              prev.append(au);
-            }
-          });
-        }
-        const put = h('button', { type: 'button', class: 'mp-ins' }, '판에 넣기');
-        put.addEventListener('click', async () => {
-          put.textContent = '넣는 중…';
-          try {
-            await act.placeFile(f);
-            put.textContent = '넣었어요';
-          } catch {
-            put.textContent = '못 넣었어요';
-          }
-          window.setTimeout(() => (put.textContent = '판에 넣기'), 1500);
-        });
-        r.append(put, prev);
-        list.append(r);
-      }
-      body.append(section('학생이 낸 과제 (폴더)', list));
-    }
-    // 2) KWD 숙제 (학생 숙제 앱에서 낸 답·사진·녹음)
-    const hwBox = h('div', {});
-    if (!act.hwConnected()) {
-      hwBox.append(h('p', { class: 'mp-p muted' }, 'KWD 숙제 앱과 연결하면 학생이 낸 답·손글씨 사진·녹음이 여기 떠요. ⋯ → 더 보기 → 숙제 연결에서 주소와 선생님 키를 넣으세요 (이 기기에만 저장).'));
-    } else {
-      const load = h('button', { type: 'button', class: 'mp-ins' }, hwCache.has(pack.folder) ? '다시 불러오기' : '숙제 불러오기');
-      const out = h('div', {});
-      const draw = (groups: HwGroup[]) => {
-        out.innerHTML = '';
-        if (!groups.length) out.append(h('p', { class: 'mp-p muted' }, '확인할 과제가 없어요.'));
-        for (const g of groups) {
-          const sec = h('div', { class: 'mp-hwg' }, h('div', { class: 'mp-main' }, g.task?.title_ko || g.task?.type || '과제'), h('div', { class: 'mp-rsub' }, (g.oldest || '').slice(0, 16).replace('T', ' ')));
-          for (const st of g.steps) {
-            if (!st.sub) continue;
-            const txt = answerText(st.sub.answer);
-            const r = h('div', { class: 'mp-row' }, h('div', { class: 'mp-main' }, st.label_ko || st.q || st.kind), h('div', { class: 'mp-rsub' }, txt || (st.sub.media_file_id ? '사진·녹음' : '')));
-            if (txt) {
-              const b = h('button', { type: 'button', class: 'mp-ins' }, '판에 넣기');
-              b.addEventListener('click', () => act.placeText(txt));
-              r.append(b);
-            }
-            const fid = st.sub.media_file_id || st.sub.media2_file_id;
-            if (fid && !st.sub.media_purged) {
-              const see = h('button', { type: 'button', class: 'mp-ins' }, '보기');
-              const prev = h('div', { class: 'mp-prev' });
-              see.addEventListener('click', async () => {
-                see.textContent = '…';
-                try {
-                  const m = await act.hwMedia(fid);
-                  prev.innerHTML = '';
-                  if (m.mime.startsWith('image/')) {
-                    const im = h('img', { class: 'mp-thumb', alt: '' }) as HTMLImageElement;
-                    im.src = m.dataUrl;
-                    prev.append(im);
-                  } else {
-                    const au = h('audio', { controls: '', class: 'mp-audio' }) as HTMLAudioElement;
-                    au.src = m.dataUrl;
-                    prev.append(au);
-                  }
-                  const put = h('button', { type: 'button', class: 'mp-ins' }, '판에 넣기');
-                  put.addEventListener('click', () => void act.placeData(m.dataUrl, m.mime, st.label_ko || '과제'));
-                  prev.append(put);
-                  see.remove();
-                } catch {
-                  see.textContent = '못 불러옴';
-                }
-              });
-              r.append(see, prev);
-            }
-            sec.append(r);
-          }
-          out.append(sec);
-        }
-      };
-      const cached = hwCache.get(pack.folder);
-      if (cached) draw(cached);
-      load.addEventListener('click', async () => {
-        load.textContent = '불러오는 중…';
-        try {
-          const groups = await act.loadHomework();
-          hwCache.set(pack.folder, groups);
-          draw(groups);
-        } catch (e) {
-          out.innerHTML = '';
-          out.append(h('p', { class: 'mp-p muted' }, '숙제를 불러오지 못했어요: ' + ((e as Error).message || e)));
-        }
-        load.textContent = '다시 불러오기';
-      });
-      hwBox.append(load, out);
-    }
-    body.append(section('KWD 숙제', hwBox));
+    renderHomework(body, pack, act, section);
   } else if (tab === 'vocab' && pack.db) {
     renderDbVocab(body, pack.db, mem, act, insBtn);
   } else if (tab === 'vocab' && mem) {
@@ -418,4 +329,145 @@ function details(title: string, content: HTMLElement, open: boolean): HTMLElemen
   if (open) d.setAttribute('open', '');
   d.append(h('summary', {}, title), content);
   return d;
+}
+
+// ---- 과제 탭: 지난 수업 뒤 날마다 낸 과제와 피드백 → 수업에서 짚을 것 ----
+const DOW = ['일', '월', '화', '수', '목', '금', '토'];
+const STATUS_KO: Record<string, string> = { done: '했음', on_time: '했음', late: '늦게 함', partial: '조금 함', skipped: '바빠서 쉼', none: '안 함', rest: '쉬는 날', today: '오늘' };
+function renderHomework(body: HTMLElement, pack: StudentPack, act: PanelActions, section: (title: string, ...kids: Node[]) => HTMLElement) {
+  const box = h('div', { class: 'hw' });
+  body.append(box);
+  const draw = (hist: HwHistory | null, note = '') => {
+    box.innerHTML = '';
+    if (!hist || !hist.days.length) {
+      box.append(h('p', { class: 'mp-p muted' }, note || '아직 과제 기록이 없어요.'));
+    } else drawHistory(box, hist, act, section);
+    // 폴더에 그냥 들어 있는 과제 파일 (사진·녹음·글)
+    if (pack.hwFiles.length) {
+      const list = h('div', {});
+      for (const f of pack.hwFiles.slice(0, 30)) {
+        const r = h('div', { class: 'mp-row' }, h('div', { class: 'mp-main' }, f.name.replace(/\.[^.]+$/, '')), h('div', { class: 'mp-rsub' }, { img: '사진', audio: '녹음', video: '영상', text: '글', pdf: 'PDF', html: '웹', md: '문서' }[f.kind] || ''));
+        const put = h('button', { type: 'button', class: 'mp-ins' }, '판에 넣기');
+        put.addEventListener('click', async () => {
+          put.textContent = '넣는 중…';
+          await act.placeFile(f).catch(() => undefined);
+          put.textContent = '넣었어요';
+          window.setTimeout(() => (put.textContent = '판에 넣기'), 1500);
+        });
+        r.append(put);
+        list.append(r);
+      }
+      box.append(details(`폴더에 있는 과제 파일 ${pack.hwFiles.length}`, list, false));
+    }
+    // KWD 숙제 앱
+    const app = h('div', { class: 'hw-app' });
+    if (!act.hwConnected()) app.append(h('p', { class: 'mp-note' }, 'KWD 숙제 앱과 연결하면 학생이 날마다 낸 답·손글씨·녹음·피드백이 여기 바로 떠요. ⋯ → 더 보기 → 숙제 연결 (주소와 선생님 키, 이 기기에만 저장).'));
+    else {
+      const load = h('button', { type: 'button', class: 'mp-ins' }, hist?.source === 'app' ? '숙제 앱에서 다시 불러오기' : '숙제 앱에서 불러오기');
+      load.addEventListener('click', async () => {
+        load.textContent = '불러오는 중…';
+        try {
+          const hh = await act.loadHistory();
+          hwCache.set(pack.folder, hh);
+          draw(hh || pack.hwHistory || null, hh ? '' : '숙제 앱에 이 학생이 없어요.');
+        } catch (e) {
+          load.textContent = '못 불러옴: ' + ((e as Error).message || e);
+        }
+      });
+      app.append(load);
+    }
+    box.append(app);
+  };
+  const cached = hwCache.get(pack.folder);
+  draw(cached || pack.hwHistory || null);
+}
+
+function drawHistory(box: HTMLElement, hist: HwHistory, act: PanelActions, section: (title: string, ...kids: Node[]) => HTMLElement) {
+  const since = hist.lastLesson || '';
+  const recent = hist.days.filter((d) => !since || d.date > since);
+  const older = hist.days.filter((d) => since && d.date <= since);
+  // 1) 한 줄 요약 + 날짜 띠
+  const did = recent.filter((d) => /done|on_time|late|partial/.test(d.status)).length;
+  const items = recent.flatMap((d) => d.tasks.flatMap((t) => t.items.map((it) => ({ d, t, it }))));
+  const fix = items.filter((x) => x.it.status === 'fix');
+  const wait = items.filter((x) => x.it.status === 'wait');
+  const md = (s: string) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+  const strip = h('div', { class: 'hw-strip' });
+  for (const d of recent.slice().reverse()) {
+    const dt = new Date(d.date + 'T12:00:00');
+    strip.append(h('span', { class: 'hw-day st-' + d.status, title: `${md(d.date)} ${STATUS_KO[d.status] || d.status}` }, h('b', {}, DOW[dt.getDay()]), h('i', {}, String(dt.getDate()))));
+  }
+  box.append(
+    h('p', { class: 'hw-sum' }, since ? `지난 수업(${md(since)}) 뒤 ${recent.length}일 중 ${did}일 함` : `최근 ${recent.length}일 중 ${did}일 함`, fix.length ? h('span', { class: 'hw-badge fix' }, `고칠 것 ${fix.length}`) : '', wait.length ? h('span', { class: 'hw-badge wait' }, `확인 기다림 ${wait.length}`) : ''),
+    strip,
+  );
+  // 2) 수업에서 짚을 것 (틀린 것·확인 기다리는 것)
+  const pts = [...fix, ...wait].slice(0, 12);
+  if (pts.length) {
+    const list = h('div', {});
+    for (const x of pts) list.append(itemRow(x.it, act, `${md(x.d.date)} · ${x.t.title}`));
+    const all = h('button', { type: 'button', class: 'mp-ins' }, '모두 판에 넣기');
+    all.addEventListener('click', () => act.placeText(['과제에서 짚을 것', ...pts.map((x) => `• ${x.it.label}: ${x.it.text || '(사진·녹음)'}${x.it.teacher || x.it.ai ? ' → ' + (x.it.teacher || x.it.ai) : ''}`)].join('\n')));
+    box.append(section('수업에서 짚을 것', list, all));
+  }
+  // 3) 날마다 (최근 것이 위)
+  const dayList = h('div', { class: 'hw-days' });
+  recent.forEach((d, i) => dayList.append(dayBlock(d, act, i === 0)));
+  box.append(section(since ? '지난 수업 뒤 과제' : '최근 과제', dayList));
+  if (older.length) {
+    const ol = h('div', { class: 'hw-days' });
+    older.forEach((d) => ol.append(dayBlock(d, act, false)));
+    box.append(details(`그 전 과제 ${older.length}일`, ol, false));
+  }
+}
+
+function dayBlock(d: HwDay, act: PanelActions, open: boolean): HTMLElement {
+  const dt = new Date(d.date + 'T12:00:00');
+  const n = d.tasks.reduce((a, t) => a + t.items.length, 0);
+  const det = h('details', { class: 'hw-dayb st-' + d.status });
+  if (open) det.setAttribute('open', '');
+  det.append(h('summary', {}, h('b', {}, `${dt.getMonth() + 1}/${dt.getDate()} (${DOW[dt.getDay()]})`), ` ${STATUS_KO[d.status] || d.status}`, n ? h('span', { class: 'mp-rsub' }, ` · ${d.tasks.length}과제${d.minutes ? ` · ${d.minutes}분` : ''}`) : ''));
+  if (d.note) det.append(h('p', { class: 'mp-p muted' }, d.note));
+  for (const t of d.tasks) {
+    det.append(h('div', { class: 'hw-task' }, t.title));
+    for (const it of t.items) det.append(itemRow(it, act));
+  }
+  if (!d.tasks.length) det.append(h('p', { class: 'mp-p muted' }, d.status === 'skipped' ? '학생이 "오늘 너무 바빠요"를 눌렀어요.' : '낸 것이 없어요.'));
+  return det;
+}
+
+function itemRow(it: HwItem, act: PanelActions, where = ''): HTMLElement {
+  const st = it.status === 'fix' ? h('span', { class: 'hw-badge fix' }, '고칠 것') : it.status === 'wait' ? h('span', { class: 'hw-badge wait' }, '확인 기다림') : it.status === 'ok' ? h('span', { class: 'hw-badge ok' }, '✓') : '';
+  const r = h('div', { class: 'hw-item' }, h('div', { class: 'hw-q' }, it.label, ' ', st, where ? h('span', { class: 'mp-rsub' }, ' ' + where) : ''));
+  if (it.text) r.append(h('div', { class: 'hw-a' }, it.text));
+  const media = h('div', { class: 'hw-media' });
+  for (const m of it.media || []) {
+    const slot = h('div', { class: 'hw-m' });
+    void act.mediaUrl(m).then(({ url }) => {
+      if (!url) return;
+      if (m.kind === 'img') {
+        const im = h('img', { class: 'mp-thumb', alt: it.label }) as HTMLImageElement;
+        im.src = url;
+        slot.prepend(im);
+      } else {
+        const au = h('audio', { controls: '', preload: 'none', class: 'mp-audio' }) as HTMLAudioElement;
+        au.src = url;
+        slot.prepend(au);
+      }
+    });
+    const put = h('button', { type: 'button', class: 'mp-ins' }, '판에 넣기');
+    put.addEventListener('click', () => void act.placeMedia(m, it.label));
+    slot.append(put);
+    media.append(slot);
+  }
+  if (media.childElementCount) r.append(media);
+  if (it.teacher) r.append(h('div', { class: 'hw-fb t' }, '선생님: ' + it.teacher));
+  if (it.ai) r.append(h('div', { class: 'hw-fb ai' }, 'AI 초안: ' + it.ai));
+  if (it.model) r.append(h('div', { class: 'hw-fb m' }, '모범: ' + it.model));
+  if (it.text) {
+    const put = h('button', { type: 'button', class: 'mp-ins sm' }, '판에 넣기');
+    put.addEventListener('click', () => act.placeText(`${it.label}\n${it.text}${it.teacher || it.ai ? '\n→ ' + (it.teacher || it.ai) : ''}`));
+    r.append(put);
+  }
+  return r;
 }

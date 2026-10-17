@@ -23,20 +23,19 @@ res.home = await p.locator('.lesson-row').allInnerTexts();
 res.badge = await p.locator('.demo-badge').innerText();
 await p.screenshot({ path: `${OUT}/1-home.png` });
 await p.click('.lesson-row.next');
-await p.waitForFunction(() => window.__kwd?.store?.meta?.get('demoSeeded') && window.__kwd.pages().length > 8, null, { timeout: 30000 });
-await p.waitForTimeout(1500);
-res.pages = await p.evaluate(() => window.__kwd.pages().map((x) => x.kind));
-res.objs = await p.evaluate(() => window.__kwd.pages().map((pg) => window.__kwd.objs(pg.id).map((o) => o.type).join(',')).filter(Boolean));
+await p.waitForFunction(() => window.__kwd?.store?.meta?.get('demoReady'), null, { timeout: 30000 });
+await p.waitForTimeout(1200);
+res.pages = await p.evaluate(() => window.__kwd.pages().length);
+res.objs = await p.evaluate(() => window.__kwd.objs(window.__kwd.pages()[0].id).map((o) => o.type));
 res.firstText = await p.evaluate(() => window.__kwd.editor().getText().slice(0, 200));
+res.rail = await p.locator('.rail-item').evaluateAll((els) => els.map((e) => e.title));
 await p.screenshot({ path: `${OUT}/2-board.png` });
-// 페이지 넘기며 찍기
-const rail = await p.locator('.rail-item').count();
-res.rail = rail;
-for (const i of [1, 7, 8, 9, 11, 12, 13]) {
-  if (i >= rail) continue;
+// 목록으로 하나씩 가며 찍기
+const n = await p.locator('.rail-item').count();
+for (let i = 0; i < n; i++) {
   await p.locator('.rail-item').nth(i).click();
-  await p.waitForTimeout(700);
-  await p.screenshot({ path: `${OUT}/3-page${i + 1}.png` });
+  await p.waitForTimeout(600);
+  await p.screenshot({ path: `${OUT}/3-item${i + 1}.png` });
 }
 // 패널
 await p.click('.mem-btn');

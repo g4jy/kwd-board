@@ -197,80 +197,81 @@ test.describe('펜', () => {
 });
 
 test.describe('페이지·확대·자료', () => {
-  test('+ 페이지, 페이지 이동, 지우기, 스크롤 한계, 확대 버튼과 폭 맞춤', async ({ page }) => {
+  test('무한 판: 노트 밖 어디에나 그리기, 움직이되 놓인 것 밖으로 다 빠져나가지 않음, 확대·전체 보기, 오른쪽 목록', async ({ page }) => {
     await openTeacher(page, newId());
-    await page.keyboard.type('첫 페이지');
-    await page.click('.rail-add');
-    await expect(page.locator('.rail-item')).toHaveCount(2);
-    await expect(page.locator('.rail-item.on')).toHaveText('2');
-    await page.keyboard.type('둘째 페이지');
-    await expect(page.locator('.page-text .board-doc').nth(1)).toContainText('둘째 페이지');
-    await page.click('.rail-item:has-text("1")');
-    await expect(page.locator('.rail-item.on')).toHaveText('1');
-    // 스크롤 한계: 한참 내려도 마지막 페이지 아래 반 화면에서 멈춘다
+    await page.keyboard.type('노트에 쓴 글');
+    // 페이지 추가 단추는 없다 (판 하나)
+    await expect(page.locator('.rail-add')).toHaveCount(0);
+    await expect(page.locator('.rail-item')).toHaveCount(1);
+    // 노트 카드 오른쪽 빈 곳에 그리기 → 판(첫 페이지)에 들어가고 노트 폭(820) 밖 좌표
+    const note = (await page.locator('.page.canvas .page-text').boundingBox())!;
+    await page.click('.pen-slot[data-slot="1"]');
+    await drawLine(page, [[note.x + note.width + 60, note.y + 80], [note.x + note.width + 160, note.y + 120], [note.x + note.width + 220, note.y + 90]]);
+    const st = await kwd(page, (k) => k.store.ink(k.pages()[0].id).toArray()[0].pts.slice(0, 2));
+    expect(st[0]).toBeGreaterThan(820);
+    // 빈 곳 두 번 누르기 → 그 자리 글상자 (노트 밖)
+    await page.click('.toolbar [data-tool="text"]');
+    await page.mouse.dblclick(note.x + note.width + 120, note.y + 300);
+    await page.keyboard.type('밖에 쓴 글상자');
+    const bx = await kwd(page, (k) => k.objs(k.pages()[0].id).find((o: any) => o.type === 'box'));
+    expect(bx.x).toBeGreaterThan(820);
+    // 한참 움직여도 놓인 것이 화면 밖으로 다 빠져나가지 않는다
     const box = (await page.locator('.stage').boundingBox())!;
     await page.mouse.move(box.x + 300, box.y + 300);
-    for (let i = 0; i < 30; i++) await page.mouse.wheel(0, 800);
-    const v = await kwd(page, (k) => ({ ...k.vp.view }));
-    const total = await kwd(page, (k) => { const b = k.boxes(); const l = b[b.length - 1]; return l.y + l.h; });
-    expect(v.y + total * v.s).toBeGreaterThanOrEqual(box.height * 0.5 - 2);
-    for (let i = 0; i < 30; i++) await page.mouse.wheel(0, -800);
-    expect(await kwd(page, (k) => k.vp.view.y)).toBeLessThanOrEqual(box.height * 0.35 + 1);
-    // 확대 버튼
+    for (let i = 0; i < 40; i++) await page.mouse.wheel(0, 900);
+    const v = await kwd(page, (k) => ({ ...k.vp.view, b: k.boxes()[0] }));
+    expect(v.y + 400 * v.s).toBeGreaterThan(0); // 노트 위쪽이 화면 위로 다 사라지지 않음
+    for (let i = 0; i < 40; i++) await page.mouse.wheel(900, 0);
+    const v2 = await kwd(page, (k) => ({ ...k.vp.view }));
+    expect(v2.x + 1100 * v2.s).toBeGreaterThan(0);
+    // 확대 버튼 · 전체 보기
     await page.click('.zoom .zb[title^="확대"]');
-    await expect(page.locator('.zoom .pct')).toHaveText('120%');
+    const s1 = await kwd(page, (k) => k.vp.view.s);
     await page.click('.zoom .zb[title^="축소"]');
     await page.click('.zoom .zb[title^="축소"]');
-    await expect(page.locator('.zoom .pct')).toHaveText('83%');
+    expect(await kwd(page, (k) => k.vp.view.s)).toBeLessThan(s1);
     await page.click('.zoom .pct');
-    expect(await kwd(page, (k) => k.vp.view.s)).toBeGreaterThan(1);
-    // 페이지 지우기(확인) → 되돌리기
-    await page.click('.rail-item:has-text("2")');
-    await page.click('.toolbar [data-tool="more"]');
-    await page.click('.menu button:has-text("페이지 지우기")');
-    await page.click('.menu button.danger');
-    await expect(page.locator('.rail-item')).toHaveCount(1);
-    await page.click('.toolbar [data-tool="undo"]');
-    await expect(page.locator('.rail-item')).toHaveCount(2);
-    await expect(page.locator('.page-text .board-doc').nth(1)).toContainText('둘째 페이지');
+    const all = await kwd(page, (k) => { const [cx, cy] = k.vp.center(); return { cx, cy, s: k.vp.view.s }; });
+    expect(all.cx).toBeGreaterThan(300);
+    expect(all.cx).toBeLessThan(1200);
+    // 목록의 노트 → 노트로
+    await page.click('.rail-item[data-key="note"]');
+    const n = await kwd(page, (k) => k.vp.center());
+    expect(n[0]).toBeGreaterThan(200);
+    expect(n[0]).toBeLessThan(620);
   });
 
-  test('PDF 슬라이드: 쪽마다 페이지, 글자층, 쪽 위 잉크는 그 쪽에 붙고, 한 장씩 보기로 넘긴다', async ({ page }) => {
+  test('PDF 슬라이드: 쪽마다 판 위에 한 장씩, 글자층, 쪽 위 동그라미는 그 쪽 글자로 기록, 목록으로 이동', async ({ page }) => {
     await openTeacher(page, newId());
     await page.keyboard.type('수업 노트');
     const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.click('.toolbar [data-tool="import"]').then(() => page.click('.menu button:has-text("PDF")'))]);
     await chooser.setFiles('tests/fixtures/slides.pdf');
-    await expect(page.locator('.rail-item')).toHaveCount(4, { timeout: 20000 });
-    await expect(page.locator('.page-material .mat-img')).toHaveCount(3);
+    await expect(page.locator('.obj-slide')).toHaveCount(3, { timeout: 20000 });
+    expect(await kwd(page, (k) => k.pages().length)).toBe(1);
+    await expect(page.locator('.rail-item')).toHaveCount(4);
     const mats = await kwd(page, (k) => Array.from(k.store.matdata.values()).map((d: any) => d.text.map((t: any) => t.s).join(' ')));
     expect(mats[0].replace(/\s/g, '')).toContain('추석에가족이모두모여요');
-    await expect(page.locator('.rail-item.on')).toHaveText('2');
-    // 2쪽(자료 1/3) 위 '송편' 동그라미
+    // 가져오면 첫 쪽으로 간다
+    await expect(page.locator('.rail-item.on')).toHaveAttribute('title', /1\/3/);
+    // 첫 쪽 위 '송편' 쯤 동그라미
     await page.click('.pen-slot[data-slot="1"]');
-    const pageBox = (await page.locator('.page-material').first().boundingBox())!;
+    const sb = (await page.locator('.obj-slide').first().boundingBox())!;
     const pts: Array<[number, number]> = [];
     for (let i = 0; i <= 20; i++) {
       const a = (i / 20) * Math.PI * 2.1;
-      pts.push([pageBox.x + pageBox.width * 0.12 + Math.cos(a) * 60, pageBox.y + pageBox.height * 0.6 + Math.sin(a) * 25]);
+      pts.push([sb.x + sb.width * 0.12 + Math.cos(a) * 60, sb.y + sb.height * 0.6 + Math.sin(a) * 25]);
     }
     await drawLine(page, pts);
-    const pid = await kwd(page, (k) => k.pages()[1].id);
-    expect(await kwd(page, (k) => k.store.ink(k.pages()[1].id).length)).toBe(1);
+    expect(await kwd(page, (k) => k.store.ink(k.pages()[0].id).length)).toBe(1);
     const ev = await kwd(page, (k) => k.store.events.toArray().filter((e: any) => e.kind === 'ink').pop());
-    expect(ev.page).toBe(pid);
     expect(ev.block).toMatch(/^mat:/);
-    // 한 장씩 보기: 다음 쪽으로 가면 앞 쪽 잉크는 보이지 않는다
+    // 목록으로 셋째 쪽 → 화면 가운데가 그 쪽
     await page.keyboard.press('Escape');
-    await page.click('.toolbar [data-tool="more"]');
-    await page.click('.menu button:has-text("한 장씩 보기")');
-    await expect(page.locator('.single-nav')).toBeVisible();
-    await expect(page.locator('.sn-label')).toHaveText(/^2 \/ 4/);
-    await page.click('.single-nav .sn[title^="다음"]');
-    await expect(page.locator('.sn-label')).toHaveText(/^3 \/ 4/);
-    const vis = await kwd(page, (k) => k.boxes().map((b: any) => b.visible));
-    expect(vis).toEqual([false, false, true, false]);
-    await page.keyboard.press('ArrowLeft');
-    await expect(page.locator('.sn-label')).toHaveText(/^2 \/ 4/);
+    await page.locator('.rail-item').nth(3).click();
+    const third = await kwd(page, (k) => k.objs(k.pages()[0].id).filter((o: any) => o.type === 'slide')[2]);
+    const c = await kwd(page, (k) => k.vp.center());
+    expect(c[0]).toBeGreaterThan(third.x);
+    expect(c[0]).toBeLessThan(third.x + third.w);
     const shows = await kwd(page, (k) => k.store.events.toArray().filter((e: any) => e.kind === 'page' && e.data.op === 'show').length);
     expect(shows).toBeGreaterThanOrEqual(2);
   });
@@ -315,11 +316,11 @@ test.describe('수업 기록 묶음', () => {
     const manifest = JSON.parse(await zip.file('manifest.json')!.async('string'));
     expect(manifest.schema).toBe('kwd-lesson-bundle/v1');
     expect(manifest.student).toBe('1000001');
-    expect(manifest.pages.length).toBe(4);
+    expect(manifest.pages.length).toBe(1);
     const md = await zip.file('board.md')!.async('string');
     expect(md).toContain('추석에 가족이 모두 모여요.');
     expect(md).toContain("✎ '가족이' 밑줄 (빨강)");
-    expect(md).toContain('[자료');
+    expect(md).toContain('[슬라이드');
     expect(md).toContain('송편을 만들어요');
     const evs = (await zip.file('events.ndjson')!.async('string')).trim().split('\n').map((l) => JSON.parse(l));
     expect(evs.every((e) => typeof e.t === 'number' && e.role)).toBe(true);
@@ -389,7 +390,7 @@ test.describe('두 기기', () => {
     await ctxB?.close();
   });
 
-  test('선생님 → 학생(폰): 글·잉크·자료·페이지·한 장씩 따라가기, 권한, 빈칸, 끊김 복구', async ({ browser }) => {
+  test('선생님 → 학생(폰): 같은 좌표, 글·잉크·슬라이드, 여기 보세요·자유·따라가기, 권한, 빈칸, 끊김 복구', async ({ browser }) => {
     const id = newId();
     ctxA = await browser.newContext({ viewport: { width: 1366, height: 820 } });
     ctxB = await browser.newContext({ viewport: { width: 390, height: 780 }, isMobile: true, hasTouch: true });
@@ -403,9 +404,9 @@ test.describe('두 기기', () => {
     await expect(s.locator('.toolbar')).toBeHidden();
     await expect(s.locator('.back-btn')).toBeHidden();
     await expect(s.locator('.rail')).toBeHidden();
-    // 페이지가 화면 가운데 (폰 폭 맞춤)
-    const pb = (await s.locator('.page').first().boundingBox())!;
-    expect(Math.abs(pb.x + pb.width / 2 - 195)).toBeLessThan(4);
+    // 노트 카드는 폰에서도 같은 판 좌표·같은 폭 (기기마다 다시 흘리지 않는다)
+    const geo = (pg: Page) => pg.evaluate(() => { const v = (window as any).__kwd.vp.view; const st = document.querySelector('.stage')!.getBoundingClientRect(); const b = document.querySelector('.page.canvas .page-text')!.getBoundingClientRect(); return [Math.round((b.left - st.left - v.x) / v.s), Math.round(b.width / v.s)]; });
+    expect(await geo(s)).toEqual(await geo(t));
     await t.keyboard.type('추석 : Korean harvest festival');
     await expect(s.locator('.board-doc').first()).toContainText('추석 : Korean harvest festival', { timeout: 10000 });
     // 같은 글 크기 → 잉크가 같은 글자 위에
@@ -414,23 +415,31 @@ test.describe('두 기기', () => {
     await drawLine(t, [[w.x, w.y + w.h + 3], [w.x + w.w / 2, w.y + w.h + 4], [w.x + w.w, w.y + w.h + 3]]);
     await expect.poll(() => kwd(s, (k) => k.store.ink(k.pages()[0].id).length), { timeout: 10000 }).toBe(1);
     await t.keyboard.press('Escape');
-    // 자료 + 한 장씩: 학생도 같은 쪽
+    // 자료(PDF) → 판 위 슬라이드. 학생 화면에도 같은 자리에
     const pdf = fs.readFileSync('tests/fixtures/slides.pdf').toString('base64');
     await t.evaluate(async (b) => await (window as any).__kwd.importPdfBytes(b, '추석'), pdf);
-    await expect(s.locator('.page-material .mat-img')).toHaveCount(3, { timeout: 15000 });
+    await expect(s.locator('.obj-slide .slide-img')).toHaveCount(3, { timeout: 15000 });
     // 서버가 있으면 자료 그림은 문서 밖(서버)에 — 문서에는 열쇠만, 학생 화면에 실제로 그려진다
     const imgs = await kwd(t, (k) => Array.from(k.store.matdata.values()).map((d: any) => String(d.img).slice(0, 5)));
     expect(imgs.every((x: string) => x === 'blob:')).toBe(true);
-    await expect.poll(() => s.evaluate(() => Array.from(document.querySelectorAll('.mat-img')).every((i: any) => i.complete && i.naturalWidth > 1000)), { timeout: 10000 }).toBe(true);
-    await t.evaluate(() => (window as any).__kwd.store.setSetting('viewMode', 'single'));
-    await t.evaluate(() => (window as any).__kwd.goto((window as any).__kwd.pages()[2].id));
-    await expect.poll(() => kwd(s, (k) => k.current()), { timeout: 10000 }).toBe(await kwd(t, (k) => k.pages()[2].id));
-    await expect(s.locator('.sn-label')).toHaveText(/^3 \/ 4/);
-    // 학생이 넘겨 보다가(자유) → 따라가기
-    await s.click('.single-nav .sn[title^="이전"]');
-    await expect(s.locator('.sn-label')).toHaveText(/^2 \/ 4/);
-    await t.evaluate(() => (window as any).__kwd.store.setSetting('viewMode', 'scroll'));
-    await t.click('.rail-item:has-text("1")');
+    await expect.poll(() => s.evaluate(() => Array.from(document.querySelectorAll('.slide-img')).every((i: any) => i.complete && i.naturalWidth > 1000)), { timeout: 10000 }).toBe(true);
+    // 학생은 처음 한 번 선생님 화면으로 온 뒤로는 자유. 선생님이 '여기 보세요' → 학생 화면이 둘째 쪽으로
+    const slides = await kwd(t, (k) => k.objs(k.pages()[0].id).filter((o: any) => o.type === 'slide'));
+    await t.locator('.rail-item').nth(2).click();
+    await t.click('.look-btn');
+    await expect.poll(async () => { const c = await kwd(s, (k) => k.vp.center()); return c[0] > slides[1].x && c[0] < slides[1].x + slides[1].w; }, { timeout: 10000 }).toBe(true);
+    await expect(s.locator('.look-flash')).toHaveCount(1);
+    // 학생이 손가락으로 움직이면 자유 → '선생님 화면으로' 단추
+    const sb = (await s.locator('.stage').boundingBox())!;
+    await s.touchscreen.tap(sb.x + 10, sb.y + sb.height - 10).catch(() => undefined);
+    await s.evaluate(() => { const st = document.querySelector('.stage')!; st.dispatchEvent(new WheelEvent('wheel', { deltaY: 400, bubbles: true, cancelable: true })); });
+    await expect(s.locator('.follow-btn')).toBeVisible();
+    await t.click('.rail-item[data-key="note"]');
+    await t.waitForTimeout(500);
+    const free = await kwd(s, (k) => k.vp.center());
+    expect(free[0]).toBeGreaterThan(slides[0].x); // 선생님이 노트로 가도 학생은 그대로
+    await s.click('.follow-btn');
+    await expect.poll(async () => (await kwd(s, (k) => k.vp.center()))[0], { timeout: 10000 }).toBeLessThan(900);
     // 권한: 학생 글 쓰기
     await t.click('.toolbar [data-tool="more"]');
     await t.click('.menu button:has-text("글 쓰기")');
@@ -506,7 +515,7 @@ test.describe('밤 루틴', () => {
     await page.keyboard.press('Escape');
     const pdf = fs.readFileSync('tests/fixtures/slides.pdf').toString('base64');
     await page.evaluate(async (b) => await (window as any).__kwd.importPdfBytes(b, '추석 슬라이드'), pdf);
-    await page.evaluate(() => (window as any).__kwd.goto((window as any).__kwd.pages()[2].id));
+    await page.evaluate(() => { const k = (window as any).__kwd; k.gotoItem(k.objs(k.pages()[0].id).filter((o: any) => o.type === 'slide')[1].id); });
     const b64 = await page.evaluate(async () => {
       const { blob } = await (window as any).__kwd.bundle();
       const buf = new Uint8Array(await blob.arrayBuffer());
@@ -626,7 +635,7 @@ test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
     expect(r.boxes).toHaveLength(1);
     expect(r.boxes[0].text).toBe('여기 상자 글');
     expect(r.boxesAfterEmpty).toBe(1);
-    expect(r.htmlBelowText).toBe(true);
+    expect(r.htmlBesideNote).toBe(true);
     expect(r.htmlMove).toEqual([-60, 40]);
     expect(r.htmlSize[0]).toBeLessThan(-60);
     expect(r.quiz).toBe('정답!');
@@ -660,18 +669,23 @@ test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
 
 test.describe('v5: 체험 화면·지우개 부분·자료 종류·숙제·요약', () => {
   test.describe.configure({ timeout: 240_000 });
-  test('체험: 고르기 → 오늘 수업 → 판에 14페이지(슬라이드·사진·유튜브·웹 학습지·PDF·문서·영상·소리·학생 과제) → 이 학생 6칸·단어/문형 DB', () => {
+  test('체험: 고르기 → 오늘 수업 → 무한 판(노트·수업 페이지·사진·유튜브·듣기·학생 과제) → 이 학생 6칸·과제·단어/문형 DB·요약', () => {
     const r = JSON.parse(execFileSync('node', ['scripts/demo-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/demot' } }).replace(/^[^{]*/, ''));
     expect(r.errs).toEqual([]);
     expect(r.cards).toEqual(['선생님 (노트북)', '학생 · 폰', '학생 · 태블릿', '선생님 · 태블릿', '나란히 보기']);
     expect(r.home[0]).toContain('Mina K.');
     expect(r.badge).toContain('체험 중');
-    expect(r.pages.length).toBe(14);
-    expect(r.objs.join(',')).toEqual(expect.stringContaining('youtube'));
-    for (const t of ['img', 'html', 'audio', 'video', 'box']) expect(r.objs.join(',')).toContain(t);
+    expect(r.pages).toBe(1); // 무한 판 하나
+    for (const t of ['html', 'img', 'youtube', 'video', 'audio', 'box']) expect(r.objs).toContain(t);
+    expect(r.rail[0]).toBe('노트');
+    expect(r.rail).toContain('웹 학습지 · #12 수업 페이지');
+    expect(r.firstText).toContain('과제 피드백');
     expect(r.tabs).toEqual(['오늘', '수업안·자료', '과제', '학생 정보', '지난 수업', '단어']);
     expect(r.tab_plan).toContain('영상');
-    expect(r.tab_hw).toContain('숙제_손글씨');
+    expect(r.tab_hw).toContain('지난 수업');
+    expect(r.tab_hw).toContain('수업에서 짚을 것');
+    expect(r.tab_today).toContain('오늘 50분');
+    expect(r.summary).toContain('웹 학습지');
     expect(r.tab_vocab).toContain('단어 18');
     expect(r.rel).toContain('같은 묶음');
     expect(r.grammarRows).toBe(4);
@@ -700,9 +714,44 @@ test.describe('v5: 체험 화면·지우개 부분·자료 종류·숙제·요�
     expect(r.audioDur).toBeGreaterThan(5);
     expect(r.summary).toContain('교정');
     expect(r.summary).toContain('사건 기록');
+    expect(r.hwSum).toContain('지난 수업(10/12) 뒤');
     expect(r.hwGroups[0]).toContain('추석에 송편을 만들었어요');
+    expect(r.hwGroups[0]).toContain('선생님: 글씨가 예뻐요');
     expect(r.hwPlaced).toEqual(['box', 'img']);
-    expect(r.hwCalls).toEqual(['teacher.board:key', 'teacher.queue:key', 'media.get:key']);
+    expect(r.hwCalls.slice(0, 5)).toEqual(['teacher.board:key', 'teacher.history:key', 'teacher.student:key', 'teacher.day:key', 'media.get:key']);
     expect(r.keyInDoc).toBe(false);
+  });
+});
+
+test.describe('v6: 무한 판 · 같은 좌표 · 여기 보세요 · 학습지 단계별 필기 · 과제 탭', () => {
+  test.describe.configure({ timeout: 240_000 });
+  test('선생님·학생(폰) 같은 판 좌표 · 여기 보세요 · 학습지 고르기가 함께 · 단계마다 필기·글상자 · 필기 넣은 학습지 파일 · 기록 묶음 · 과제 탭 · 시간 나누기', () => {
+    const out = execFileSync('node', ['scripts/v6-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/v6t' } });
+    const r = JSON.parse(out.slice(out.indexOf('{\n')));
+    expect(r.errs).toEqual([]);
+    expect(r.pages).toBe(1);
+    expect(r.geoS).toEqual(r.geoT); // 사진·학습지·노트·제목이 두 기기에서 같은 판 좌표·크기
+    expect(r.geoT.font).toContain('Pretendard');
+    expect(r.studentSeesWs).toBe(true);
+    expect(r.flash).toBe(1);
+    expect(r.studentPick).toBe(true);
+    expect([r.ink1, r.box1]).toEqual([1, 1]);
+    expect([r.stepT, r.stepS]).toEqual([2, '2 / 7']);
+    expect(r.boxesVisibleStep2).toBe(0);
+    expect([r.ink2, r.studentInk2]).toEqual([1, 1]);
+    expect([r.backStep, r.boxesVisibleStep1]).toEqual([1, 1]);
+    // (headless 크롬은 한글 파일 이름을 download 로 바꿔 줌 — 실제 크롬에서는 이름 그대로, PC 에서 확인)
+    expect(r.annotated.name).toMatch(/수업필기_\d{4}-\d{2}-\d{2}\.html$|^download$/);
+    expect(r.annotated.steps).toEqual(['1', '2']);
+    expect(r.annotated.hasState).toBe(true);
+    expect([r.viewStep1Paths, r.viewStep2Paths]).toEqual([1, 1]);
+    expect(r.bundle.ws).toHaveLength(1);
+    expect(r.bundle.md.join(' ')).toContain('글상자: 1단계 메모');
+    expect(r.hwSum).toContain('6일 중 5일 함');
+    expect(r.hwDays).toBe(6);
+    expect(r.hwPoints).toBe(4);
+    expect(r.hwThumbs).toBeGreaterThanOrEqual(3);
+    expect(r.plan).toHaveLength(4);
+    expect(r.timer).toBe(true);
   });
 });

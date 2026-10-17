@@ -139,8 +139,11 @@ export async function useDemoFolder(): Promise<boolean> {
         const r = await fetch(base + 'demo/work/' + f);
         if (!r.ok || (r.headers.get('content-type') || '').startsWith('text/html') !== /\.html?$/.test(p)) return;
         let blob: Blob = await r.blob();
-        const path = p.replace('intake/TODAY/', `intake/${today}/`).split('/');
-        if (p.endsWith('brief_data.json')) blob = new Blob([(await blob.text()).replace(/TODAY/g, today).replace(/NOW\+(\d+)/g, (_m, n) => hm(Number(n)))], { type: 'application/json' });
+        // @D-7@ = 오늘에서 7일 전 (체험은 언제 열어도 '지난 수업 뒤 6일')
+        const dd = (n: number) => ymd(new Date(now.getTime() - n * 86400000));
+        const tok = (t: string) => t.replace(/@D-(\d+)@/g, (_m, n) => dd(Number(n)));
+        const path = tok(p.replace('intake/TODAY/', `intake/${today}/`)).split('/');
+        if (/\.(json|md|txt)$/.test(p)) blob = new Blob([tok((await blob.text()).replace(/TODAY/g, today).replace(/NOW\+(\d+)/g, (_m, n) => hm(Number(n))))], { type: blob.type || 'text/plain' });
         let d = root;
         for (const seg of path.slice(0, -1)) {
           if (!d.dirs.has(seg)) d.dirs.set(seg, new VDir(seg));
@@ -392,7 +395,7 @@ export interface BriefLesson {
   warmup_struggled?: Array<{ kr: string; en?: string } | string>;
   srs_due?: number;
   last_core?: { overview?: string; taught?: string[]; patterns?: string[]; corrections?: string[]; board_only?: string[] };
-  prep?: { summary?: string[]; files?: Record<string, { name?: string; link?: string | null }> };
+  prep?: { summary?: string[]; files?: Record<string, { name?: string; link?: string | null }>; plan?: Array<{ part: string; min: number; what?: string }> };
   links?: Record<string, string | null>;
 }
 
@@ -448,6 +451,7 @@ export interface StudentPack {
   lessonData: string[]; // .lesson_data_N.json 이름들
   brief?: BriefLesson;
   db?: BoardData; // work/board_data/<폴더>.json (중앙 DB에서 뽑은 전체 단어·문형)
+  hwHistory?: import('./homework').HwHistory; // 과제/hw_history.json (숙제 플랫폼이 내보낸 날마다 과제·피드백)
 }
 
 // night/kwd_board_export.py 가 만든 것
@@ -546,6 +550,15 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
         /\.(png|jpe?g|gif|webp|heic)$/i.test(n) ? 'img' : /\.(mp3|m4a|wav|ogg|webm|aac)$/i.test(n) ? 'audio' : /\.(mp4|mov|m4v)$/i.test(n) ? 'video' : /\.(md|txt)$/i.test(n) ? 'text' : /\.pdf$/i.test(n) ? 'pdf' : null;
       for (const f of await entries(e.handle as DirHandle)) {
         if (f.kind !== 'file') continue;
+        if (f.name === 'hw_history.json') {
+          try {
+            const j = JSON.parse(await (await (f.handle as FileSystemFileHandle).getFile()).text());
+            if (Array.isArray(j.days)) pack.hwHistory = { ...j, source: 'folder' };
+          } catch {
+            /* 깨진 파일은 무시 */
+          }
+          continue;
+        }
         const k = kindOf(f.name);
         if (!k) continue;
         const file = await (f.handle as FileSystemFileHandle).getFile();
@@ -563,6 +576,27 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
   pack.lessonData.sort((a, b) => numOf(a) - numOf(b));
   pack.db = await boardDataFor(folder);
   return pack;
+}
+
+// 학생 폴더에 파일 쓰기 (수업 필기 넣은 학습지 등). 쓰기 허락을 한 번 더 묻는다. 체험·파일 목록 폴더는 못 쓴다 → false
+export async function saveToStudentFolder(folder: string, sub: string, name: string, text: string): Promise<string | null> {
+  const work = await storedWork();
+  if (!work || (work as unknown as VDir) instanceof VDir) return null;
+  try {
+    const p = (await work.requestPermission?.({ mode: 'readwrite' })) || 'granted';
+    if (p !== 'granted') return null;
+    const sl = await work.getDirectoryHandle('Student_Lessons');
+    const sd = await sl.getDirectoryHandle(folder);
+    const dir = await sd.getDirectoryHandle(sub, { create: true });
+    const fh = await dir.getFileHandle(name, { create: true });
+    const w = await (fh as FileSystemFileHandle & { createWritable(): Promise<FileSystemWritableFileStream> }).createWritable();
+    await w.write(text);
+    await w.close();
+    return `${folder}/${sub}/${name}`;
+  } catch (e) {
+    console.warn('save', e);
+    return null;
+  }
 }
 
 export async function readPackFile(folder: string, path: string[]): Promise<File | null> {

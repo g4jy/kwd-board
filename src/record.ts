@@ -1,4 +1,5 @@
 // 수업 기록 묶음 lesson_<학생>_<일시>.kwd.zip — 밤 루틴이 화면 캡처 없이 읽는 형식 (기획안 v3 2.1)
+import { wsAnnotations, annotatedWorksheet } from './wsexport';
 import JSZip from 'jszip';
 import type { Editor } from '@tiptap/core';
 import type { BoardStore } from './store';
@@ -50,10 +51,22 @@ export function boardMarkdown({ store, editors }: RecordInput): string {
       else if (o.type === 'audio') out.push('', `[소리] ${o.name || ''}`.trim());
       else if (o.type === 'video') out.push('', `[영상] ${o.name || ''}`.trim());
       else if (o.type === 'youtube') out.push('', `[유튜브] ${o.url || ''}`.trim());
-      else {
+      else if (o.type === 'slide') {
+        const mat = o.mid ? store.materials.get(o.mid) : undefined;
+        out.push('', `[슬라이드 ${o.mid} p${o.n}] ${mat?.name || ''}`.trim());
+        const md = store.matdata.get(`${o.mid}/${o.n}`);
+        if (md?.text?.length) out.push(joinText(md.text));
+      } else {
         const md = o.mid ? store.matdata.get(`${o.mid}/1`) : undefined;
         out.push('', `[웹 학습지] ${o.name || ''}`.trim());
         if (md?.text?.length) out.push(joinText(md.text));
+        // 학습지 단계마다 쓴 필기·글상자
+        const ann = wsAnnotations(store, o);
+        for (const [n, a] of Object.entries(ann.steps)) {
+          const lines = inkSummary(store, `ws:${o.id}:${n}`);
+          const boxes = a.boxes.map((b) => b.html.replace(/<[^>]+>/g, ' ').trim()).filter(Boolean);
+          if (lines.length || boxes.length) out.push(`  (학습지 ${n}단계) ` + [...lines.map((l) => '✎ ' + l), ...boxes.map((b) => '글상자: ' + b)].join(' / '));
+        }
       }
     }
     // 이 페이지의 잉크를 글로
@@ -139,6 +152,13 @@ export async function buildBundle(input: RecordInput): Promise<{ name: string; b
     'events.ndjson': store.eventsNdjson(),
     'board.json': JSON.stringify(boardJson),
   };
+  // 필기 넣은 웹 학습지 (학생에게 보낼 수 있는 한 파일)
+  for (const p of pages)
+    for (const o of store.objList(p.id)) {
+      if (o.type !== 'html') continue;
+      const r = annotatedWorksheet(store, o, String(store.meta.get('student') || ''));
+      if (r && r.count) files[`worksheets/${(o.name || o.id).replace(/[\\/:*?"<>|]/g, '_')}_수업필기.html`] = r.html;
+    }
   for (const [k, v] of Object.entries(files)) zip.file(k, v);
   for (const m of store.materials.values()) {
     const textPages: Array<{ n: number; text: string }> = [];

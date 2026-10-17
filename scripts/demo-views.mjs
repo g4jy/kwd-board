@@ -20,8 +20,8 @@ await p.waitForFunction(() => [...document.querySelectorAll('.dev-frame')].every
 await p.waitForTimeout(2500);
 const t = await T();
 const s = await S();
-res.tPages = await t.evaluate(() => window.__kwd.pages().length);
-res.sPages = await s.evaluate(() => window.__kwd?.pages().length);
+res.tPages = await t.evaluate(() => window.__kwd.objs(window.__kwd.pages()[0].id).length);
+res.sPages = await s.evaluate(() => window.__kwd?.objs(window.__kwd.pages()[0].id).length);
 await p.screenshot({ path: `${OUT}/6-split.png` });
 // 선생님이 쓰면 학생 창에
 await t.evaluate(() => {
@@ -31,8 +31,8 @@ await t.evaluate(() => {
 await p.waitForTimeout(800);
 res.sSees = await s.evaluate(() => window.__kwd.editor().getText().includes('학생 창에 보여요'));
 // 유튜브 크게 → 학생에게도
-const ytPage = await t.evaluate(() => window.__kwd.pages().find((pg) => window.__kwd.objs(pg.id).some((o) => o.type === 'youtube')).id);
-await t.evaluate((id) => document.querySelector(`.rail-item[data-page="${id}"]`).click(), ytPage);
+const yt = await t.evaluate(() => window.__kwd.objs(window.__kwd.pages()[0].id).find((o) => o.type === 'youtube').id);
+await t.evaluate((id) => document.querySelector(`.rail-item[data-key="${id}"]`).click(), yt);
 await p.waitForTimeout(800);
 await t.locator('.obj-youtube .obj-big, .obj-youtube button:has-text("크게")').first().click();
 await p.waitForTimeout(800);

@@ -17,14 +17,14 @@ await p.waitForFunction(() => window.__kwd);
 const t0 = Date.now();
 await p.evaluate(async (b64) => { await window.__kwd.importPdfBytes(b64, 'p20.pdf'); }, bytes.toString('base64'));
 const tImp = Date.now() - t0;
-const pages = await p.evaluate(() => window.__kwd.pages().length);
-// 쪽 넘김 반응: goto 20번
+const pages = await p.evaluate(() => window.__kwd.objs(window.__kwd.pages()[0].id).filter((o) => o.type === 'slide').length + 1);
+// 쪽 넘김 반응: 목록으로 20쪽 차례로
 const t1 = Date.now();
-const ids = await p.evaluate(() => window.__kwd.pages().map((x) => x.id));
-for (const id of ids) await p.evaluate((id) => window.__kwd.goto(id), id);
+const ids = await p.evaluate(() => window.__kwd.objs(window.__kwd.pages()[0].id).filter((o) => o.type === 'slide').map((x) => x.id));
+for (const id of ids) await p.evaluate((id) => window.__kwd.gotoItem(id), id);
 const tNav = (Date.now() - t1) / ids.length;
-// 긴 글: 첫 쪽에 300줄
-await p.evaluate((id) => window.__kwd.goto(id), ids[0]);
+// 긴 글: 노트에 300줄
+await p.evaluate(() => window.__kwd.gotoItem('note'));
 const ed = await p.evaluate(() => { const e = window.__kwd.editor(); e.commands.focus('end'); for (let i = 0; i < 300; i++) e.commands.insertContent(`<p>${i}번째 줄 한국어 문장입니다.</p>`); return e.getText().length; });
 const t2 = Date.now();
 await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));

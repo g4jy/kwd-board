@@ -60,6 +60,21 @@ class Bundle:
                 return f"{p['no']}쪽"
         return "?쪽"
 
+    def obj(self, obj_id: str) -> dict | None:
+        """무한 판 위에 놓인 것 (슬라이드 쪽·웹 학습지·사진…)"""
+        for p in self.board.get("pages", []):
+            for o in p.get("objects", []):
+                if o.get("id") == obj_id:
+                    return o
+        return None
+
+    def obj_label(self, o: dict) -> str:
+        kind = {"slide": "슬라이드", "html": "웹 학습지", "img": "사진", "video": "영상", "youtube": "유튜브", "audio": "소리", "box": "글상자"}.get(o.get("type"), o.get("type"))
+        if o.get("type") == "slide":
+            mat = next((m for m in self.manifest.get("materials", []) if m["id"] == o.get("mid")), {})
+            return f"{kind} {mat.get('name', '')} {o.get('n')}/{mat.get('pages', '')}"
+        return f"{kind} {o.get('name') or ''}".strip()
+
     def material_text(self, mid: str, n: int) -> str:
         mat = self.materials.get(mid)
         if not mat:
@@ -213,7 +228,19 @@ def compact(b: Bundle, synced: dict) -> str:
             lines.append(f"[{t}] {r['who']}: {r['text']}")
             continue
         k = r["kind"]
-        if k == "page" and (r.get("data") or {}).get("op") in ("show", "add"):
+        if k == "page" and (r.get("data") or {}).get("op") == "show" and r.get("id"):
+            # 무한 판: 목록에서 고른 것(슬라이드 쪽·학습지…)으로 이동
+            o = b.obj(r["id"])
+            if o and r["id"] != cur_page:
+                cur_page = r["id"]
+                lines.append(f"[{t}] — {b.obj_label(o)} —")
+                if o.get("type") == "slide":
+                    key = f"{o.get('mid')}/{o.get('n')}"
+                    if key not in shown_material:
+                        shown_material.add(key)
+                        mt = b.material_text(o.get("mid"), o.get("n"))
+                        lines.append(f"[{t}] 자료글: {mt[:400]}" if mt else f"[{t}] 자료글: (글자 없음 · 그림 p{o.get('n')}.jpg)")
+        elif k == "page" and (r.get("data") or {}).get("op") in ("show", "add"):
             if r.get("page") != cur_page:
                 cur_page = r.get("page")
                 lines.append(f"[{t}] — {b.page_label(cur_page)} —")

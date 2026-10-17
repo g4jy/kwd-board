@@ -64,6 +64,7 @@ export interface PageBox {
   w: number;
   h: number;
   visible: boolean;
+  infinite?: boolean; // 무한 판: 어디에 그려도 이 페이지(좌표 원점은 x,y)
 }
 
 interface LiveStroke {
@@ -185,6 +186,18 @@ export class InkLayer {
   // 세상 좌표 → (페이지, 페이지 좌표)
   private hitPage(wx: number, wy: number, strict = false): { page: PageBox; x: number; y: number } | null {
     const pages = this.getPages().filter((p) => p.visible);
+    // 1) 안에 들어간 유한 페이지(나중 것이 위: 학습지 위 필기층) 2) 무한 판 3) 가장 가까운 페이지
+    let inside: PageBox | null = null;
+    let inf: PageBox | null = null;
+    for (const p of pages) {
+      if (p.infinite) {
+        inf = inf || p;
+        continue;
+      }
+      if (wx >= p.x && wx <= p.x + p.w && wy >= p.y && wy <= p.y + p.h) inside = p;
+    }
+    if (inside) return { page: inside, x: wx - inside.x, y: wy - inside.y };
+    if (inf) return { page: inf, x: wx - inf.x, y: wy - inf.y };
     let best: PageBox | null = null;
     let bestD = Infinity;
     for (const p of pages) {
@@ -482,13 +495,15 @@ export class InkLayer {
     const byId = new Map(pages.map((p) => [p.id, p]));
     for (const pg of pages) {
       if (!pg.visible) continue;
-      if (pg.y > vy1 || pg.y + pg.h < vy0 || pg.x > vx1 || pg.x + pg.w < vx0) continue;
+      if (!pg.infinite && (pg.y > vy1 || pg.y + pg.h < vy0 || pg.x > vx1 || pg.x + pg.w < vx0)) continue;
       this.observePage(pg.id);
       ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * (x + pg.x * s), dpr * (y + pg.y * s));
       ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, pg.w, pg.h);
-      ctx.clip();
+      if (!pg.infinite) {
+        ctx.beginPath();
+        ctx.rect(0, 0, pg.w, pg.h);
+        ctx.clip();
+      }
       const sel = this.selection && this.selection.page === pg.id ? this.selection : null;
       const selSet = sel ? new Set(sel.ids) : null;
       for (const st of this.store.ink(pg.id).toArray()) {
@@ -599,4 +614,30 @@ export function strokeBox(st: Stroke): [number, number, number, number] {
   }
   const r = st.size;
   return [x0 - r, y0 - r, x1 + r, y1 + r];
+}
+
+// 저장용: 획 하나를 SVG 경로로 (판에서 그린 모양 그대로)
+export function strokeSvgPath(s: { pts: number[]; size: number; hl: boolean; k?: PenKind }): string {
+  const pts: number[][] = [];
+  for (let i = 0; i + 2 < s.pts.length; i += 3) pts.push([s.pts[i], s.pts[i + 1], s.pts[i + 2]]);
+  const simulate = pts.every((p) => p[2] === 0.5);
+  const ko = kindOptions(s.k, s.size);
+  const outline = getStroke(pts, {
+    size: s.hl ? s.size : ko.size,
+    thinning: s.hl ? 0 : ko.thinning,
+    smoothing: s.hl ? 0.5 : ko.smoothing,
+    streamline: s.hl ? 0.48 : ko.streamline,
+    simulatePressure: simulate && !s.hl && ko.simulate,
+    start: { taper: s.hl ? 0 : ko.taper, cap: true },
+    end: { taper: s.hl ? 0 : ko.taper, cap: true },
+    last: true,
+  });
+  if (!outline.length) return '';
+  const r = (n: number) => Math.round(n * 10) / 10;
+  let d = `M${r(outline[0][0])} ${r(outline[0][1])}`;
+  for (let i = 1; i < outline.length; i++) {
+    const a = outline[i], b = outline[(i + 1) % outline.length];
+    d += `Q${r(a[0])} ${r(a[1])} ${r((a[0] + b[0]) / 2)} ${r((a[1] + b[1]) / 2)}`;
+  }
+  return d + 'Z';
 }

@@ -29,7 +29,7 @@ export type PenKind = 'fountain' | 'ball' | 'brush' | 'pencil';
 // 페이지 위에 놓이는 것: 글상자·사진·웹 학습지 (페이지 좌표 px)
 export interface PageObject {
   id: string;
-  type: 'box' | 'img' | 'html' | 'audio' | 'video' | 'youtube';
+  type: 'box' | 'img' | 'html' | 'audio' | 'video' | 'youtube' | 'slide';
   url?: string; // youtube: 원래 주소
   x: number;
   y: number;
@@ -39,6 +39,9 @@ export interface PageObject {
   mid?: string; // html: 자료 id (matdata `${mid}/1`)
   name?: string;
   ratio?: number; // img: 가로/세로 (크기 바꿀 때 유지)
+  n?: number; // slide: PDF 쪽 번호 (matdata `${mid}/${n}`)
+  step?: number; // html: 학습지가 지금 보여 주는 단계(쪽) — 그 단계의 필기만 보인다
+  steps?: number; // html: 학습지 단계 수
   t: number;
 }
 

@@ -122,8 +122,7 @@ export class DemoScreen {
     const t0 = Date.now();
     const wait = window.setInterval(() => {
       const w = teacher.frame.contentWindow as (Window & { __kwd?: { pages(): unknown[]; store: { meta: { get(k: string): unknown } } } }) | null;
-      const seeded = !!w?.__kwd?.store?.meta?.get('demoSeeded');
-      const done = seeded && (w?.__kwd?.pages().length || 0) > 5;
+      const done = !!w?.__kwd?.store?.meta?.get('demoReady');
       if (done || Date.now() - t0 > 20000 || !this.alive) {
         window.clearInterval(wait);
         if (this.alive) student.frame.src = './' + studentUrl;

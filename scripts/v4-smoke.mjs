@@ -96,9 +96,11 @@ const html = fs.readFileSync('tests/fixtures/quiz.html', 'utf8').replace('<body>
 await K(([h]) => window.__kwd.placeHtml(h, '퀴즈'), [html]);
 await p.waitForTimeout(500);
 const o1 = await K((id) => window.__kwd.objs(id).find((o) => o.type === 'html'), page0);
-res.htmlBelowText = o1.y > 100; // 쓴 글 아래에 놓인다
-await K((o) => window.__kwd.vp.set({ y: 120 - o.y * window.__kwd.vp.view.s }), o1);
-await p.waitForTimeout(100);
+res.htmlBesideNote = o1.x >= 820; // 무한 판: 노트 카드 옆 빈자리에 놓인다
+await K((o) => window.__kwd.gotoItem(o.id), o1);
+await K(() => window.__kwd.vp.set({ s: 1 }));
+await K((o) => window.__kwd.vp.centerOn(o.x + o.w / 2, o.y + o.h / 2, 1), o1);
+await p.waitForTimeout(200);
 const bar = await (await p.$('.obj-html .obj-bar')).boundingBox();
 await p.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2);
 await p.mouse.down();
