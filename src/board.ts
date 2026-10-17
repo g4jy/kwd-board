@@ -548,7 +548,7 @@ export class BoardScreen {
   // 세상 좌표 네모가 화면에 꽉 차게 (여백 pad)
   fitRect(x0: number, y0: number, x1: number, y1: number, pad = 40, maxS = 2) {
     const [W, H] = this.vp.size();
-    const side = this.panelSide();
+    const side = this.panelSide() || (this.rail && !this.rail.hidden && W > 700 ? 56 : 0);
     const top = 64, bottom = this.role === 'student' && this.toolbar.hidden ? 24 : 96;
     const aw = Math.max(80, W - side - pad * 2), ah = Math.max(80, H - top - bottom - pad);
     const s = Math.min(maxS, Math.max(this.vp.min, Math.min(aw / Math.max(1, x1 - x0), ah / Math.max(1, y1 - y0))));
