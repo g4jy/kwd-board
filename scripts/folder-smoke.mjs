@@ -40,7 +40,6 @@ await p.click('.mp-tab[data-tab="plan"]');
 res.plan = (await p.locator('.mp-body').innerText()).slice(0, 200);
 await p.screenshot({ path: `${OUT}/3-plan.png` });
 // 자료 → 수업페이지.html 을 판에
-await p.click('.mp-tab[data-tab="mats"]');
 res.mats = await p.locator('.mp-body .mp-main').allInnerTexts();
 await p.locator('.mp-row', { hasText: '수업페이지' }).locator('.mp-ins').click();
 await p.waitForFunction(() => window.__kwd.objs(window.__kwd.pages()[0].id).some((o) => o.type === 'html'), null, { timeout: 5000 });

@@ -453,11 +453,21 @@ export class BoardScreen {
     const contentW = TEXT_W * v.s;
     const contentH = this.totalHeight() * v.s;
     let { x, y } = v;
-    if (contentW <= W - 8) x = (W - contentW) / 2 - (this.rail && !this.rail.hidden && W > 900 ? 30 : 0);
+    // '이 학생' 패널이 열려 있으면 페이지를 왼쪽 빈 곳 가운데로 (패널이 글을 가리지 않게)
+    const side = this.panelSide();
+    if (contentW <= W - side - 8) x = (W - side - contentW) / 2 - (this.rail && !this.rail.hidden && W > 900 && !side ? 30 : 0);
+    else if (side && contentW <= W - 8) x = Math.max(8, W - side - 12 - contentW);
     else x = Math.min(W * 0.3, Math.max(W * 0.7 - contentW, x));
     const top = H * 0.35;
     y = Math.min(top, Math.max(H * 0.5 - contentH, y));
     return { x, y, s: v.s };
+  }
+
+  private panelSide(): number {
+    if (!this.memPanel || this.memPanel.hidden) return 0;
+    const W = this.stage.getBoundingClientRect().width || window.innerWidth;
+    if (W < 900) return 0;
+    return this.memPanel.getBoundingClientRect().width + 64;
   }
 
   private renderRail() {
@@ -1432,9 +1442,17 @@ export class BoardScreen {
     const v = this.views.get(page);
     if (!v) return [40, 40];
     const r = this.stage.getBoundingClientRect();
-    const [cx, cy] = this.vp.toWorld(r.left + r.width / 2, r.top + r.height / 2);
+    const [cx, cy] = this.vp.toWorld(r.left + (r.width - this.panelSide()) / 2, r.top + r.height / 2);
     const px = Math.max(16, Math.min(v.info.w - w - 16, cx - w / 2));
-    const py = Math.max(16, Math.min(Math.max(16, v.h - hh - 16), cy - v.y - hh / 2));
+    let py = Math.max(16, Math.min(Math.max(16, v.h - hh - 16), cy - v.y - hh / 2));
+    // 글 페이지: 이미 쓴 글·놓인 것 아래로 (가리지 않게, 페이지는 알아서 길어진다)
+    if (v.info.kind === 'text' && v.editorHost) {
+      const doc = v.editorHost.querySelector('.board-doc') as HTMLElement | null;
+      const last = doc?.lastElementChild as HTMLElement | null;
+      let bottom = last && (doc!.textContent || '').trim() ? v.editorHost.offsetTop + doc!.offsetTop + last.offsetTop + last.offsetHeight + 24 : 0;
+      for (const o of this.store.objList(page)) if (o.x < px + w && o.x + o.w > px) bottom = Math.max(bottom, o.y + o.h + 24);
+      if (py < bottom) py = bottom;
+    }
     return [Math.round(px), Math.round(py)];
   }
 
@@ -1588,12 +1606,14 @@ export class BoardScreen {
       this.memPanel.remove();
       this.memPanel = null;
       this.memBtn.classList.remove('on');
+      this.vp.set({});
       return;
     }
     this.memPanel = h('aside', { class: 'mem-panel', 'aria-label': '이 학생' });
     this.root.append(this.memPanel);
     this.memBtn.classList.add('on');
     this.renderMemPanel();
+    this.vp.set({});
   }
 
   // KWD 폴더의 학생 자료 (선생님 기기에서만 읽는다)

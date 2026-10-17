@@ -621,6 +621,7 @@ test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
     expect(r.boxes).toHaveLength(1);
     expect(r.boxes[0].text).toBe('여기 상자 글');
     expect(r.boxesAfterEmpty).toBe(1);
+    expect(r.htmlBelowText).toBe(true);
     expect(r.htmlMove).toEqual([-60, 40]);
     expect(r.htmlSize[0]).toBeLessThan(-60);
     expect(r.quiz).toBe('정답!');
@@ -638,7 +639,7 @@ test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
     expect(r.rows[1]).toContain('시작');
     expect(r.url).toMatch(/^\/b\/s1234567d\d{6}\?r=t$/);
     expect(r.chip).toBe('Mina K');
-    expect(r.tabs).toEqual(['오늘', '수업안', '자료', '학생', '지난 수업', '단어']);
+    expect(r.tabs).toEqual(['오늘', '수업안·자료', '학생 정보', '지난 수업', '단어']);
     expect(r.today).toContain('주말에 부산에 갔어요');
     expect(r.boardText).toContain('송편 : rice cake');
     expect(r.plan).toContain('맛 형용사');

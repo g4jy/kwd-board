@@ -182,7 +182,9 @@ export class PageObjects {
 
   focusBox(id: string) {
     const ed = this.editors.get(id);
-    if (ed) window.setTimeout(() => ed.commands.focus('end'), 20);
+    if (!ed) return;
+    ed.commands.focus('end');
+    window.setTimeout(() => !ed.isFocused && ed.commands.focus('end'), 20);
   }
 
   // 끌어서 옮기기 (손잡이 또는 사진 자체)

@@ -96,6 +96,9 @@ const html = fs.readFileSync('tests/fixtures/quiz.html', 'utf8').replace('<body>
 await K(([h]) => window.__kwd.placeHtml(h, '퀴즈'), [html]);
 await p.waitForTimeout(500);
 const o1 = await K((id) => window.__kwd.objs(id).find((o) => o.type === 'html'), page0);
+res.htmlBelowText = o1.y > 100; // 쓴 글 아래에 놓인다
+await K((o) => window.__kwd.vp.set({ y: 120 - o.y * window.__kwd.vp.view.s }), o1);
+await p.waitForTimeout(100);
 const bar = await (await p.$('.obj-html .obj-bar')).boundingBox();
 await p.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2);
 await p.mouse.down();

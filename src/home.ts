@@ -41,7 +41,7 @@ export class HomeScreen {
       });
       card.append(h('p', { class: 'home-lead' }, `오늘 수업과 학생 자료를 보려면 한 번 눌러 주세요 (${fs.name}).`), b);
       main.append(card);
-      this.renderManual(main);
+      this.renderManual(main, true);
     } else {
       if (canUseFolder()) {
         const card = h('div', { class: 'home-card' });
@@ -53,10 +53,10 @@ export class HomeScreen {
             void this.render();
           } else if (r.message) toast(r.message, 5000);
         });
-        card.append(h('p', { class: 'home-lead' }, '한 번만 연결하면 오늘 수업 시간표와 학생별 브리핑·수업안·로드맵·지난 수업이 저절로 붙어요.'), b, h('p', { class: 'home-note' }, 'C:\\KWD\\work 또는 구글 드라이브의 00_KWD_거울\\work 폴더를 고르세요. 파일은 이 브라우저 안에서만 읽어요.'));
+        card.append(h('p', { class: 'home-lead' }, '한 번만 연결하면 오늘 수업 시간표와 학생별 브리핑·수업안·로드맵·지난 수업이 저절로 붙어요.'), b, h('p', { class: 'home-note' }, 'KWD 안의 work 폴더를 고르세요 (C:\\KWD\\work 또는 구글 드라이브 00_KWD_거울). 파일은 이 브라우저 안에서만 읽어요.'));
         main.append(card);
       }
-      this.renderManual(main);
+      this.renderManual(main, canUseFolder());
     }
     this.renderBoards(main);
     this.renderFoot(fs.state !== 'none' ? fs.name : '');
@@ -70,7 +70,7 @@ export class HomeScreen {
     // 오늘 수업
     const sec = h('section', { class: 'home-sec' });
     const lessons = brief?.lessons || [];
-    sec.append(h('h2', {}, lessons.length ? `오늘 수업 ${lessons.length}` : '오늘 수업'));
+    sec.append(h('h2', {}, lessons.length ? `오늘 수업 ${lessons.length}개` : '오늘 수업'));
     if (!lessons.length) sec.append(h('p', { class: 'empty' }, brief ? '오늘 브리핑에 수업이 없어요.' : '오늘 아침 브리핑(brief_data.json)이 아직 없어요. 아래 목록에서 학생을 고르세요.'));
     const now = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`;
     let nextMarked = false;
@@ -92,7 +92,7 @@ export class HomeScreen {
       const q = search.value.trim().toLowerCase();
       const rows = students.filter((s) => !q || s.folder.toLowerCase().includes(q)).slice(0, q ? 60 : 12);
       for (const s of rows) {
-        const r = h('button', { type: 'button', class: 'student-row' }, h('span', { class: 'sr-name' }, s.name), h('span', { class: 'sr-meta' }, [s.trial ? '체험' : '', s.lessons ? `#${s.lessons}` : '', s.lastDate ? s.lastDate.slice(5).replace('-', '/') : ''].filter(Boolean).join(' · ')));
+        const r = h('button', { type: 'button', class: 'student-row' }, h('span', { class: 'sr-name' }, s.name), h('span', { class: 'sr-meta' }, [s.trial ? '체험' : '', s.lessons ? `지난 #${s.lessons}` : '', s.lastDate ? s.lastDate.slice(5).replace('-', '/') : ''].filter(Boolean).join(' · ') + ' ›'));
         r.addEventListener('click', () => this.openStudent(s.folder, s.id));
         list.append(r);
       }
@@ -116,18 +116,18 @@ export class HomeScreen {
 
   private lessonRow(l: BriefLesson, s: StudentEntry | undefined, done: boolean, isNext: boolean): HTMLElement {
     const trial = s?.trial || (!l.last_lesson && /pending/.test(l.folder));
-    const meta = [l.next_lesson ? `#${l.next_lesson}` : '', l.level_hint ? l.level_hint.replace(/\s*\(.*\)/, '') : '', trial ? '체험' : ''].filter(Boolean).join(' · ');
-    const goal = (l.prep?.summary || [])[0]?.replace(/^오늘 목표:\s*/, '').replace(/`/g, '') || l.next_focus || '';
+    const meta = [l.next_lesson ? `오늘 #${l.next_lesson}` : '', l.level_hint ? l.level_hint.replace(/\s*\(.*\)/, '') : '', trial ? '체험' : ''].filter(Boolean).join(' · ');
+    const goal = (l.prep?.summary || [])[0]?.replace(/^오늘 목표:\s*/, '').replace(/`|\*\*/g, '') || l.next_focus || '';
     const r = h('button', { type: 'button', class: 'lesson-row' + (done ? ' done' : '') + (isNext ? ' next' : '') }, h('span', { class: 'lr-time' }, l.time), h('span', { class: 'lr-body' }, h('span', { class: 'lr-name' }, l.name), h('span', { class: 'lr-meta' }, meta), goal ? h('span', { class: 'lr-goal' }, goal) : ''), h('span', { class: 'lr-go' }, isNext ? '시작' : '열기'));
     r.addEventListener('click', () => this.openStudent(l.folder, s?.id || (/\(([^)]+)\)/.exec(l.folder) || [])[1] || ''));
     return r;
   }
 
   // 폴더 없이: 학생 번호로 새 판
-  private renderManual(main: HTMLElement) {
-    const form = h('form', { class: 'new-board' });
+  private renderManual(main: HTMLElement, secondary = false) {
+    const form = h('form', { class: 'new-board' + (secondary ? ' secondary' : '') });
     const input = h('input', { type: 'text', inputmode: 'numeric', placeholder: '학생 번호', 'aria-label': '학생 번호', autocomplete: 'off' }) as HTMLInputElement;
-    const btn = h('button', { type: 'submit', class: 'primary' }, '새 수업');
+    const btn = h('button', { type: 'submit', class: secondary ? '' : 'primary' }, '새 수업');
     form.append(input, btn);
     form.addEventListener('submit', (e) => {
       e.preventDefault();

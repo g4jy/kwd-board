@@ -1,4 +1,5 @@
 import './styles.css';
+import { clearToast } from './ui';
 import { HomeScreen } from './home';
 import { BoardScreen } from './board';
 import type { Role } from './store';
@@ -22,6 +23,7 @@ function parseRoute(): { kind: 'home' } | { kind: 'board'; id: string; role: Rol
 function route() {
   const app = document.getElementById('app')!;
   current?.destroy();
+  clearToast();
   current = null;
   const r = parseRoute();
   document.body.className = r.kind === 'board' ? `in-board role-${r.role}` : 'in-home';

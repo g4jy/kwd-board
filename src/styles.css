@@ -2320,3 +2320,16 @@ button.primary.big {
   width: 100%;
   box-sizing: border-box;
 }
+.obj-size {
+  width: 22px;
+  height: 22px;
+  right: -11px;
+  bottom: -11px;
+}
+.new-board.secondary button {
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: inherit;
+  border-radius: 10px;
+  padding: 0 16px;
+}

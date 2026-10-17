@@ -134,7 +134,7 @@ export function headerLines(m: StudentMemory): { title: string; lines: string[] 
   const lines: string[] = [];
   const focus = m.next?.focus?.filter(Boolean) || [];
   const review = m.next?.review?.length ? m.next.review : m.vocab.filter((v) => v.status === 'review').map((v) => v.kr);
-  const hw = m.next?.homework?.length ? m.next.homework : m.homework.filter((h) => h.status !== 'done').map((h) => h.text);
+  const hw = m.next && Array.isArray(m.next.homework) ? m.next.homework : m.homework.filter((h) => h.status !== 'done').map((h) => h.text);
   if (focus.length) lines.push('오늘: ' + focus.join(' · '));
   if (review.length) lines.push('복습: ' + review.slice(0, 10).join(', '));
   if (hw.length) lines.push('과제 확인: ' + hw.slice(0, 3).join(' / '));

@@ -75,6 +75,10 @@ export function downloadBlob(name: string, blob: Blob) {
   window.setTimeout(() => URL.revokeObjectURL(url), 4000);
 }
 
+export function clearToast() {
+  toastEl?.classList.remove('show');
+}
+
 export function toast(msg: string, ms = 1800) {
   if (!toastEl) {
     toastEl = h('div', { class: 'toast' });

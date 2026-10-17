@@ -14,7 +14,7 @@ export interface PanelActions {
   close(): void;
 }
 
-export type PanelTab = 'today' | 'plan' | 'mats' | 'student' | 'lessons' | 'vocab';
+export type PanelTab = 'today' | 'plan' | 'student' | 'lessons' | 'vocab';
 
 function mdToEl(text: string, cls = 'mp-md'): HTMLElement {
   const el = h('div', { class: cls });
@@ -38,13 +38,12 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
 
   const has: Record<PanelTab, boolean> = {
     today: !!(b || pack.trialPrep || pack.lessons.length),
-    plan: !!(pack.plan || pack.trialPrep),
-    mats: pack.files.length > 0,
+    plan: !!(pack.plan || pack.trialPrep || pack.files.length),
     student: !!(pack.profile || pack.roadmap || pack.status),
     lessons: pack.lessons.length > 0,
     vocab: !!mem?.vocab.length,
   };
-  const labels: Record<PanelTab, string> = { today: '오늘', plan: '수업안', mats: '자료', student: '학생', lessons: '지난 수업', vocab: '단어' };
+  const labels: Record<PanelTab, string> = { today: '오늘', plan: '수업안·자료', student: '학생 정보', lessons: '지난 수업', vocab: '단어' };
   if (!has[tab]) tab = (Object.keys(has) as PanelTab[]).find((k) => has[k]) || 'today';
   const tabs = h('div', { class: 'mp-tabs' });
   for (const id of Object.keys(labels) as PanelTab[]) {
@@ -73,7 +72,7 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
   if (tab === 'today') {
     if (b) {
       const goals = (b.prep?.summary || []).filter(Boolean);
-      if (goals.length) body.append(section('50분 흐름', ...goals.map((g) => h('p', { class: 'mp-p' }, g.replace(/`/g, '')))));
+      if (goals.length) body.append(section('오늘 수업', ...goals.map((g) => h('p', { class: 'mp-p' }, g.replace(/`|\*\*/g, '')))));
       const words = b.warmup_recent || [];
       if (words.length) {
         const chips = h('div', { class: 'mp-chips' });
@@ -83,25 +82,25 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
           c.addEventListener('click', () => act.insertLine(`${w.kr}${w.en ? ' : ' + w.en : ''}`));
           chips.append(c);
         }
-        const all = insBtn('복습: ' + words.map((w) => w.kr).join(', '), '한 줄로 넣기');
+        const all = insBtn('복습: ' + words.map((w) => w.kr).join(', '), '모두 한 줄로 판에 넣기');
         body.append(section('복습 단어', chips, all));
       }
       const ask = (b.rapport || []).filter((r) => !r.sensitive).slice(0, 4);
       if (ask.length) body.append(section('물어볼 것 (지난 이야기)', ...ask.map((r) => row(r.text, [r.date ? r.date.slice(5).replace('-', '/') : '', r.lesson ? `#${r.lesson}` : '', r.follow_up || ''].filter(Boolean).join(' · ')))));
       const pr = b.promises;
       const promiseRows: HTMLElement[] = [];
-      for (const t of pr?.tutor || []) promiseRows.push(row('선생님: ' + t.text, t.status === 'open' ? '열림' : t.status || ''));
+      for (const t of pr?.tutor || []) promiseRows.push(row('선생님: ' + t.text, t.status === 'open' ? '아직 안 함' : t.status === 'done' ? '했음' : t.status || ''));
       for (const hw of pr?.homework || []) {
         const txt = typeof hw === 'string' ? hw : hw.text || '';
         if (txt) promiseRows.push(row('숙제: ' + txt, '', '숙제 확인: ' + txt));
       }
-      if (pr?.submissions) promiseRows.push(h('p', { class: 'mp-p muted' }, [pr.homework_status, pr.submissions, pr.assignment_link].filter(Boolean).join(' · ')));
+      if (pr?.submissions) promiseRows.push(row('숙제 제출', [pr.homework_status, pr.submissions, pr.assignment_link].filter(Boolean).join(' · ')));
       if (promiseRows.length) body.append(section('약속·숙제', ...promiseRows));
       const core = b.last_core;
       if (core) {
         const kids: Node[] = [];
         if (core.taught?.length) kids.push(row('배운 말', core.taught.join(', '), '지난 시간: ' + core.taught.slice(0, 8).join(', ')));
-        if (core.patterns?.length) kids.push(row('문형', core.patterns.join(' · ')));
+        if (core.patterns?.length) kids.push(row('문형', core.patterns.join(' · '), '문형: ' + core.patterns.join(' · ')));
         for (const c of core.corrections || []) kids.push(row('교정', c, c));
         if (core.overview) kids.push(h('p', { class: 'mp-p muted' }, core.overview.slice(0, 280) + (core.overview.length > 280 ? '…' : '')));
         if (kids.length) body.append(section(`지난 수업 #${b.last_lesson ?? ''} 핵심`, ...kids));
@@ -116,37 +115,37 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
       const ml = mem?.lessons[0];
       if (ml?.summary) body.append(section('지난 수업', h('p', { class: 'mp-p' }, ml.summary)));
       const rev = mem?.vocab.filter((v) => v.status === 'review').slice(0, 10) || [];
-      if (rev.length) body.append(section('복습할 단어', h('p', { class: 'mp-p' }, rev.map((v) => v.kr).join(', ')), insBtn('복습: ' + rev.map((v) => v.kr).join(', '), '한 줄로 넣기')));
+      if (rev.length) body.append(section('복습할 단어', h('p', { class: 'mp-p' }, rev.map((v) => v.kr).join(', ')), insBtn('복습: ' + rev.map((v) => v.kr).join(', '), '모두 한 줄로 판에 넣기')));
     }
   } else if (tab === 'plan') {
+    if (pack.files.length) {
+      const KIND: Record<string, string> = { html: '웹 학습지', pdf: 'PDF', img: '사진', md: '문서' };
+      const mats = h('div', {});
+      for (const f of pack.files) {
+        const r = h('div', { class: 'mp-row' }, h('div', { class: 'mp-main' }, f.name.replace(/\.[^.]+$/, '')), h('div', { class: 'mp-rsub' }, `${KIND[f.kind]} · ${Math.max(1, Math.round(f.size / 1024))}KB`));
+        const put = h('button', { type: 'button', class: 'mp-ins' }, '판에 넣기');
+        put.addEventListener('click', async () => {
+          put.setAttribute('disabled', '');
+          put.textContent = '넣는 중…';
+          try {
+            await act.placeFile(f);
+            put.textContent = '넣었어요';
+          } catch {
+            put.textContent = '못 넣었어요';
+          }
+          window.setTimeout(() => {
+            put.removeAttribute('disabled');
+            put.textContent = '판에 넣기';
+          }, 1500);
+        });
+        r.append(put);
+        mats.append(r);
+      }
+      body.append(section('자료', mats));
+    }
     const doc = pack.plan || (pack.trialPrep ? { name: pack.trialPrep.name, text: pack.trialPrep.text } : null);
-    if (doc) {
-      body.append(h('p', { class: 'mp-p muted' }, doc.name));
-      body.append(mdToEl(doc.text));
-      if (pack.homework) body.append(section('과제 초안', mdToEl(pack.homework.text)));
-    }
-  } else if (tab === 'mats') {
-    const KIND: Record<string, string> = { html: '웹 학습지', pdf: 'PDF', img: '사진', md: '문서' };
-    for (const f of pack.files) {
-      const r = h('div', { class: 'mp-row' }, h('div', { class: 'mp-main' }, f.name), h('div', { class: 'mp-rsub' }, `${KIND[f.kind]} · ${Math.max(1, Math.round(f.size / 1024))}KB${f.path.length > 1 ? ' · ' + f.path[0] : ''}`));
-      const put = h('button', { type: 'button', class: 'mp-ins' }, '판에 넣기');
-      put.addEventListener('click', async () => {
-        put.setAttribute('disabled', '');
-        put.textContent = '넣는 중…';
-        try {
-          await act.placeFile(f);
-          put.textContent = '넣었어요';
-        } catch {
-          put.textContent = '못 넣었어요';
-        }
-        window.setTimeout(() => {
-          put.removeAttribute('disabled');
-          put.textContent = '판에 넣기';
-        }, 1500);
-      });
-      r.append(put);
-      body.append(r);
-    }
+    if (doc) body.append(section(pack.plan ? `수업안 #${pack.plan.n}` : '체험 수업 준비', mdToEl(doc.text)));
+    if (pack.homework) body.append(details('과제 초안', mdToEl(pack.homework.text), false));
   } else if (tab === 'student') {
     if (pack.profile) body.append(details('학생 정보', mdToEl(pack.profile), true));
     if (pack.roadmap) body.append(details('로드맵', mdToEl(pack.roadmap), !pack.profile));

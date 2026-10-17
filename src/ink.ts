@@ -38,7 +38,7 @@ function kindOptions(k: PenKind | undefined, size: number) {
     case 'ball':
       return { size: size * 1.05, thinning: 0.12, smoothing: 0.55, streamline: 0.5, taper: 0, simulate: false, alpha: 1 };
     case 'brush':
-      return { size: size * 1.9, thinning: 0.88, smoothing: 0.6, streamline: 0.4, taper: Math.min(40, size * 6), simulate: true, alpha: 1 };
+      return { size: size * 2.8, thinning: 0.68, smoothing: 0.62, streamline: 0.42, taper: Math.min(36, size * 5), simulate: true, alpha: 1 };
     case 'pencil':
       return { size: size * 0.9, thinning: 0.35, smoothing: 0.35, streamline: 0.3, taper: Math.min(6, size * 1.5), simulate: true, alpha: 0.78 };
     default:

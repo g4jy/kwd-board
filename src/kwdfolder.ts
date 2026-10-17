@@ -470,7 +470,7 @@ export async function buildMemory(pack: StudentPack): Promise<StudentMemory> {
     errors: elist,
     homework: homework.slice(-5),
     lessons: lessons.slice(-12).reverse(),
-    next: { review: pack.brief?.warmup_recent?.length ? pack.brief.warmup_recent.map((w) => w.kr).slice(0, 10) : vlist.filter((v) => v.status === 'review').map((v) => v.kr).slice(0, 10), homework: homework.slice(-2).map((x) => x.text) },
+    next: { review: pack.brief?.warmup_recent?.length ? pack.brief.warmup_recent.map((w) => w.kr).slice(0, 10) : vlist.filter((v) => v.status === 'review').map((v) => v.kr).slice(0, 10), homework: [] }, // 판 머리말엔 복습 단어만 (과제는 패널에서)
   };
 }
 

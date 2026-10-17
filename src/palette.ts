@@ -56,7 +56,7 @@ export function savePrefs(role: string, p: PenPrefs) {
 
 // 펜 칸 버튼의 모양: 색 점 + 굵기
 export function penSlot(idx: number, p: PenPreset, hl = false): HTMLElement {
-  const b = h('button', { type: 'button', class: 'tb pen-slot' + (hl ? ' hl-slot' : ''), 'data-slot': String(idx), title: hl ? '형광펜 (H) · 한 번 더 누르면 설정' : `펜 ${idx + 1} (${idx + 1}) · 한 번 더 누르면 설정` });
+  const b = h('button', { type: 'button', class: 'tb pen-slot' + (hl ? ' hl-slot' : ''), 'data-slot': String(idx), title: hl ? '형광펜 (H) · 한 번 더 누르면 설정' : `펜 ${idx + 1} · ${PEN_KINDS.find((k) => k.id === (p.kind || 'fountain'))?.label} (${idx + 1}) · 한 번 더 누르면 설정` });
   renderSlot(b, p, hl);
   return b;
 }
@@ -74,7 +74,6 @@ export function renderSlot(b: HTMLElement, p: PenPreset, hl = false) {
     dot.style.width = dot.style.height = d + 'px';
     dot.style.background = p.color;
     b.append(dot);
-    if (p.kind && p.kind !== 'fountain') b.append(h('span', { class: 'slot-kind' }, PEN_KINDS.find((k) => k.id === p.kind)?.label.slice(0, 1) || ''));
   }
 }
 
@@ -117,7 +116,7 @@ export function buildPenPopover(opts: {
     c.strokeStyle = cur.color;
     c.globalAlpha = hl ? cur.opacity ?? 0.35 : cur.kind === 'pencil' ? 0.78 : 1;
     c.lineCap = 'round';
-    const base = cur.size * (hl ? 1 : cur.kind === 'brush' ? 1.9 : cur.kind === 'ball' ? 1.05 : cur.kind === 'pencil' ? 0.9 : 1.25);
+    const base = cur.size * (hl ? 1 : cur.kind === 'brush' ? 2.8 : cur.kind === 'ball' ? 1.05 : cur.kind === 'pencil' ? 0.9 : 1.25);
     // 붓·만년필은 가운데가 굵고 끝이 가늘게
     const tapered = !hl && (cur.kind === 'brush' || !cur.kind || cur.kind === 'fountain');
     const steps = 40;
@@ -202,7 +201,7 @@ export function buildPenPopover(opts: {
   plus.addEventListener('click', () => set({ size: Math.min(max, cur.size + 1) }));
   slider.addEventListener('input', () => set({ size: Number(slider.value) }));
   // 형광 진하기
-  const op = h('input', { type: 'range', min: '15', max: '75', step: '5', value: String(Math.round((cur.opacity ?? 0.35) * 100)), class: 'pp-slider', 'aria-label': '진하기' }) as HTMLInputElement;
+  const op = h('input', { type: 'range', min: '20', max: '80', step: '5', value: String(Math.round((cur.opacity ?? 0.35) * 100)), class: 'pp-slider', 'aria-label': '진하기' }) as HTMLInputElement;
   const opNum = h('span', { class: 'pp-num' }, Math.round((cur.opacity ?? 0.35) * 100) + '%');
   op.addEventListener('input', () => set({ opacity: Number(op.value) / 100 }));
   function set(p: Partial<PenPreset>, remember = true) {
