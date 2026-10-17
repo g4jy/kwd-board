@@ -1,0 +1,17 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 1366, height: 820 } });
+p.on('pageerror', (e) => console.log('ERR', e.message));
+await p.goto('http://localhost:4173/#/b/dbgu' + Date.now().toString(36) + '?r=t&st=1');
+await p.waitForSelector('.board-doc'); await p.waitForTimeout(400);
+await p.keyboard.type('첫 페이지');
+await p.click('.rail-add'); await p.keyboard.type('둘째 페이지');
+await p.waitForTimeout(500);
+console.log('undo stack', await p.evaluate(() => window.__kwd.undo.undoStack.length));
+await p.click('.toolbar [data-tool="more"]');
+await p.click('.menu button:has-text("이 페이지 지우기")');
+await p.click('.menu button.danger');
+console.log('pages', await p.evaluate(() => window.__kwd.pages().length), 'stack', await p.evaluate(() => window.__kwd.undo.undoStack.length));
+await p.click('.toolbar [data-tool="undo"]');
+console.log('after undo pages', await p.evaluate(() => window.__kwd.pages().length), 'stack', await p.evaluate(() => window.__kwd.undo.undoStack.length));
+await b.close();

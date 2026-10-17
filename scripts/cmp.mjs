@@ -1,0 +1,13 @@
+import { chromium } from 'playwright';
+import fs from 'node:fs';
+const b = await chromium.launch();
+const p = await b.newPage();
+const logs=[]; p.on('console', (m) => logs.push(m.type()+': '+m.text().slice(0,200)));
+await p.goto(process.argv[2] || 'http://localhost:4173/#/b/cmp'+Date.now()+'?r=t&st=1');
+await p.waitForFunction(() => window.__kwd);
+const t0=Date.now();
+await p.evaluate(async (b64) => window.__kwd.importPdfBytes(b64, 'slides.pdf'), fs.readFileSync('tests/fixtures/slides.pdf').toString('base64'));
+const md = await p.evaluate(() => { const m = window.__kwd.store.doc.getMap('matdata').toJSON(); const k = Object.keys(m)[0]; const v = m[k]; return { k, keys: Object.keys(v), text: JSON.stringify(v.text).slice(0, 200) }; });
+const bs = await p.evaluate(async () => { const z = await window.__kwd.bundle(); return Object.prototype.toString.call(z) + ' ' + (z?.size ?? z?.byteLength ?? Object.keys(z||{}).join(',')); });
+console.log(Date.now()-t0, JSON.stringify(md), bs, logs.slice(-5));
+await b.close();

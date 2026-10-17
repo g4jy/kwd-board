@@ -1,0 +1,68 @@
+// 루프용 화면 점검: 노트북·태블릿·폰에서 주요 상태 캡처 → /tmp/shots2
+import { chromium } from 'playwright';
+import fs from 'node:fs';
+const OUT = process.env.OUT || '/tmp/shots2';
+fs.mkdirSync(OUT, { recursive: true });
+const BASE = 'http://localhost:4173';
+const WS = encodeURIComponent('ws://localhost:1234');
+const b = await chromium.launch();
+const errs = [];
+async function teacher(vp, name) {
+  const ctx = await b.newContext({ viewport: vp, deviceScaleFactor: 1, hasTouch: vp.width < 1100 });
+  const t = await ctx.newPage();
+  t.on('pageerror', (e) => errs.push(name + ' ' + e.message));
+  const id = 'sh' + Date.now().toString(36) + Math.floor(Math.random() * 100);
+  await t.goto(`${BASE}/#/b/${id}?r=t&st=1000001&srv=${WS}&tk=testtoken`);
+  await t.waitForSelector('.board-doc'); await t.waitForTimeout(500);
+  await t.evaluate(() => window.__kwd.setMemory({ student: '1000001', profile: { level: '초중급', lessons: 34, interests: ['요리'] }, vocab: [{ kr: '송편', en: 'rice cake', status: 'review', first: '9/24', count: 1 }, { kr: '마셔요', en: 'drink', status: 'known', first: '6/2', count: 6 }, { kr: '모여요', en: 'gather', status: 'review' }], grammar: [{ pattern: '-기를 바랍니다', examples: ['가시기를 바랍니다'], count: 1, first: '9/24' }], errors: [{ type: '조사', pattern: '에게/께', wrong: '원장님에게', right: '원장님께', count: 2 }], homework: [{ text: '피자 이야기 녹음', status: 'open', given: '9/24' }], lessons: [{ id: 'L34', date: '9/24', summary: '추석' }], next: { focus: ['-기를 바랍니다'], review: ['송편', '모여요'], homework: ['피자 이야기 녹음'] } }));
+  await t.waitForTimeout(300);
+  await t.keyboard.type('# 추석 (Chuseok)'); await t.keyboard.press('Enter');
+  await t.keyboard.type('1. 추석에 가족이 모두 모여요.'); await t.keyboard.press('Enter');
+  await t.keyboard.type('송편을 만들어요.'); await t.keyboard.press('Enter'); await t.keyboard.press('Enter');
+  await t.keyboard.type('모이다 / 모이+어요 = 모여요'); await t.keyboard.press('Enter');
+  await t.keyboard.type('학부모님들은 ___고 말했어요');
+  await t.click('.pen-slot[data-slot="1"]');
+  const r = await t.evaluate(() => { const w = '모여요'; const walker = document.createTreeWalker(document.querySelector('.pages'), NodeFilter.SHOW_TEXT); let n; while ((n = walker.nextNode())) { const i = n.data.indexOf(w); if (i >= 0) { const rg = document.createRange(); rg.setStart(n, i); rg.setEnd(n, i + 3); const b = rg.getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height }; } } });
+  await t.mouse.move(r.x - 2, r.y + r.h + 3); await t.mouse.down();
+  for (let i = 1; i <= 8; i++) await t.mouse.move(r.x - 2 + (r.w + 4) * i / 8, r.y + r.h + 3);
+  await t.mouse.up();
+  await t.screenshot({ path: `${OUT}/${name}-1-writing.png` });
+  await t.click('.pen-slot[data-slot="1"]'); await t.waitForTimeout(150);
+  await t.screenshot({ path: `${OUT}/${name}-2-pen-pop.png` });
+  await t.keyboard.press('Escape'); await t.keyboard.press('Escape');
+  await t.click('.toolbar [data-tool="import"]'); await t.waitForTimeout(150);
+  await t.screenshot({ path: `${OUT}/${name}-3-import-menu.png` });
+  await t.keyboard.press('Escape');
+  const pdf = fs.readFileSync('tests/fixtures/slides.pdf').toString('base64');
+  await t.evaluate(async (b64) => { const ids = await window.__kwd.importPdfBytes(b64, '추석 슬라이드'); window.__kwd.goto(ids[0]); }, pdf);
+  await t.waitForTimeout(400);
+  await t.screenshot({ path: `${OUT}/${name}-4-slides-scroll.png` });
+  await t.click('.mem-btn'); await t.waitForTimeout(200);
+  await t.screenshot({ path: `${OUT}/${name}-5-memory.png` });
+  await t.click('.mem-btn');
+  await t.click('.toolbar [data-tool="more"]'); await t.waitForTimeout(150);
+  await t.screenshot({ path: `${OUT}/${name}-6-menu.png` });
+  await t.keyboard.press('Escape');
+  await t.evaluate(() => window.__kwd.store.setSetting('viewMode', 'single')); await t.waitForTimeout(400);
+  await t.screenshot({ path: `${OUT}/${name}-7-single.png` });
+  return { t, id, ctx };
+}
+const lap = await teacher({ width: 1366, height: 768 }, 'laptop');
+await teacher({ width: 1024, height: 768 }, 'tablet');
+// 학생 폰 (스크롤 모드로 되돌린 뒤)
+await lap.t.evaluate(() => window.__kwd.store.setSetting('viewMode', 'scroll'));
+await lap.t.evaluate(() => window.__kwd.goto(window.__kwd.pages()[0].id));
+const sctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+const s = await sctx.newPage();
+s.on('pageerror', (e) => errs.push('phone ' + e.message));
+await s.goto(`${BASE}/#/b/${lap.id}?r=s&srv=${WS}`); await s.waitForSelector('.board-doc'); await s.waitForTimeout(1500);
+await s.screenshot({ path: `${OUT}/phone-1-student.png` });
+await lap.t.evaluate(() => window.__kwd.store.setSetting('studentWrite', true)); await s.waitForTimeout(600);
+await s.screenshot({ path: `${OUT}/phone-2-student-write.png` });
+await lap.t.evaluate(() => { window.__kwd.store.setSetting('viewMode', 'single'); window.__kwd.goto(window.__kwd.pages()[1].id); }); await s.waitForTimeout(1200);
+await s.screenshot({ path: `${OUT}/phone-3-student-single.png` });
+// 홈
+const h = await lap.ctx.newPage(); await h.goto(`${BASE}/#/`); await h.waitForTimeout(300);
+await h.screenshot({ path: `${OUT}/home.png` });
+console.log('errors', JSON.stringify(errs));
+await b.close();

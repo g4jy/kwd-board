@@ -1,0 +1,12 @@
+name = "kwd-board-sync"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "Room"
+
+# Free 요금제는 SQLite 백엔드 Durable Object 만 쓸 수 있다
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]

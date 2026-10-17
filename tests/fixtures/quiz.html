@@ -1,0 +1,5 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><style>body{font-family:sans-serif;padding:40px;font-size:28px}button{font-size:26px;padding:12px 22px;margin:8px;border-radius:12px;border:2px solid #333;background:#fff}#r{margin-top:20px;font-weight:bold}</style></head><body>
+<h2>알맞은 것을 고르세요</h2><p>원장님___ 말씀드렸어요.</p>
+<button data-kwd="choice" onclick="pick(this,false)">에게</button><button data-kwd="choice" onclick="pick(this,true)">께</button><button data-kwd="choice" onclick="pick(this,false)">한테</button>
+<div id="r"></div>
+<script>function pick(el,ok){document.getElementById('r').textContent=ok?'정답!':'다시 해 봐요';if(window.kwd)window.kwd.event('answer',el.textContent,ok?1:0)}</script></body></html>

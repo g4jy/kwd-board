@@ -1,0 +1,9 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+.wrangler/
+server/cloudflare/node_modules/
+server/cloudflare/.wrangler/
+dist-artifact/
+server/cloudflare/.dev.vars

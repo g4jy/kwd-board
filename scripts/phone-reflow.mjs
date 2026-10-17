@@ -1,0 +1,12 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const ca = await b.newContext({ viewport: { width: 1366, height: 768 } });
+const t = await ca.newPage();
+const id = 'rf' + Date.now().toString(36); const WS = encodeURIComponent('ws://localhost:1234');
+await t.goto(`http://localhost:4173/#/b/${id}?r=t&st=5&srv=${WS}`); await t.waitForSelector('.board-doc'); await t.waitForTimeout(400);
+await t.keyboard.type('# 추석'); await t.keyboard.press('Enter'); await t.keyboard.type('추석에 가족이 모두 모여요. 송편을 만들어요. 성묘해요.');
+const s = await (await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 })).newPage();
+await s.goto(`http://localhost:4173/#/b/${id}?r=s&srv=${WS}`); await s.waitForSelector('.board-doc'); await s.waitForTimeout(1200);
+await s.click('.reflow-btn'); await s.waitForTimeout(400);
+await s.screenshot({ path: '/tmp/shots3/phone-4-reflow.png' });
+await b.close();

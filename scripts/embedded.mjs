@@ -1,0 +1,25 @@
+// 루프 6: 한 파일 판을 iframe(다른 출처) 안에서 열어 PDF 가져오기·기록 저장·필기 확인
+import { chromium } from 'playwright';
+import fs from 'node:fs';
+import http from 'node:http';
+const html = fs.readFileSync('dist-artifact/kwd-board.html');
+const s = http.createServer((q, r) => { if (q.url.startsWith('/a')) { r.setHeader('content-type','text/html; charset=utf-8'); r.end(html); } else { r.setHeader('content-type','text/html'); r.end('<iframe id=f src="http://127.0.0.1:4199/a" style="width:1300px;height:880px;border:0"></iframe>'); } }).listen(4199);
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 1320, height: 900 } });
+const errs = []; p.on('pageerror', (e) => errs.push(String(e))); p.on('console', (m) => m.type() === 'error' && errs.push(m.text()));
+await p.goto('http://localhost:4199/');
+const f = p.frames().find((x) => x.url().includes('/a')) || (await (await p.$('#f')).contentFrame());
+await f.waitForSelector('.home');
+await f.fill('.new-board input', '777'); await f.click('.new-board button');
+await f.waitForFunction(() => window.__kwd);
+const t0 = Date.now();
+await f.evaluate(async (b64) => window.__kwd.importPdfBytes(b64, 'slides.pdf'), fs.readFileSync('tests/fixtures/slides.pdf').toString('base64'));
+const n = await f.evaluate(() => window.__kwd.pages().length);
+const txt = await f.evaluate(() => JSON.stringify(window.__kwd.store.doc.getMap('matdata').toJSON()).includes('송편'));
+await f.click('.tb-pens > * >> nth=0');
+const box = await (await f.$('.page')).boundingBox();
+await p.mouse.move(box.x + 100, box.y + 100); await p.mouse.down(); await p.mouse.move(box.x + 300, box.y + 110, { steps: 8 }); await p.mouse.up();
+const bundle = await f.evaluate(async () => { const z = await window.__kwd.bundle(); return z.blob.size; }); const ink = await f.evaluate(() => window.__kwd.store.doc.getArray('ink:' + window.__kwd.pages()[0].id).length);
+await p.screenshot({ path: 'test-results/embedded.png' });
+console.log(JSON.stringify({ importMs: Date.now() - t0, pages: n, hasText: txt, bundleBytes: bundle, ink, errs }));
+await b.close(); s.close();
