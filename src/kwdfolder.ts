@@ -340,7 +340,8 @@ export function nextDemoRun() {
 }
 export function boardIdFor(folder: string, d = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0');
-  if (isDemo()) return `demo${demoRun()}${studentKey(folder)}`;
+  // 체험 판은 판 모양이 바뀔 때마다 새로 (예전 모양으로 깔린 체험 판을 다시 쓰지 않게)
+  if (isDemo()) return `demo6r${demoRun()}${studentKey(folder)}`;
   return `${studentKey(folder)}d${String(d.getFullYear()).slice(2)}${p(d.getMonth() + 1)}${p(d.getDate())}`;
 }
 

@@ -59,7 +59,7 @@ export class DemoScreen {
     const foot = h('div', { class: 'demo-foot' });
     const reset = h('button', { type: 'button', class: 'linkish' }, '체험 판 처음부터 다시');
     reset.addEventListener('click', () => {
-      const old = `demo${demoRun()}`;
+      const old = `demo6r${demoRun()}`;
       saveIndex(loadIndex().filter((b) => !b.id.startsWith(old)));
       try {
         indexedDB.deleteDatabase('kwd-board-' + boardIdFor(DEMO_FOLDER));
@@ -97,7 +97,7 @@ export class DemoScreen {
     const add = (devKey: string, url: string, role: string, big: boolean) => {
       const dev = DEVICES[devKey];
       const wrap = h('div', { class: 'dev-wrap' + (big ? ' big' : ' small') + ' dev-' + devKey });
-      const frame = h('iframe', { class: 'dev-frame', title: dev.label, src: './' + url, width: String(dev.w), height: String(dev.h), allow: 'autoplay; clipboard-write; microphone; camera; fullscreen' }) as HTMLIFrameElement;
+      const frame = h('iframe', { class: 'dev-frame', title: dev.label, src: './' + url, width: String(dev.w), height: String(dev.h), allow: 'autoplay; clipboard-write; fullscreen' }) as HTMLIFrameElement;
       const box = h('div', { class: 'dev-box' }, frame);
       wrap.append(h('div', { class: 'dev-label' }, dev.label + (role ? ' · ' + role : '')), box);
       stage.append(wrap);
