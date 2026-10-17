@@ -211,8 +211,19 @@ export class BoardStore {
   private bc: BroadcastChannel | null = null;
   private startLocalChannel() {
     if (typeof BroadcastChannel === 'undefined') return;
-    const bc = new BroadcastChannel('kwd-board-' + this.id);
-    this.bc = bc;
+    const raw = new BroadcastChannel('kwd-board-' + this.id);
+    this.bc = raw;
+    // 닫힌 뒤(판을 나갈 때 등)에 오는 변경은 조용히 버린다
+    const bc = {
+      postMessage: (m: unknown) => {
+        if (this.bc !== raw) return;
+        try {
+          raw.postMessage(m);
+        } catch {
+          /* closed */
+        }
+      },
+    };
     this.doc.on('update', (u: Uint8Array, origin: unknown) => {
       if (origin !== 'bc') bc.postMessage({ t: 'u', u });
     });
@@ -220,7 +231,7 @@ export class BoardStore {
       if (origin === 'bc') return;
       bc.postMessage({ t: 'a', a: encodeAwarenessUpdate(this.awareness, added.concat(updated, removed)) });
     });
-    bc.onmessage = (e: MessageEvent) => {
+    raw.onmessage = (e: MessageEvent) => {
       const m = e.data as { t: string; u?: Uint8Array; a?: Uint8Array; sv?: Uint8Array };
       if (m.t === 'u' && m.u) Y.applyUpdate(this.doc, m.u, 'bc');
       else if (m.t === 'a' && m.a) applyAwarenessUpdate(this.awareness, m.a, 'bc');
@@ -521,6 +532,7 @@ export class BoardStore {
     this.provider?.destroy();
     removeAwarenessStates(this.awareness, [this.doc.clientID], 'leave');
     this.bc?.close();
+    this.bc = null;
     this.persistence?.destroy();
     this.awareness.destroy();
     this.doc.destroy();

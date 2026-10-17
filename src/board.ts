@@ -13,7 +13,7 @@ import { buildBundle, bundleName, boardMarkdown, canPickFolder, pickFolder, fold
 import { importPdf, importHtml, htmlWithBridge, joinText } from './importer';
 import { loadPrefs, savePrefs, penSlot, renderSlot, buildPenPopover, type PenPrefs } from './palette';
 import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY, type StudentMemory } from './memory';
-import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, type StudentPack, type PackFile } from './kwdfolder';
+import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, type StudentPack, type PackFile } from './kwdfolder';
 import { renderStudentPanel, type PanelTab } from './studentpanel';
 import { hwConfig, setHwConfig, homeworkFor, hwMedia } from './homework';
 import { h, download, downloadBlob, fmtDate, fmtClock, toast, EMBEDDED } from './ui';
@@ -608,8 +608,15 @@ export class BoardScreen {
     const prev = h('button', { type: 'button', class: 'sn', title: '이전 (←)' }, '‹');
     const label = h('span', { class: 'sn-label' });
     const next = h('button', { type: 'button', class: 'sn', title: '다음 (→)' }, '›');
-    prev.addEventListener('click', () => this.step(-1));
-    next.addEventListener('click', () => this.step(1));
+    // 학생이 직접 넘기면 '자유' (따라가기 버튼으로 다시 선생님 쪽)
+    prev.addEventListener('click', () => {
+      this.userMovedView();
+      this.step(-1);
+    });
+    next.addEventListener('click', () => {
+      this.userMovedView();
+      this.step(1);
+    });
     box.append(prev, label, next);
     if (this.role === 'teacher') {
       const exit = h('button', { type: 'button', class: 'sn-exit', title: '스크롤로 보기' }, '전체 보기');
@@ -1867,6 +1874,7 @@ export class BoardScreen {
     this.memBtn.textContent = '이 학생';
     this.memBtn.title = '';
     this.renderChip();
+    if (isDemo() && !this.store.meta.get('demoSeeded')) await this.seedDemo(pack);
     if (interactive && !this.memPanel) this.toggleMemPanel();
     else if (this.memPanel) this.renderMemPanel();
     const ric = (window as unknown as { requestIdleCallback?: (f: () => void) => void }).requestIdleCallback || ((f: () => void) => window.setTimeout(f, 300));
@@ -1920,6 +1928,112 @@ export class BoardScreen {
       const ids = await importPdf(this.store, await file.arrayBuffer(), base, this.order.indexOf(this.currentPage));
       this.syncPages();
       if (ids[0]) this.gotoPage(ids[0]);
+    }
+  }
+
+  // 체험: 수업에 쓸 수 있는 자료를 종류마다 한 페이지씩 깔아 둔다
+  private async seedDemo(pack: StudentPack) {
+    this.store.doc.transact(() => this.store.meta.set('demoSeeded', Date.now()), 'meta');
+    this.store.doc.transact(() => this.store.meta.set('headerAt', Date.now()), 'meta');
+    toast('체험 판을 꾸미는 중…', 30000);
+    const find = (re: RegExp) => pack.files.find((f) => re.test(f.name)) || pack.hwFiles.find((f) => re.test(f.name));
+    const file = async (re: RegExp) => {
+      const f = find(re);
+      return f ? readPackFile(this.packFolder, f.path) : null;
+    };
+    const last = () => (this.currentPage = this.order[this.order.length - 1]);
+    const T = (text: string) => ({ type: 'text', text });
+    const P = (...c: unknown[]) => ({ type: 'paragraph', content: c });
+    const H = (level: number, text: string) => ({ type: 'heading', attrs: { level }, content: [T(text)] });
+    const newPage = (title: string, note: string) => {
+      const p = this.store.addPage({ kind: 'text', w: TEXT_W, h: TEXT_H }, this.order.length);
+      this.syncPages();
+      this.currentPage = p.id;
+      this.editors.get(p.id)?.chain().insertContent([H(2, title), P(T(note))]).run();
+      return p.id;
+    };
+    try {
+      const first = this.order[0];
+      const ed = this.editors.get(first);
+      const blank = (answer: string) => ({ type: 'blank', attrs: { answer } });
+      const cell = (t: string, head = false) => ({ type: head ? 'tableHeader' : 'tableCell', content: [P(T(t))] });
+      ed?.chain()
+        .insertContentAt(0, [
+          H(1, '#12 추석에 뭐 했어요?'),
+          P(T('오늘 목표: 추석에 한 일 3문장 말하기 (-았/었어요) · 맛 형용사 4개')),
+          H(3, '빈칸 — 학생이 채워요'),
+          P(T('추석에 송편을 '), blank('만들었어요'), T('.')),
+          P(T('김치는 조금 '), blank('매워요'), T('.')),
+          H(3, '교정 — 지난 숙제에서'),
+          { type: 'correction', attrs: { original: '조금 비쌋지만 맛있었어요.' }, content: [T('조금 비쌌지만 맛있었어요.')] },
+          H(3, '맛 형용사'),
+          { type: 'table', content: [{ type: 'tableRow', content: [cell('말', true), cell('뜻', true), cell('예', true)] }, { type: 'tableRow', content: [cell('달아요'), cell('sweet'), cell('송편은 달아요.')] }, { type: 'tableRow', content: [cell('매워요'), cell('spicy'), cell('김치는 매워요.')] }] },
+          P(T('→ 오른쪽 숫자를 눌러 다음 페이지: 슬라이드 · 사진·유튜브 · 웹 학습지 · 읽기 PDF · 읽을거리 · 듣기 · 학생 과제')),
+        ])
+        .run();
+      this.currentPage = first;
+      // 슬라이드 PDF
+      const slides = find(/슬라이드\.pdf$/);
+      if (slides) {
+        last();
+        await this.placePackFile(slides);
+      }
+      // 사진 + 유튜브
+      const pg = newPage('사진 자료 · 유튜브', '사진은 끌어서 옮기고 모서리로 크기. 유튜브는 ⤢ 크게 를 누르면 학생 화면에도 크게 떠요.');
+      const photo = await file(/시장사진/);
+      if (photo) await this.insertImages([photo], pg);
+      this.addYoutube('https://www.youtube.com/watch?v=aqz-KE-bpKQ', pg);
+      const [bx, by] = this.spotOnPage(pg, 300, 60);
+      const bo = this.store.addObj(pg, { type: 'box', x: bx, y: by, w: 300, h: 44 });
+      const frag = this.store.boxFragment(bo.id);
+      this.store.doc.transact(() => {
+        for (const line of ['글상자: 빈 곳을 두 번 누르면 생겨요', '위 막대를 끌어 옮겨요']) {
+          const p = new Y.XmlElement('paragraph');
+          p.insert(0, [new Y.XmlText(line)]);
+          frag.push([p]);
+        }
+      }, LOCAL);
+      // 웹 학습지
+      const ws = await file(/수업페이지\.html$/);
+      const wp = newPage('웹 학습지', '학생이 고른 답은 수업 기록에 남아요. 위에서 Ctrl+휠로 확대.');
+      if (ws) this.placeHtml(await ws.text(), '#12 수업 페이지', wp);
+      // 읽기 PDF
+      const rd = find(/읽기자료\.pdf$/);
+      if (rd) {
+        last();
+        await this.placePackFile(rd);
+      }
+      // 마크다운
+      const md = find(/읽을거리\.md$/);
+      if (md) {
+        last();
+        await this.placePackFile(md);
+      }
+      // 듣기: 영상 + 소리
+      newPage('듣기', '영상과 소리는 판 안에서 바로 재생해요. 영상은 ⤢ 크게.');
+      const vid = await file(/듣기영상\.mp4$/);
+      if (vid) await this.insertMedia(vid, 'video', '듣기 영상');
+      const au = await file(/듣기\.ogg$/);
+      if (au) await this.insertMedia(au, 'audio', '듣기 소리');
+      // 학생 과제
+      newPage('학생이 낸 과제 (#11)', '손글씨 사진 · 녹음 · 쓴 글. 이 학생 → 과제 탭에서 하나씩 넣을 수도 있어요.');
+      const hwp = this.currentPage;
+      const hwImg = await file(/숙제_손글씨/);
+      if (hwImg) await this.insertImages([hwImg], hwp);
+      this.currentPage = hwp;
+      const hwAu = await file(/숙제_녹음/);
+      if (hwAu) await this.insertMedia(hwAu, 'audio', '숙제 녹음');
+      const hwTx = await file(/숙제_글\.txt$/);
+      if (hwTx) {
+        this.currentPage = hwp;
+        this.placeTextBox(await hwTx.text());
+      }
+      this.clearSelection();
+      this.gotoPage(first);
+      toast(`체험 판: ${this.order.length}페이지를 깔았어요`, 3000);
+    } catch (e) {
+      console.error('demo seed', e);
+      toast('체험 자료 일부를 넣지 못했어요');
     }
   }
 
@@ -2333,7 +2447,48 @@ export class BoardScreen {
 
   private openSummary() {
     const box = h('div', { class: 'menu wide summary' });
-    box.append(h('div', { class: 'mh' }, '오늘 요약'));
+    box.append(h('div', { class: 'mh' }, '수업 요약'), h('p', { class: 'mnote' }, '이 판에 지금까지 남은 것을 한눈에. 수업 기록(.kwd.zip)과 밤 루틴 입력도 같은 내용에서 만들어져요.'));
+    const evs = this.store.events.toArray();
+    const st = (this.store.meta.get('startedAt') as number) || evs[0]?.t;
+    const en = (this.store.meta.get('lastAt') as number) || evs[evs.length - 1]?.t;
+    const count = (role: Role, kind: string) => evs.filter((e) => e.role === role && e.kind === kind).length;
+    const facts: string[] = [];
+    const hm = (t: number) => new Date(t).toTimeString().slice(0, 5);
+    if (st && en) facts.push(`${hm(st)}–${hm(en)} (${Math.max(1, Math.round((en - st) / 60000))}분)`);
+    facts.push(`페이지 ${this.order.length}`);
+    facts.push(`선생님 글 ${count('teacher', 'text')}줄 · 손글씨 ${count('teacher', 'ink')}획`);
+    facts.push(`학생 글 ${count('student', 'text')}줄 · 손글씨 ${count('student', 'ink')}획`);
+    box.append(h('p', { class: 'sum-facts' }, facts.join(' · ')));
+    // 학생이 직접 쓴 글 (블록마다 마지막 것)
+    const stuText = new Map<string, string>();
+    for (const e of evs) if (e.role === 'student' && e.kind === 'text' && e.text) stuText.set(e.block || String(e.t), e.text);
+    if (stuText.size) box.append(h('h4', {}, `학생이 쓴 글 ${stuText.size}`), ...[...stuText.values()].slice(-12).map((t) => h('div', { class: 'sum-row' }, t)));
+    // 오늘 나온 단어 (학생 DB·복습 단어와 맞춰 보기)
+    let allText = '';
+    for (const ed of this.editors.values()) allText += ' ' + ed.getText();
+    for (const id of this.order) for (const o of this.store.objList(id)) if (o.type === 'box') allText += ' ' + this.store.boxFragment(o.id).toString().replace(/<[^>]+>/g, ' ');
+    const known = this.pack?.db?.vocab.map((v) => v.w) || this.memory?.vocab.map((v) => v.kr) || [];
+    const probe = (w: string) => (w.endsWith('다') && w.length > 2 ? w.slice(0, -1) : w); // 먹다 → 먹 (먹어요도 찾게)
+    const seen = [...new Set(known)].filter((w) => probe(w).length >= 2 && allText.includes(probe(w)));
+    const review = (this.memory?.vocab || []).filter((v) => v.status === 'review').map((v) => v.kr);
+    const missed = review.filter((w) => !allText.includes(probe(w)));
+    if (known.length) {
+      box.append(h('h4', {}, `배운 단어가 다시 나옴 ${seen.length}`), h('p', { class: 'sum-words' }, seen.slice(0, 40).join(', ') || '아직 없어요'));
+      if (review.length) box.append(h('h4', {}, `오늘 복습 단어 중 아직 안 나온 것 ${missed.length}/${review.length}`), h('p', { class: 'sum-words' }, missed.join(', ') || '다 나왔어요 👍'));
+    }
+    // 자료
+    const mats: string[] = [];
+    const KIND: Record<string, string> = { img: '사진', html: '웹 학습지', audio: '소리', video: '영상', youtube: '유튜브' };
+    this.order.forEach((id, i) => {
+      const v = this.views.get(id);
+      if (v?.info.kind === 'material') {
+        const m = v.info.mid ? this.store.materials.get(v.info.mid) : null;
+        if (m && v.info.n === 1) mats.push(`${i + 1}쪽 PDF ${m.name}`);
+      }
+      for (const o of this.store.objList(id)) if (KIND[o.type]) mats.push(`${i + 1}쪽 ${KIND[o.type]}${o.name && o.name !== KIND[o.type] ? ' ' + o.name : ''}`);
+    });
+    if (mats.length) box.append(h('h4', {}, `보여 준 자료 ${mats.length}`), ...mats.slice(0, 20).map((t) => h('div', { class: 'sum-row' }, t)));
+    // 교정·빈칸
     let corr = 0, blanks = 0;
     const corrRows: HTMLElement[] = [];
     const blankRows: HTMLElement[] = [];
@@ -2342,11 +2497,12 @@ export class BoardScreen {
       corr += sum.corrections.length;
       blanks += sum.blanks.length;
       for (const c of sum.corrections) corrRows.push(h('div', { class: 'sum-row' }, `✗ ${c.original}`), h('div', { class: 'sum-row ok' }, `✓ ${c.corrected}`));
-      for (const b of sum.blanks) blankRows.push(h('div', { class: 'sum-row' }, `${b.result === 'ok' ? '○' : b.result === 'no' ? '✗' : '·'} ${b.value || '___'}${b.answer ? ` (${b.answer})` : ''}`));
+      for (const b of sum.blanks) blankRows.push(h('div', { class: 'sum-row' }, `${b.result === 'ok' ? '○' : b.result === 'no' ? '✗' : '·'} ${b.value || '___'}${b.answer ? ` (정답 ${b.answer})` : ''}`));
     }
-    const inkCount = this.order.reduce((a, id) => a + this.store.ink(id).length, 0);
-    box.append(h('p', { class: 'mnote' }, `페이지 ${this.order.length} · 사건 ${this.store.events.length} · 잉크 ${inkCount}. 단어 정리는 수업 뒤 밤 루틴이 기록에서 합니다.`));
-    box.append(h('h4', {}, `교정 ${corr}`), ...corrRows, h('h4', {}, `빈칸 ${blanks}`), ...blankRows);
+    box.append(h('h4', {}, `교정 ${corr}`), ...(corrRows.length ? corrRows : [h('p', { class: 'mnote' }, '고칠 글을 골라 위에 뜨는 막대의 "교정"을 누르면 ✗ 원래 → ✓ 고친 말로 남아요. 그냥 지우고 다시 쓴 건 교정으로 세지 않아요.')]));
+    box.append(h('h4', {}, `빈칸 ${blanks}`), ...(blankRows.length ? blankRows : [h('p', { class: 'mnote' }, '글에 ___ (밑줄 세 개)를 치면 빈칸이 돼요. 학생이 채운 답과 ○/✗ 가 여기 모여요.')]));
+    const kb = Math.round(JSON.stringify(evs).length / 1024);
+    box.append(h('details', { class: 'sum-ev' }, h('summary', {}, `사건 기록 ${evs.length}개 · ${kb}KB`), h('p', { class: 'mnote' }, '모든 사건을 남겨요. 글은 한 줄(블록)마다 3초 멈출 때 한 번, 손글씨는 한 획에 한 번이라 1시간에 보통 수백~수천 개(수백 KB)예요. 기록 묶음에 다 들어가고, AI에는 밤 루틴이 말 녹음 시각과 맞춰 짧게 줄여서 넘겨요.')));
     this.showPanel(box);
   }
 

@@ -102,6 +102,63 @@ export function setWorkHandleForTest(h: FileSystemDirectoryHandle | null) {
   cache.students = null;
 }
 
+// ---- 체험: public/demo 의 가짜 work 폴더 (이 탭에서만, 진짜 연결은 그대로 둔다) ----
+const DEMO_KEY = 'kwd.demo';
+export function isDemo(): boolean {
+  try {
+    return sessionStorage.getItem(DEMO_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+export function setDemo(on: boolean) {
+  try {
+    if (on) sessionStorage.setItem(DEMO_KEY, '1');
+    else sessionStorage.removeItem(DEMO_KEY);
+  } catch {
+    /* ignore */
+  }
+  if (!on && testHandle && testHandle.name.endsWith('(체험)')) {
+    testHandle = null;
+    cache.students = null;
+  }
+}
+export async function useDemoFolder(): Promise<boolean> {
+  try {
+    const base = import.meta.env.BASE_URL || './';
+    const man = (await (await fetch(base + 'demo/manifest.json')).json()) as { files: Array<{ p: string; f: string }> };
+    const today = ymd();
+    const now = new Date();
+    const hm = (add: number) => {
+      const d = new Date(now.getTime() + add * 60000);
+      return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    };
+    const root = new VDir('work (체험)');
+    await Promise.all(
+      man.files.map(async ({ p, f }, i) => {
+        const r = await fetch(base + 'demo/work/' + f);
+        if (!r.ok || (r.headers.get('content-type') || '').startsWith('text/html') !== /\.html?$/.test(p)) return;
+        let blob: Blob = await r.blob();
+        const path = p.replace('intake/TODAY/', `intake/${today}/`).split('/');
+        if (p.endsWith('brief_data.json')) blob = new Blob([(await blob.text()).replace(/TODAY/g, today).replace(/NOW\+(\d+)/g, (_m, n) => hm(Number(n)))], { type: 'application/json' });
+        let d = root;
+        for (const seg of path.slice(0, -1)) {
+          if (!d.dirs.has(seg)) d.dirs.set(seg, new VDir(seg));
+          d = d.dirs.get(seg)!;
+        }
+        const name = path[path.length - 1];
+        d.files.set(name, new VFile(name, new File([blob], name, { type: blob.type, lastModified: now.getTime() - i * 3600000 })));
+      }),
+    );
+    testHandle = root as unknown as DirHandle;
+    cache.students = null;
+    return true;
+  } catch (e) {
+    console.warn('demo', e);
+    return false;
+  }
+}
+
 export async function storedWork(): Promise<DirHandle | null> {
   if (testHandle) return testHandle;
   return idbGet<DirHandle>('work');
@@ -264,8 +321,23 @@ export function studentKey(folder: string): string {
 }
 
 // 판 id: 학생 + 날짜 (같은 날 다시 누르면 같은 판)
+export function demoRun(): number {
+  try {
+    return Number(localStorage.getItem('kwd.demoRun') || '1') || 1;
+  } catch {
+    return 1;
+  }
+}
+export function nextDemoRun() {
+  try {
+    localStorage.setItem('kwd.demoRun', String(demoRun() + 1));
+  } catch {
+    /* ignore */
+  }
+}
 export function boardIdFor(folder: string, d = new Date()): string {
   const p = (n: number) => String(n).padStart(2, '0');
+  if (isDemo()) return `demo${demoRun()}${studentKey(folder)}`;
   return `${studentKey(folder)}d${String(d.getFullYear()).slice(2)}${p(d.getMonth() + 1)}${p(d.getDate())}`;
 }
 
@@ -375,6 +447,56 @@ export interface StudentPack {
   lessons: Array<{ n: number; name: string; date: string }>;
   lessonData: string[]; // .lesson_data_N.json 이름들
   brief?: BriefLesson;
+  db?: BoardData; // work/board_data/<폴더>.json (중앙 DB에서 뽑은 전체 단어·문형)
+}
+
+// night/kwd_board_export.py 가 만든 것
+export interface DbWord {
+  w: string;
+  en: string;
+  cat: string;
+  pos: string;
+  topik?: number | null;
+  first?: number | null;
+  last?: number | null;
+  seen: number;
+  status: string;
+  chapter?: { code: string; target: string; level: string };
+  rel: Record<string, string[]>;
+}
+export interface DbPattern {
+  p: string;
+  en: string;
+  cat: string;
+  sub: string;
+  meaning: string;
+  ex: string;
+  ex_en: string;
+  status: string;
+  first?: number | null;
+  count: number;
+  chapter?: { code: string; target: string; level: string };
+  rel: Record<string, string[]>;
+}
+export interface BoardData {
+  generated_at: string;
+  sources?: { relations: string[]; missing: string[] };
+  vocab: DbWord[];
+  grammar: DbPattern[];
+}
+async function boardDataFor(folder: string): Promise<BoardData | undefined> {
+  const work = await storedWork();
+  if (!work) return undefined;
+  const bd = await sub(work, 'board_data');
+  if (!bd) return undefined;
+  const t = await textOf(bd, folder + '.json');
+  if (!t) return undefined;
+  try {
+    const j = JSON.parse(t) as BoardData;
+    return Array.isArray(j.vocab) ? j : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function studentDir(folder: string): Promise<DirHandle | null> {
@@ -390,9 +512,10 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
   const { name, id } = parseFolder(folder);
   const pack: StudentPack = { folder, name, id, files: [], hwFiles: [], lessons: [], lessonData: [], brief };
   const top = await entries(dir);
-  const fileKind = (n: string): PackFile['kind'] | null => (/\.html?$/i.test(n) ? 'html' : /\.pdf$/i.test(n) ? 'pdf' : /\.(png|jpe?g|gif|webp)$/i.test(n) ? 'img' : null);
+  const fileKind = (n: string): PackFile['kind'] | null =>
+    /\.html?$/i.test(n) ? 'html' : /\.pdf$/i.test(n) ? 'pdf' : /\.(png|jpe?g|gif|webp)$/i.test(n) ? 'img' : /\.(mp3|m4a|wav|ogg|aac)$/i.test(n) ? 'audio' : /\.(mp4|webm|mov|m4v)$/i.test(n) ? 'video' : /\.md$/i.test(n) && !/_수업안\.md$|_과제_초안\.md$/.test(n) ? 'md' : null;
   let planN = -1;
-  const consider = async (handle: FileSystemHandle, n: string, path: string[]) => {
+  const consider = async (handle: FileSystemHandle, n: string, path: string[], top = false) => {
     const f = await (handle as FileSystemFileHandle).getFile();
     const pm = /^#(\d+)_수업안\.md$/.exec(n);
     if (pm && Number(pm[1]) > planN) {
@@ -402,7 +525,7 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
     const hm = /^#(\d+)_과제_초안\.md$/.exec(n);
     if (hm && Number(hm[1]) >= planN) pack.homework = { name: n, text: await f.text() };
     const k = fileKind(n);
-    if (k) pack.files.push({ name: n, path, kind: k, size: f.size });
+    if (k && !(top && k === 'md')) pack.files.push({ name: n, path, kind: k, size: f.size });
   };
   for (const e of top) {
     if (e.kind === 'file') {
@@ -416,7 +539,7 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
       else {
         const m = LESSON_RE.exec(n);
         if (m && n.endsWith('.md')) pack.lessons.push({ n: Number(m[1]), name: n, date: m[2] });
-        else await consider(e.handle, n, [n]);
+        else await consider(e.handle, n, [n], true);
       }
     } else if (e.name === '과제' || e.name === 'homework' || e.name === '숙제') {
       const kindOf = (n: string): PackFile['kind'] | null =>
@@ -438,6 +561,7 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
   const numOf = (n: string) => Number((/(\d+)/.exec(n) || [])[1] || 0);
   pack.files.sort((a, b) => numOf(b.name) - numOf(a.name) || a.name.localeCompare(b.name));
   pack.lessonData.sort((a, b) => numOf(a) - numOf(b));
+  pack.db = await boardDataFor(folder);
   return pack;
 }
 

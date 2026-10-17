@@ -4,7 +4,7 @@ import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { h, fmtDate } from './ui';
 import { vocabNote, type StudentMemory } from './memory';
-import type { StudentPack, PackFile } from './kwdfolder';
+import type { StudentPack, PackFile, BoardData } from './kwdfolder';
 import { answerText, type HwGroup } from './homework';
 
 export interface PanelActions {
@@ -20,6 +20,9 @@ export interface PanelActions {
   placeData(dataUrl: string, mime: string, name: string): Promise<void>;
   placeText(text: string): void;
 }
+
+// 숙제 앱에서 불러온 것 (패널이 다시 그려져도 남게, 이 창에서만)
+const hwCache = new Map<string, HwGroup[]>();
 
 export type PanelTab = 'today' | 'plan' | 'hw' | 'student' | 'lessons' | 'vocab';
 
@@ -49,7 +52,7 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
     hw: true,
     student: !!(pack.profile || pack.roadmap || pack.status),
     lessons: pack.lessons.length > 0,
-    vocab: !!mem?.vocab.length,
+    vocab: !!(mem?.vocab.length || pack.db?.vocab.length),
   };
   const labels: Record<PanelTab, string> = { today: '오늘', plan: '수업안·자료', hw: '과제', student: '학생 정보', lessons: '지난 수업', vocab: '단어' };
   if (!has[tab]) tab = (Object.keys(has) as PanelTab[]).find((k) => has[k]) || 'today';
@@ -127,7 +130,7 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
     }
   } else if (tab === 'plan') {
     if (pack.files.length) {
-      const KIND: Record<string, string> = { html: '웹 학습지', pdf: 'PDF', img: '사진', md: '문서' };
+      const KIND: Record<string, string> = { html: '웹 학습지', pdf: 'PDF', img: '사진', md: '문서', audio: '소리', video: '영상', text: '글' };
       const mats = h('div', {});
       for (const f of pack.files) {
         const r = h('div', { class: 'mp-row' }, h('div', { class: 'mp-main' }, f.name.replace(/\.[^.]+$/, '')), h('div', { class: 'mp-rsub' }, `${KIND[f.kind]} · ${Math.max(1, Math.round(f.size / 1024))}KB`));
@@ -222,58 +225,65 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
     if (!act.hwConnected()) {
       hwBox.append(h('p', { class: 'mp-p muted' }, 'KWD 숙제 앱과 연결하면 학생이 낸 답·손글씨 사진·녹음이 여기 떠요. ⋯ → 더 보기 → 숙제 연결에서 주소와 선생님 키를 넣으세요 (이 기기에만 저장).'));
     } else {
-      const load = h('button', { type: 'button', class: 'mp-ins' }, '숙제 불러오기');
+      const load = h('button', { type: 'button', class: 'mp-ins' }, hwCache.has(pack.folder) ? '다시 불러오기' : '숙제 불러오기');
       const out = h('div', {});
+      const draw = (groups: HwGroup[]) => {
+        out.innerHTML = '';
+        if (!groups.length) out.append(h('p', { class: 'mp-p muted' }, '확인할 과제가 없어요.'));
+        for (const g of groups) {
+          const sec = h('div', { class: 'mp-hwg' }, h('div', { class: 'mp-main' }, g.task?.title_ko || g.task?.type || '과제'), h('div', { class: 'mp-rsub' }, (g.oldest || '').slice(0, 16).replace('T', ' ')));
+          for (const st of g.steps) {
+            if (!st.sub) continue;
+            const txt = answerText(st.sub.answer);
+            const r = h('div', { class: 'mp-row' }, h('div', { class: 'mp-main' }, st.label_ko || st.q || st.kind), h('div', { class: 'mp-rsub' }, txt || (st.sub.media_file_id ? '사진·녹음' : '')));
+            if (txt) {
+              const b = h('button', { type: 'button', class: 'mp-ins' }, '판에 넣기');
+              b.addEventListener('click', () => act.placeText(txt));
+              r.append(b);
+            }
+            const fid = st.sub.media_file_id || st.sub.media2_file_id;
+            if (fid && !st.sub.media_purged) {
+              const see = h('button', { type: 'button', class: 'mp-ins' }, '보기');
+              const prev = h('div', { class: 'mp-prev' });
+              see.addEventListener('click', async () => {
+                see.textContent = '…';
+                try {
+                  const m = await act.hwMedia(fid);
+                  prev.innerHTML = '';
+                  if (m.mime.startsWith('image/')) {
+                    const im = h('img', { class: 'mp-thumb', alt: '' }) as HTMLImageElement;
+                    im.src = m.dataUrl;
+                    prev.append(im);
+                  } else {
+                    const au = h('audio', { controls: '', class: 'mp-audio' }) as HTMLAudioElement;
+                    au.src = m.dataUrl;
+                    prev.append(au);
+                  }
+                  const put = h('button', { type: 'button', class: 'mp-ins' }, '판에 넣기');
+                  put.addEventListener('click', () => void act.placeData(m.dataUrl, m.mime, st.label_ko || '과제'));
+                  prev.append(put);
+                  see.remove();
+                } catch {
+                  see.textContent = '못 불러옴';
+                }
+              });
+              r.append(see, prev);
+            }
+            sec.append(r);
+          }
+          out.append(sec);
+        }
+      };
+      const cached = hwCache.get(pack.folder);
+      if (cached) draw(cached);
       load.addEventListener('click', async () => {
         load.textContent = '불러오는 중…';
-        out.innerHTML = '';
         try {
           const groups = await act.loadHomework();
-          if (!groups.length) out.append(h('p', { class: 'mp-p muted' }, '확인할 과제가 없어요.'));
-          for (const g of groups) {
-            const sec = h('div', { class: 'mp-hwg' }, h('div', { class: 'mp-main' }, g.task?.title_ko || g.task?.type || '과제'), h('div', { class: 'mp-rsub' }, (g.oldest || '').slice(0, 16).replace('T', ' ')));
-            for (const st of g.steps) {
-              if (!st.sub) continue;
-              const txt = answerText(st.sub.answer);
-              const r = h('div', { class: 'mp-row' }, h('div', { class: 'mp-main' }, st.label_ko || st.q || st.kind), h('div', { class: 'mp-rsub' }, txt || (st.sub.media_file_id ? '사진·녹음' : '')));
-              if (txt) {
-                const b = h('button', { type: 'button', class: 'mp-ins' }, '판에 넣기');
-                b.addEventListener('click', () => act.placeText(txt));
-                r.append(b);
-              }
-              const fid = st.sub.media_file_id || st.sub.media2_file_id;
-              if (fid && !st.sub.media_purged) {
-                const see = h('button', { type: 'button', class: 'mp-ins' }, '보기');
-                const prev = h('div', { class: 'mp-prev' });
-                see.addEventListener('click', async () => {
-                  see.textContent = '…';
-                  try {
-                    const m = await act.hwMedia(fid);
-                    prev.innerHTML = '';
-                    if (m.mime.startsWith('image/')) {
-                      const im = h('img', { class: 'mp-thumb', alt: '' }) as HTMLImageElement;
-                      im.src = m.dataUrl;
-                      prev.append(im);
-                    } else {
-                      const au = h('audio', { controls: '', class: 'mp-audio' }) as HTMLAudioElement;
-                      au.src = m.dataUrl;
-                      prev.append(au);
-                    }
-                    const put = h('button', { type: 'button', class: 'mp-ins' }, '판에 넣기');
-                    put.addEventListener('click', () => void act.placeData(m.dataUrl, m.mime, st.label_ko || '과제'));
-                    prev.append(put);
-                    see.remove();
-                  } catch {
-                    see.textContent = '못 불러옴';
-                  }
-                });
-                r.append(see, prev);
-              }
-              sec.append(r);
-            }
-            out.append(sec);
-          }
+          hwCache.set(pack.folder, groups);
+          draw(groups);
         } catch (e) {
+          out.innerHTML = '';
           out.append(h('p', { class: 'mp-p muted' }, '숙제를 불러오지 못했어요: ' + ((e as Error).message || e)));
         }
         load.textContent = '다시 불러오기';
@@ -281,6 +291,8 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
       hwBox.append(load, out);
     }
     body.append(section('KWD 숙제', hwBox));
+  } else if (tab === 'vocab' && pack.db) {
+    renderDbVocab(body, pack.db, mem, act, insBtn);
   } else if (tab === 'vocab' && mem) {
     const search = h('input', { type: 'search', class: 'mp-search', placeholder: '단어 찾기', lang: 'ko' }) as HTMLInputElement;
     search.addEventListener('keydown', (e) => e.stopPropagation());
@@ -296,6 +308,105 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
     body.append(search, list);
     draw();
   }
+}
+
+// 중앙 DB에서 뽑은 전체 단어·문형 + 관련된 말
+let dbView: { kind: 'w' | 'g'; sort: 'recent' | 'first' | 'seen'; q: string } = { kind: 'w', sort: 'recent', q: '' };
+function renderDbVocab(body: HTMLElement, db: BoardData, mem: StudentMemory | null, act: PanelActions, insBtn: (line: string, label?: string) => HTMLElement) {
+  const review = new Set((mem?.vocab || []).filter((v) => v.status === 'review').map((v) => v.kr));
+  const seg = h('div', { class: 'mp-seg' });
+  const mk = (k: 'w' | 'g', label: string) => {
+    const b = h('button', { type: 'button', class: 'mp-segb' + (dbView.kind === k ? ' on' : ''), 'data-kind': k }, label);
+    b.addEventListener('click', () => {
+      dbView = { ...dbView, kind: k };
+      body.innerHTML = '';
+      renderDbVocab(body, db, mem, act, insBtn);
+    });
+    return b;
+  };
+  seg.append(mk('w', `단어 ${db.vocab.length}`), mk('g', `문형 ${db.grammar.length}`));
+  const search = h('input', { type: 'search', class: 'mp-search', placeholder: dbView.kind === 'w' ? '단어·뜻 찾기' : '문형 찾기', lang: 'ko', value: dbView.q }) as HTMLInputElement;
+  search.addEventListener('keydown', (e) => e.stopPropagation());
+  const sort = h('select', { class: 'mp-sort', 'aria-label': '순서' }) as HTMLSelectElement;
+  for (const [v, l] of [['recent', '최근 수업 순'], ['first', '처음 배운 순'], ['seen', '많이 나온 순']]) sort.append(h('option', { value: v }, l));
+  sort.value = dbView.sort;
+  const list = h('div', { class: 'mp-list' });
+  const relBox = (rel: Record<string, string[]>) => {
+    const box = h('div', { class: 'mp-rel' });
+    for (const [k, ws] of Object.entries(rel)) {
+      if (!ws.length) continue;
+      const chips = h('div', { class: 'mp-chips' });
+      for (const w of ws) {
+        const c = h('button', { type: 'button', class: 'mp-chip' + (k.includes('새') ? ' new' : '') }, w);
+        c.addEventListener('mousedown', (e) => e.preventDefault());
+        c.addEventListener('click', () => act.insertLine(w));
+        chips.append(c);
+      }
+      box.append(h('div', { class: 'mp-relk' }, k), chips);
+    }
+    if (!box.childElementCount) box.append(h('p', { class: 'mp-empty' }, 'DB에 이어진 말이 없어요'));
+    return box;
+  };
+  const num = (n: number | null | undefined) => (n == null ? -1 : n);
+  const draw = () => {
+    list.innerHTML = '';
+    const q = dbView.q.trim().toLowerCase();
+    if (dbView.kind === 'w') {
+      let vs = db.vocab.filter((v) => !q || v.w.includes(q) || v.en.toLowerCase().includes(q));
+      vs = [...vs].sort((a, b) => (dbView.sort === 'first' ? num(a.first) - num(b.first) : dbView.sort === 'seen' ? b.seen - a.seen : num(b.last ?? b.first) - num(a.last ?? a.first)));
+      for (const v of vs.slice(0, 300)) {
+        const sub = [v.en, v.first != null ? `#${v.first} 처음` : '', v.seen > 1 ? `${v.seen}번` : '', v.chapter ? `챕터 ${v.chapter.target}` : '', review.has(v.w) ? '오늘 복습' : ''].filter(Boolean).join(' · ');
+        const r = h('div', { class: 'mp-row mp-dbrow' + (review.has(v.w) ? ' review' : '') }, h('button', { type: 'button', class: 'mp-main mp-open', 'aria-expanded': 'false' }, v.w), h('div', { class: 'mp-rsub' }, sub), insBtn(`${v.w}${v.en ? ' : ' + v.en : ''}`));
+        const open = r.querySelector('.mp-open') as HTMLElement;
+        open.addEventListener('click', () => {
+          const ex = r.querySelector('.mp-rel');
+          if (ex) {
+            ex.remove();
+            open.setAttribute('aria-expanded', 'false');
+          } else {
+            r.append(relBox(v.rel));
+            open.setAttribute('aria-expanded', 'true');
+          }
+        });
+        list.append(r);
+      }
+      if (vs.length > 300) list.append(h('p', { class: 'mp-empty' }, `${vs.length - 300}개 더 — 찾기로 좁혀 보세요`));
+      if (!vs.length) list.append(h('p', { class: 'mp-empty' }, '찾는 단어가 없어요'));
+    } else {
+      let gs = db.grammar.filter((g) => !q || g.p.toLowerCase().includes(q) || g.en.toLowerCase().includes(q) || g.meaning.toLowerCase().includes(q));
+      gs = [...gs].sort((a, b) => (dbView.sort === 'first' ? num(a.first) - num(b.first) : dbView.sort === 'seen' ? b.count - a.count : num(b.first) - num(a.first)));
+      for (const g of gs) {
+        const sub = [g.en, g.first != null ? `#${g.first} 처음` : '', g.count > 1 ? `${g.count}번 연습` : '', g.ex].filter(Boolean).join(' · ');
+        const r = h('div', { class: 'mp-row mp-dbrow' }, h('button', { type: 'button', class: 'mp-main mp-open', 'aria-expanded': 'false' }, g.p), h('div', { class: 'mp-rsub' }, sub), insBtn(`${g.p}${g.ex ? ' — ' + g.ex : ''}`));
+        const open = r.querySelector('.mp-open') as HTMLElement;
+        open.addEventListener('click', () => {
+          const ex = r.querySelector('.mp-rel');
+          if (ex) {
+            ex.remove();
+            open.setAttribute('aria-expanded', 'false');
+          } else {
+            const box = relBox(g.rel);
+            if (g.meaning) box.prepend(h('p', { class: 'mp-p muted' }, g.meaning));
+            r.append(box);
+            open.setAttribute('aria-expanded', 'true');
+          }
+        });
+        list.append(r);
+      }
+      if (!gs.length) list.append(h('p', { class: 'mp-empty' }, '찾는 문형이 없어요'));
+    }
+  };
+  search.addEventListener('input', () => {
+    dbView = { ...dbView, q: search.value };
+    draw();
+  });
+  sort.addEventListener('change', () => {
+    dbView = { ...dbView, sort: sort.value as typeof dbView.sort };
+    draw();
+  });
+  const note = h('p', { class: 'mp-note' }, `단어를 누르면 이어진 말이 나와요 (${(db.sources?.relations || ['같은 챕터', '같은 묶음']).join(' · ')}). 동의어·반의어·우리말샘 유사도는 아직 DB에 없어요. · ${db.generated_at.slice(5, 16).replace('T', ' ')} 기준`);
+  body.append(seg, h('div', { class: 'mp-tools' }, search, sort), list, note);
+  draw();
 }
 
 function details(title: string, content: HTMLElement, open: boolean): HTMLElement {

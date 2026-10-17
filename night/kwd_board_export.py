@@ -94,7 +94,7 @@ def export_student(c, st, idx, cat_words):
         g = {'p': pat, 'en': pen or '', 'cat': cat or '', 'sub': sub or '', 'meaning': meaning or '', 'ex': ex or '', 'ex_en': exen or '',
              'status': status or '', 'first': first, 'count': cnt or 0, 'rel': {}}
         if comp:
-            g['rel']['헷갈리는 짝'] = [x.strip() for x in re.split(r'[,/;]\s*(?=~|[가-힣])', comp) if x.strip()][:CAP] or [comp]
+            g['rel']['헷갈리는 짝'] = [x.strip() for x in re.split(r'\s*[,;]\s*', comp) if x.strip()][:CAP]
         chs = pat_ch.get(pid, [])
         if chs:
             code = chs[0]

@@ -180,7 +180,8 @@ test.describe('펜', () => {
     // 지우개 크기 설정창 → 이 페이지 잉크 모두 지우기 → 되돌리기
     await page.click('.toolbar [data-tool="eraser"]');
     await page.click('.toolbar [data-tool="eraser"]');
-    await expect(page.locator('.pen-pop .pp-chip')).toHaveCount(3);
+    await expect(page.locator('.pen-pop .pp-chip:not([data-mode])')).toHaveCount(3);
+    await expect(page.locator('.pen-pop .pp-chip[data-mode]')).toHaveCount(2); // 획 전체 · 닿은 부분만
     await page.click('.pen-pop .pp-wide');
     expect(await kwd(page, (k) => k.store.ink(k.current()).length)).toBe(0);
     await page.click('.toolbar [data-tool="undo"]');
@@ -433,6 +434,9 @@ test.describe('두 기기', () => {
     // 권한: 학생 글 쓰기
     await t.click('.toolbar [data-tool="more"]');
     await t.click('.menu button:has-text("글 쓰기")');
+    await expect(t.locator('.menu')).toHaveCount(1); // 토글을 눌러도 메뉴는 열린 채로
+    await t.keyboard.press('Escape');
+    await expect(t.locator('.menu')).toHaveCount(0);
     await expect.poll(() => kwd(s, (k) => k.editor().isEditable), { timeout: 10000 }).toBe(true);
     await s.evaluate(() => (window as any).__kwd.editor().commands.focus('end'));
     await expect.poll(() => s.evaluate(() => document.activeElement?.classList.contains('board-doc'))).toBe(true);
@@ -442,6 +446,7 @@ test.describe('두 기기', () => {
     await t.click('.toolbar [data-tool="more"]');
     await t.click('.menu button:has-text("글 쓰기")');
     await expect.poll(() => kwd(s, (k) => k.editor().isEditable), { timeout: 10000 }).toBe(false);
+    await t.keyboard.press('Escape');
     // 빈칸은 권한 없이도
     await t.evaluate(() => (window as any).__kwd.editor().commands.focus('end'));
     await expect.poll(() => t.evaluate(() => document.activeElement?.classList.contains('board-doc'))).toBe(true);
@@ -639,7 +644,7 @@ test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
     expect(r.rows[1]).toContain('시작');
     expect(r.url).toMatch(/^\/b\/s1234567d\d{6}\?r=t$/);
     expect(r.chip).toBe('Mina K');
-    expect(r.tabs).toEqual(['오늘', '수업안·자료', '학생 정보', '지난 수업', '단어']);
+    expect(r.tabs).toEqual(['오늘', '수업안·자료', '과제', '학생 정보', '지난 수업', '단어']);
     expect(r.today).toContain('주말에 부산에 갔어요');
     expect(r.boardText).toContain('송편 : rice cake');
     expect(r.plan).toContain('맛 형용사');
@@ -650,5 +655,54 @@ test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
     expect(r.trialTabs).toContain('오늘');
     expect(r.trialToday).toContain('여행 한국어');
     expect(r.studentMemBtn).toBe(true);
+  });
+});
+
+test.describe('v5: 체험 화면·지우개 부분·자료 종류·숙제·요약', () => {
+  test.describe.configure({ timeout: 240_000 });
+  test('체험: 고르기 → 오늘 수업 → 판에 14페이지(슬라이드·사진·유튜브·웹 학습지·PDF·문서·영상·소리·학생 과제) → 이 학생 6칸·단어/문형 DB', () => {
+    const r = JSON.parse(execFileSync('node', ['scripts/demo-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/demot' } }).replace(/^[^{]*/, ''));
+    expect(r.errs).toEqual([]);
+    expect(r.cards).toEqual(['선생님 (노트북)', '학생 · 폰', '학생 · 태블릿', '선생님 · 태블릿', '나란히 보기']);
+    expect(r.home[0]).toContain('Mina K.');
+    expect(r.badge).toContain('체험 중');
+    expect(r.pages.length).toBe(14);
+    expect(r.objs.join(',')).toEqual(expect.stringContaining('youtube'));
+    for (const t of ['img', 'html', 'audio', 'video', 'box']) expect(r.objs.join(',')).toContain(t);
+    expect(r.tabs).toEqual(['오늘', '수업안·자료', '과제', '학생 정보', '지난 수업', '단어']);
+    expect(r.tab_plan).toContain('영상');
+    expect(r.tab_hw).toContain('숙제_손글씨');
+    expect(r.tab_vocab).toContain('단어 18');
+    expect(r.rel).toContain('같은 묶음');
+    expect(r.grammarRows).toBe(4);
+  });
+  test('체험 기기 화면: 나란히·폰·태블릿 — 선생님 글이 학생 창에, 유튜브 크게는 둘 다 → 선생님이 닫으면 학생도, 권한 토글은 메뉴가 안 닫힘', () => {
+    const out = execFileSync('node', ['scripts/demo-views.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/demot' } });
+    const r = JSON.parse(out.slice(out.lastIndexOf('\n{') + 1));
+    expect(r.errs).toEqual([]);
+    expect(r.sPages).toBe(r.tPages);
+    expect(r.sSees).toBe(true);
+    expect([r.tPopup, r.sPopup, r.sPopupAfter]).toEqual([1, 1, 0]);
+    expect(r.menuStillOpen).toBe(1);
+    expect(r.toggleFlip[0]).not.toBe(r.toggleFlip[1]);
+  });
+  test('지우개 닿은 부분만 · 문서/소리 가져오기 · 막힌 고르기 창 안내 · KWD 숙제(가짜 서버) · 수업 요약', () => {
+    const out = execFileSync('node', ['scripts/v5-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/v5t' } });
+    const r = JSON.parse(out.slice(out.indexOf('{\n')));
+    expect(r.errs).toEqual([]);
+    expect(r.blocked).toContain('크롬이나 엣지');
+    expect(r.strokes0).toBe(2);
+    expect(r.strokesPart).toHaveLength(3); // 위 획이 둘로
+    expect(r.strokesAfterWhole).toBe(2);
+    expect(r.afterUndo).toBe(3);
+    expect(r.mdPage).toContain('<h1');
+    expect(r.mdPage).toContain('<strong>보름달</strong>');
+    expect(r.audioDur).toBeGreaterThan(5);
+    expect(r.summary).toContain('교정');
+    expect(r.summary).toContain('사건 기록');
+    expect(r.hwGroups[0]).toContain('추석에 송편을 만들었어요');
+    expect(r.hwPlaced).toEqual(['box', 'img']);
+    expect(r.hwCalls).toEqual(['teacher.board:key', 'teacher.queue:key', 'media.get:key']);
+    expect(r.keyInDoc).toBe(false);
   });
 });

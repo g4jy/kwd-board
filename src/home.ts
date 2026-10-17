@@ -2,7 +2,7 @@
 // 학생을 누르면 그 학생의 오늘 판이 열리고, 브리핑·수업안·로드맵·지난 수업이 선생님 화면에만 붙는다.
 import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl } from './store';
 import { h, fmtDateTime, toast } from './ui';
-import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, rememberBoardFolder, folderForBoard, forgetFolder, ymd, type StudentEntry, type BriefLesson } from './kwdfolder';
+import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, rememberBoardFolder, folderForBoard, forgetFolder, ymd, isDemo, type StudentEntry, type BriefLesson } from './kwdfolder';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -74,7 +74,8 @@ export class HomeScreen {
           card.classList.remove('drop');
           if (e.dataTransfer) show(await useDroppedItems(e.dataTransfer.items));
         });
-        card.append(h('p', { class: 'home-lead' }, '한 번만 연결하면 오늘 수업 시간표와 학생별 브리핑·수업안·로드맵·지난 수업이 저절로 붙어요.'), b, msg, h('p', { class: 'home-note' }, 'KWD 안의 work 폴더를 고르거나 이 칸에 끌어다 놓으세요 (C:\\KWD\\work 또는 구글 드라이브 00_KWD_거울). 크롬·엣지에서 돼요. 파일은 이 브라우저 안에서만 읽어요.'));
+        const demo = h('a', { class: 'linkish home-demo', href: '#/demo' }, '폴더 없이 먼저 체험해 보기 →');
+        card.append(h('p', { class: 'home-lead' }, '한 번만 연결하면 오늘 수업 시간표와 학생별 브리핑·수업안·로드맵·지난 수업이 저절로 붙어요.'), b, msg, h('p', { class: 'home-note' }, 'KWD 안의 work 폴더를 고르거나 이 칸에 끌어다 놓으세요 (C:\\KWD\\work 또는 구글 드라이브 00_KWD_거울). 크롬·엣지에서 돼요. 파일은 이 브라우저 안에서만 읽어요.'), demo);
         main.append(card);
       }
       this.renderManual(main, canUseFolder());
@@ -211,8 +212,8 @@ export class HomeScreen {
     });
     const links = h('div', { class: 'home-links' });
     const srvBtn = h('button', { type: 'button', class: 'linkish' }, srv ? '여러 기기 연결됨 · 바꾸기' : '이 기기에만 저장 중 · 여러 기기 연결');
-    links.append(srvBtn);
-    if (folderName) {
+    links.append(srvBtn, h('a', { class: 'linkish', href: '#/demo' }, '체험 (모든 기능)'));
+    if (folderName && !isDemo()) {
       const fb = h('button', { type: 'button', class: 'linkish' }, `KWD 폴더: ${folderName} · 바꾸기`);
       fb.addEventListener('click', async () => {
         await forgetFolder();

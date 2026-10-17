@@ -14,7 +14,9 @@ export function h(tag: string, attrs: Record<string, string> = {}, ...children: 
 // claude.ai 아티팩트 창 안에서는 파일 내려받기·인쇄·웹소켓이 막혀 있다. 그때는 클립보드로 대신한다.
 export const EMBEDDED = (() => {
   try {
-    return window.self !== window.top;
+    if (window.self === window.top) return false;
+    void window.top!.location.href; // 같은 주소 안의 창(체험 화면의 기기 틀)이면 막힌 게 아니다
+    return false;
   } catch {
     return true;
   }
