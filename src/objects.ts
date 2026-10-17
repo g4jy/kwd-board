@@ -20,6 +20,7 @@ export interface ObjectHost {
   select(pageId: string, id: string | null): void;
   onText(pageId: string, block: string, kind: string, text: string): void;
   onBoxFocus(editor: Editor, pageId: string): void;
+  openPopup(pageId: string, id: string): void; // 모두의 화면에 크게
   onHtmlEvent(pageId: string, mid: string, d: { type?: string; name?: string; value?: unknown; score?: unknown; text?: string }): void;
 }
 
@@ -149,9 +150,41 @@ export class PageObjects {
     } else if (o.type === 'img') {
       const img = h('img', { class: 'obj-img-el', alt: o.name || '', draggable: 'false' }) as HTMLImageElement;
       img.src = this.ctx.store.resolveImg(o.src);
-      el.append(img, del, size);
+      const big = h('button', { type: 'button', class: 'obj-big', title: '모두의 화면에 크게 보기' }, '⤢ 크게');
+      big.addEventListener('pointerdown', (e) => e.stopPropagation());
+      big.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.ctx.openPopup(this.pageId, o.id);
+      });
+      el.append(img, del, big, size);
       this.bindMove(v, el);
       this.bindResize(v, size, true);
+    } else if (o.type === 'audio' || o.type === 'video' || o.type === 'youtube') {
+      const icon = o.type === 'audio' ? '🔊' : o.type === 'video' ? '🎬' : '▶';
+      const bar = h('div', { class: 'obj-bar' }, h('span', { class: 'obj-name' }, `${icon} ${o.name || (o.type === 'youtube' ? '유튜브' : o.type === 'audio' ? '소리' : '영상')}`));
+      let media: HTMLElement;
+      if (o.type === 'audio') media = h('audio', { class: 'obj-media', controls: '', preload: 'metadata' });
+      else if (o.type === 'video') media = h('video', { class: 'obj-media', controls: '', playsinline: '', preload: 'metadata' });
+      else {
+        const id = youtubeId(o.url || '') || '';
+        media = h('iframe', { class: 'obj-media obj-yt', title: o.name || '유튜브', allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: '', referrerpolicy: 'strict-origin-when-cross-origin' });
+        (media as HTMLIFrameElement).src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?rel=0`;
+      }
+      if (o.type !== 'youtube') (media as HTMLMediaElement).src = this.ctx.store.resolveImg(o.src);
+      bar.prepend(grip);
+      if (o.type !== 'audio') {
+        const big = h('button', { type: 'button', class: 'obj-big inbar', title: '모두의 화면에 크게 보기' }, '⤢ 크게');
+        big.addEventListener('pointerdown', (e) => e.stopPropagation());
+        big.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.ctx.openPopup(this.pageId, o.id);
+        });
+        bar.append(big);
+      }
+      bar.append(del);
+      el.append(bar, media, size);
+      this.bindMove(v, bar);
+      this.bindResize(v, size, o.type !== 'audio' && o.type !== 'youtube' ? false : false);
     } else {
       const bar = h('div', { class: 'obj-bar' }, h('span', { class: 'obj-name' }, o.name || '웹 학습지'));
       const frame = h('iframe', { class: 'mat-frame obj-frame', sandbox: 'allow-scripts allow-forms', title: o.name || '자료' }) as HTMLIFrameElement;
@@ -297,4 +330,11 @@ export function boxPlainText(store: BoardStore, id: string): string {
     .replace(/<\/(paragraph|heading|listItem|tableRow)>/g, '\n')
     .replace(/<[^>]+>/g, '')
     .trim();
+}
+
+// 유튜브 주소 → 영상 id (watch?v=, youtu.be/, shorts/, embed/)
+export function youtubeId(url: string): string | null {
+  const m = /(?:youtu\.be\/|youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|live\/))([\w-]{11})/.exec(url.trim());
+  if (m) return m[1];
+  return /^[\w-]{11}$/.test(url.trim()) ? url.trim() : null;
 }

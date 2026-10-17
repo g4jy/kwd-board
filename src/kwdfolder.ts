@@ -11,7 +11,53 @@ type DirHandle = FileSystemDirectoryHandle & {
 };
 
 const DB = 'kwd-folder';
-let testHandle: DirHandle | null = null;
+let testHandle: DirHandle | null = null; // 시험용 또는 이번 창에서만 쓰는 폴더(파일 목록으로 고른 것)
+
+export const PICKER_BLOCKED = '이 창에서는 폴더·파일 고르기 창이 열리지 않아요 (Claude 앱 안 브라우저 등). 크롬이나 엣지에서 이 주소를 여세요. 또는 폴더를 이 화면에 끌어다 놓아도 돼요.';
+
+// 파일 목록(<input webkitdirectory> 또는 끌어다 놓기)으로 만든 가짜 폴더 손잡이 — 이번 창에서만
+class VFile {
+  readonly kind = 'file';
+  constructor(readonly name: string, private f: File) {}
+  async getFile() {
+    return this.f;
+  }
+}
+class VDir {
+  readonly kind = 'directory';
+  dirs = new Map<string, VDir>();
+  files = new Map<string, VFile>();
+  constructor(readonly name: string) {}
+  async getDirectoryHandle(n: string) {
+    const d = this.dirs.get(n);
+    if (!d) throw new DOMException('not found', 'NotFoundError');
+    return d;
+  }
+  async getFileHandle(n: string) {
+    const f = this.files.get(n);
+    if (!f) throw new DOMException('not found', 'NotFoundError');
+    return f;
+  }
+  async *entries(): AsyncIterableIterator<[string, VDir | VFile]> {
+    for (const [k, v] of this.dirs) yield [k, v];
+    for (const [k, v] of this.files) yield [k, v];
+  }
+}
+function vdirFromFiles(files: File[]): VDir | null {
+  let root: VDir | null = null;
+  for (const f of files) {
+    const rel = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
+    const parts = rel.split('/');
+    if (!root) root = new VDir(parts[0]);
+    let d = root;
+    for (const seg of parts.slice(1, -1)) {
+      if (!d.dirs.has(seg)) d.dirs.set(seg, new VDir(seg));
+      d = d.dirs.get(seg)!;
+    }
+    d.files.set(parts[parts.length - 1], new VFile(parts[parts.length - 1], f));
+  }
+  return root;
+}
 
 function idb(): Promise<IDBDatabase> {
   return new Promise((res, rej) => {
@@ -89,21 +135,65 @@ export async function reopenFolder(): Promise<boolean> {
 // 폴더 고르기: work 자체, 그 위(C:\KWD, 거울 폴더), Student_Lessons 를 골라도 알아서 work 를 찾는다
 export async function pickWorkFolder(): Promise<{ ok: boolean; name?: string; message?: string }> {
   const picker = (window as unknown as { showDirectoryPicker?: (o: unknown) => Promise<DirHandle> }).showDirectoryPicker;
-  if (!picker) return { ok: false, message: '이 브라우저는 폴더 연결을 못 해요. 크롬이나 엣지에서 여세요.' };
+  if (!picker) return pickWorkFolderByList();
   let picked: DirHandle;
+  const t0 = performance.now();
   try {
-    picked = await picker({ id: 'kwd-work', mode: 'read' });
-  } catch {
-    return { ok: false };
+    picked = await picker.call(window, { id: 'kwd-work', mode: 'read' });
+  } catch (e) {
+    // 창이 뜨지도 않고 곧바로 취소되면: 고르기 창이 막힌 브라우저
+    if ((e as Error).name === 'AbortError' && performance.now() - t0 < 600) return { ok: false, message: PICKER_BLOCKED };
+    if ((e as Error).name === 'AbortError') return { ok: false };
+    return { ok: false, message: '폴더를 열지 못했어요: ' + ((e as Error).message || e) };
   }
+  return useWorkHandle(picked);
+}
+
+export async function useWorkHandle(picked: DirHandle, persist = true): Promise<{ ok: boolean; name?: string; message?: string }> {
   const work = await findWork(picked);
   if (!work) return { ok: false, message: `'${picked.name}' 안에서 Student_Lessons 폴더를 찾지 못했어요. KWD 의 work 폴더를 골라 주세요.` };
-  await idbSet('work', work);
+  if (persist && !(work instanceof VDir)) await idbSet('work', work);
+  else testHandle = work;
   cache.students = null;
   return { ok: true, name: work.name };
 }
 
+// 고르기 창 대신: 파일 목록으로 폴더 받기 (이번 창에서만, 다시 열면 다시 골라야 함)
+export function pickWorkFolderByList(): Promise<{ ok: boolean; name?: string; message?: string }> {
+  return new Promise((res) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    (input as HTMLInputElement & { webkitdirectory: boolean }).webkitdirectory = true;
+    const t0 = performance.now();
+    input.addEventListener('change', async () => {
+      const files = Array.from(input.files || []);
+      const root = vdirFromFiles(files);
+      if (!root) return res({ ok: false });
+      res(await useWorkHandle(root as unknown as DirHandle, false));
+    });
+    input.addEventListener('cancel', () => res(performance.now() - t0 < 600 ? { ok: false, message: PICKER_BLOCKED } : { ok: false }));
+    input.click();
+  });
+}
+
+// 끌어다 놓은 폴더 (크롬은 진짜 손잡이를 준다 → 다음에도 기억)
+export async function useDroppedItems(items: DataTransferItemList): Promise<{ ok: boolean; name?: string; message?: string }> {
+  const list = Array.from(items).filter((i) => i.kind === 'file');
+  for (const it of list) {
+    const getH = (it as DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileSystemHandle | null> }).getAsFileSystemHandle;
+    if (getH) {
+      const hnd = await getH.call(it);
+      if (hnd && hnd.kind === 'directory') return useWorkHandle(hnd as DirHandle);
+    }
+  }
+  return { ok: false, message: '폴더를 놓아 주세요 (KWD 의 work 폴더).' };
+}
+
 async function findWork(h: DirHandle): Promise<DirHandle | null> {
+  if ((h as unknown as VDir) instanceof VDir && !(await sub(h, 'Student_Lessons')) && h.name !== 'work') {
+    const w = await sub(h, 'work');
+    if (w && (await sub(w, 'Student_Lessons'))) return w;
+  }
   if (await sub(h, 'Student_Lessons')) return h;
   if (h.name === 'Student_Lessons') return null; // 위로는 못 올라간다
   const w = await sub(h, 'work');
@@ -266,7 +356,8 @@ export async function briefFor(date = ymd()): Promise<{ date: string; generatedA
 export interface PackFile {
   name: string;
   path: string[]; // 학생 폴더 기준
-  kind: 'html' | 'pdf' | 'img' | 'md';
+  kind: 'html' | 'pdf' | 'img' | 'md' | 'audio' | 'video' | 'text';
+  mtime?: number;
   size: number;
 }
 export interface StudentPack {
@@ -280,6 +371,7 @@ export interface StudentPack {
   plan?: { name: string; text: string; n: number };
   homework?: { name: string; text: string };
   files: PackFile[]; // 판에 넣을 수 있는 자료 (최근 수업준비 우선)
+  hwFiles: PackFile[]; // 학생이 낸 과제 (학생 폴더의 과제/ 폴더)
   lessons: Array<{ n: number; name: string; date: string }>;
   lessonData: string[]; // .lesson_data_N.json 이름들
   brief?: BriefLesson;
@@ -296,7 +388,7 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
   const dir = await studentDir(folder);
   if (!dir) return null;
   const { name, id } = parseFolder(folder);
-  const pack: StudentPack = { folder, name, id, files: [], lessons: [], lessonData: [], brief };
+  const pack: StudentPack = { folder, name, id, files: [], hwFiles: [], lessons: [], lessonData: [], brief };
   const top = await entries(dir);
   const fileKind = (n: string): PackFile['kind'] | null => (/\.html?$/i.test(n) ? 'html' : /\.pdf$/i.test(n) ? 'pdf' : /\.(png|jpe?g|gif|webp)$/i.test(n) ? 'img' : null);
   let planN = -1;
@@ -326,6 +418,17 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
         if (m && n.endsWith('.md')) pack.lessons.push({ n: Number(m[1]), name: n, date: m[2] });
         else await consider(e.handle, n, [n]);
       }
+    } else if (e.name === '과제' || e.name === 'homework' || e.name === '숙제') {
+      const kindOf = (n: string): PackFile['kind'] | null =>
+        /\.(png|jpe?g|gif|webp|heic)$/i.test(n) ? 'img' : /\.(mp3|m4a|wav|ogg|webm|aac)$/i.test(n) ? 'audio' : /\.(mp4|mov|m4v)$/i.test(n) ? 'video' : /\.(md|txt)$/i.test(n) ? 'text' : /\.pdf$/i.test(n) ? 'pdf' : null;
+      for (const f of await entries(e.handle as DirHandle)) {
+        if (f.kind !== 'file') continue;
+        const k = kindOf(f.name);
+        if (!k) continue;
+        const file = await (f.handle as FileSystemFileHandle).getFile();
+        pack.hwFiles.push({ name: f.name, path: [e.name, f.name], kind: k, size: file.size, mtime: file.lastModified });
+      }
+      pack.hwFiles.sort((a, b) => (b.mtime || 0) - (a.mtime || 0));
     } else if (e.name === '수업준비' || e.name === '자료' || e.name === 'materials') {
       for (const f of await entries(e.handle as DirHandle)) if (f.kind === 'file') await consider(f.handle, f.name, [e.name, f.name]);
     }

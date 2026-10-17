@@ -2,7 +2,7 @@
 // 학생을 누르면 그 학생의 오늘 판이 열리고, 브리핑·수업안·로드맵·지난 수업이 선생님 화면에만 붙는다.
 import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl } from './store';
 import { h, fmtDateTime, toast } from './ui';
-import { canUseFolder, folderState, pickWorkFolder, reopenFolder, listStudents, briefFor, boardIdFor, rememberBoardFolder, folderForBoard, forgetFolder, ymd, type StudentEntry, type BriefLesson } from './kwdfolder';
+import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, rememberBoardFolder, folderForBoard, forgetFolder, ymd, type StudentEntry, type BriefLesson } from './kwdfolder';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -46,14 +46,35 @@ export class HomeScreen {
       if (canUseFolder()) {
         const card = h('div', { class: 'home-card' });
         const b = h('button', { type: 'button', class: 'primary big' }, 'KWD 폴더 연결하기');
-        b.addEventListener('click', async () => {
-          const r = await pickWorkFolder();
+        const msg = h('p', { class: 'home-warn', hidden: '' });
+        const show = (r: { ok: boolean; name?: string; message?: string }) => {
           if (r.ok) {
             toast(`연결했어요: ${r.name}`);
             void this.render();
-          } else if (r.message) toast(r.message, 5000);
+            return;
+          }
+          if (!r.message) return;
+          msg.hidden = false;
+          msg.textContent = r.message;
+          if (r.message === PICKER_BLOCKED) {
+            const copy = h('button', { type: 'button', class: 'linkish' }, '이 주소 복사');
+            copy.addEventListener('click', () => void navigator.clipboard?.writeText(location.href.split('#')[0]).then(() => toast('주소를 복사했어요. 크롬 주소창에 붙여 넣으세요.')));
+            msg.append(' ', copy);
+          }
+        };
+        b.addEventListener('click', async () => show(await pickWorkFolder()));
+        // 폴더를 끌어다 놓아도 연결
+        card.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          card.classList.add('drop');
         });
-        card.append(h('p', { class: 'home-lead' }, '한 번만 연결하면 오늘 수업 시간표와 학생별 브리핑·수업안·로드맵·지난 수업이 저절로 붙어요.'), b, h('p', { class: 'home-note' }, 'KWD 안의 work 폴더를 고르세요 (C:\\KWD\\work 또는 구글 드라이브 00_KWD_거울). 파일은 이 브라우저 안에서만 읽어요.'));
+        card.addEventListener('dragleave', () => card.classList.remove('drop'));
+        card.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          card.classList.remove('drop');
+          if (e.dataTransfer) show(await useDroppedItems(e.dataTransfer.items));
+        });
+        card.append(h('p', { class: 'home-lead' }, '한 번만 연결하면 오늘 수업 시간표와 학생별 브리핑·수업안·로드맵·지난 수업이 저절로 붙어요.'), b, msg, h('p', { class: 'home-note' }, 'KWD 안의 work 폴더를 고르거나 이 칸에 끌어다 놓으세요 (C:\\KWD\\work 또는 구글 드라이브 00_KWD_거울). 크롬·엣지에서 돼요. 파일은 이 브라우저 안에서만 읽어요.'));
         main.append(card);
       }
       this.renderManual(main, canUseFolder());

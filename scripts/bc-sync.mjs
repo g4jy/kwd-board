@@ -1,0 +1,22 @@
+// 서버 없이 같은 브라우저의 두 창(선생님·학생)이 바로 맞는지
+import { chromium } from 'playwright';
+const BASE = process.env.BASE || 'http://localhost:4173';
+const b = await chromium.launch();
+const ctx = await b.newContext({ viewport: { width: 1200, height: 800 } });
+const t = await ctx.newPage();
+const room = 'bc' + Date.now();
+await t.goto(`${BASE}/#/b/${room}?r=t&st=5`);
+await t.waitForFunction(() => document.activeElement?.closest?.('.ProseMirror'));
+await t.keyboard.type('나란히 보기 시험');
+const s = await ctx.newPage();
+await s.goto(`${BASE}/#/b/${room}?r=s`);
+await s.waitForFunction(() => window.__kwd && (window.__kwd.editor()?.getText() || '').includes('나란히'), null, { timeout: 8000 });
+await t.keyboard.type(' 둘');
+await s.waitForFunction(() => (window.__kwd.editor()?.getText() || '').includes('둘'), null, { timeout: 5000 });
+const chip = await t.locator('.chip').innerText();
+const res = { student: await s.evaluate(() => window.__kwd.editor().getText()), teacherChip: chip.replace(/\n/g, ' ') };
+await t.evaluate(() => window.__kwd.store.setSetting('studentWrite', true));
+await s.waitForFunction(() => window.__kwd.editor().isEditable, null, { timeout: 5000 });
+res.studentEditable = true;
+console.log(JSON.stringify(res));
+await b.close();

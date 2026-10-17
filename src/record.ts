@@ -47,6 +47,9 @@ export function boardMarkdown({ store, editors }: RecordInput): string {
         const t = boxPlainText(store, o.id);
         if (t) out.push('', `[글상자 (${Math.round(o.x)},${Math.round(o.y)})] ${t.replace(/\n+/g, ' / ')}`);
       } else if (o.type === 'img') out.push('', `[사진] ${o.name || ''}`.trim());
+      else if (o.type === 'audio') out.push('', `[소리] ${o.name || ''}`.trim());
+      else if (o.type === 'video') out.push('', `[영상] ${o.name || ''}`.trim());
+      else if (o.type === 'youtube') out.push('', `[유튜브] ${o.url || ''}`.trim());
       else {
         const md = o.mid ? store.matdata.get(`${o.mid}/1`) : undefined;
         out.push('', `[웹 학습지] ${o.name || ''}`.trim());
@@ -126,7 +129,7 @@ export async function buildBundle(input: RecordInput): Promise<{ name: string; b
       ...p,
       doc: p.kind === 'text' ? editors.get(p.id)?.getJSON() || null : null,
       ink: store.ink(p.id).toArray(),
-      objects: store.objList(p.id).map((o) => ({ ...o, src: o.src && o.src.startsWith('data:') ? '(그림)' : o.src, text: o.type === 'box' ? boxPlainText(store, o.id) : undefined })),
+      objects: store.objList(p.id).map((o) => ({ ...o, src: o.src && o.src.startsWith('data:') ? `(${o.type} 파일)` : o.src, text: o.type === 'box' ? boxPlainText(store, o.id) : undefined })),
     })),
     settings: store.settings.toJSON(),
   };

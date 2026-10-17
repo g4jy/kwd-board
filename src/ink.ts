@@ -83,6 +83,7 @@ export class InkLayer {
   tool: Tool = 'text';
   style: PenStyle = { color: '#222222', size: 3, hl: false };
   eraserSize = 12;
+  eraserMode: 'stroke' | 'part' = 'stroke';
   straighten = false;
   private holdTimer = 0;
   private store: BoardStore;
@@ -315,6 +316,41 @@ export class InkLayer {
     const hit = this.hitPage(wx, wy);
     if (!hit) return;
     const r = this.eraserSize / this.vp.view.s;
+    if (this.eraserMode === 'part') {
+      // 닿은 부분만: 원 안의 점을 빼고 남은 조각을 새 획으로
+      for (const s of this.store.ink(hit.page.id).toArray()) {
+        const rr = r + s.size / 2;
+        if (!this.hits(s, hit.x, hit.y, rr)) continue;
+        const parts: number[][] = [];
+        let cur: number[] = [];
+        const p = s.pts;
+        for (let i = 0; i + 2 < p.length; i += 3) {
+          const inside = (p[i] - hit.x) ** 2 + (p[i + 1] - hit.y) ** 2 <= rr * rr;
+          if (inside) {
+            if (cur.length >= 6) parts.push(cur);
+            cur = [];
+          } else cur.push(p[i], p[i + 1], p[i + 2]);
+        }
+        if (cur.length >= 6) parts.push(cur);
+        // 원이 점 사이를 지나간 경우(점이 성긴 직선): 가운데를 잘라 낸다
+        if (parts.length === 1 && parts[0].length === p.length) {
+          let best = 0, bd = Infinity;
+          for (let i = 0; i + 5 < p.length; i += 3) {
+            const d = (p[i] + p[i + 3]) / 2 - hit.x, e = (p[i + 1] + p[i + 4]) / 2 - hit.y;
+            if (d * d + e * e < bd) {
+              bd = d * d + e * e;
+              best = i;
+            }
+          }
+          parts[0] = p.slice(0, best + 3);
+          parts.push(p.slice(best + 3));
+        }
+        const pieces = parts.filter((q) => q.length >= 6).map((q, k) => ({ ...s, id: s.id.slice(0, 6) + randomId(4) + k, pts: q }));
+        this.store.replaceStroke(hit.page.id, s.id, pieces);
+      }
+      this.invalidate();
+      return;
+    }
     for (const s of this.store.ink(hit.page.id).toArray()) {
       if (this.hits(s, hit.x, hit.y, r + s.size / 2)) {
         this.store.removeStroke(hit.page.id, s.id);

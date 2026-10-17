@@ -6,7 +6,7 @@ import { ySyncPluginKey } from '@tiptap/y-tiptap';
 import { BoardStore, randomId, getServerUrl, setServerUrl, getToken, setToken, upsertIndex, loadIndex, LOCAL, TEXT_W, TEXT_H, type Role, type PageInfo, type InkTarget } from './store';
 import { Viewport } from './viewport';
 import { InkLayer, CURSOR_ARROW, CURSOR_TEXT, type Tool, type PageBox } from './ink';
-import { PageObjects, BOX_W, type ObjectHost } from './objects';
+import { PageObjects, BOX_W, youtubeId, type ObjectHost } from './objects';
 import { createPageEditor, insertImageFiles, fileToDataUrl, makeHintPlugin, hintKey, ROLE_COLORS, ROLE_NAMES, type HintWord } from './editor';
 import { summarize } from './exportmd';
 import { buildBundle, bundleName, boardMarkdown, canPickFolder, pickFolder, folderName, writeToFolder } from './record';
@@ -15,6 +15,7 @@ import { loadPrefs, savePrefs, penSlot, renderSlot, buildPenPopover, type PenPre
 import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY, type StudentMemory } from './memory';
 import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, type StudentPack, type PackFile } from './kwdfolder';
 import { renderStudentPanel, type PanelTab } from './studentpanel';
+import { hwConfig, setHwConfig, homeworkFor, hwMedia } from './homework';
 import { h, download, downloadBlob, fmtDate, fmtClock, toast, EMBEDDED } from './ui';
 
 const GAP = 28; // 페이지 사이
@@ -125,6 +126,7 @@ export class BoardScreen {
       canType: () => this.role === 'teacher' || (this.role === 'student' && this.store.getSetting('studentWrite', false)),
       interactive: () => this.tool === 'text' || this.tool === 'select',
       selectMode: () => this.tool === 'select',
+      openPopup: (page, id) => this.setPopup({ page, id }),
       selected: () => this.selObj?.id || null,
       select: (page, id) => this.selectObj(page, id),
       onText: (page, block, kind, text) => this.store.logText(page, block, kind, text),
@@ -858,6 +860,29 @@ export class BoardScreen {
       if (at) this.addBox(at.page, at.x, at.y);
     });
 
+    // 파일을 판 위에 끌어다 놓기 (사진·PDF·웹 학습지·문서·소리·영상)
+    stage.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer?.types.includes('Files')) return;
+      e.preventDefault();
+      this.root.classList.add('dropping');
+    });
+    stage.addEventListener('dragleave', (e) => {
+      if (e.target === stage) this.root.classList.remove('dropping');
+    });
+    stage.addEventListener('drop', (e) => {
+      this.root.classList.remove('dropping');
+      const files = Array.from(e.dataTransfer?.files || []);
+      if (!files.length || !canMake()) return;
+      e.preventDefault();
+      const at = this.pageAt(e.clientX, e.clientY);
+      if (at) this.currentPage = at.page;
+      void this.handleFiles(files);
+    });
+    // 녹음 중 표시 (누르면 끝)
+    const recBtn = h('button', { type: 'button', class: 'rec-btn', title: '녹음 끝내기' }, '● 녹음 끝내기');
+    recBtn.addEventListener('click', () => void this.toggleRecord());
+    this.root.append(recBtn);
+
     // 웹 학습지 안에서 보낸 휠: Ctrl·핀치 = 판 확대, 그 밖 = 판 이동
     const onMsg = (e: MessageEvent) => {
       const d = e.data as { type?: string; dx?: number; dy?: number; x?: number; y?: number; ctrl?: boolean } | null;
@@ -961,6 +986,7 @@ export class BoardScreen {
       this.toolbar.hidden = !(studentWrite || studentInk);
       this.root.classList.toggle('tb-on', !this.toolbar.hidden);
       this.toolbar.classList.toggle('no-ink', !studentInk);
+      this.toolbar.classList.toggle('no-write', !studentWrite);
       this.root.classList.toggle('mat-locked', !studentMat);
     }
     if (this.role === 'assist') {
@@ -973,6 +999,7 @@ export class BoardScreen {
     this.root.classList.toggle('mode-single', single);
     this.singleNav.hidden = !single;
     this.renderTimer();
+    this.renderPopup();
     this.layout();
     if (single) this.gotoPage(this.currentPage, false);
     this.updateSingleLabel();
@@ -1012,7 +1039,11 @@ export class BoardScreen {
     const pens = h('span', { class: 'tb-pens' }, ...this.slots);
     if (this.role === 'teacher') bar.append(select, text, sep(), pens, eraser, sep(), undo, redo, sep(), imp, more);
     else if (this.role === 'assist') bar.append(pens, eraser, sep(), undo, redo);
-    else bar.append(text, pens, eraser, undo);
+    else {
+      // 학생: 글·펜·지우개·되돌리기 + 과제 사진 찍어 올리기 (글 쓰기 허락이 있을 때)
+      const cam = btn('camera', '📷 사진', '사진 찍어 판에 올리기', 'cam');
+      bar.append(text, pens, eraser, undo, cam);
+    }
     bar.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest('button') as HTMLButtonElement | null;
       if (!b) return;
@@ -1026,6 +1057,7 @@ export class BoardScreen {
       } else if (id === 'undo') this.undo.undo();
       else if (id === 'redo') this.undo.redo();
       else if (id === 'import') this.openImport(b);
+      else if (id === 'camera') this.pickFile('image/*', true, (files) => void this.insertImages(files), true);
       else if (id === 'more') this.openMenu(b);
     });
     bar.addEventListener('mousedown', (e) => {
@@ -1051,6 +1083,7 @@ export class BoardScreen {
       this.ink.style = { color: p.color, size: p.size, hl: false, kind: p.kind };
     }
     this.ink.eraserSize = this.prefs.eraser;
+    this.ink.eraserMode = this.prefs.eraserMode || 'stroke';
     this.ink.straighten = this.prefs.straighten;
     this.ink.updateCursor();
   }
@@ -1071,6 +1104,11 @@ export class BoardScreen {
       },
       onEraser: (s) => {
         this.prefs.eraser = s;
+        savePrefs(this.role, this.prefs);
+        this.applyPenStyle();
+      },
+      onEraserMode: (m) => {
+        this.prefs.eraserMode = m;
         savePrefs(this.role, this.prefs);
         this.applyPenStyle();
       },
@@ -1385,16 +1423,206 @@ export class BoardScreen {
       item('사진', '지금 페이지 위에 놓여요 · 끌어서 옮기고 모서리로 크기', () => this.pickFile('image/*', true, (files) => void this.insertImages(files))),
       item('PDF · 슬라이드', '한 쪽씩 페이지로 들어가요 · PPT는 PDF로 저장해서', () => this.pickFile('application/pdf,.pdf', false, (files) => void this.importPdfFile(files[0]))),
       item('웹 학습지', '.html 파일 · 지금 페이지 위에 창으로, 옮기고 크기 바꾸기', () => this.pickFile('.html,.htm,text/html', false, (files) => void this.importHtmlFile(files[0]))),
+      item('문서 (.md · .txt)', '새 페이지에 글로 들어가요 · 고칠 수 있어요', () => this.pickFile('.md,.markdown,.txt,text/markdown,text/plain', false, (files) => void this.handleFiles(files))),
+      item('소리 · 영상', '페이지 위 재생기로 · mp3 · m4a · mp4 …', () => this.pickFile('audio/*,video/*', true, (files) => void this.handleFiles(files))),
+      item('유튜브 링크', '작은 창으로 · ⤢ 크게 하면 학생 화면에도', () => this.askYoutube()),
+      item(this.recorder ? '녹음 끝내기' : '녹음하기', '내 목소리를 소리 재생기로', () => void this.toggleRecord()),
       item('빈 페이지', '이 페이지 다음에', () => this.addTextPage()),
     );
     this.showPanel(menu, anchor);
   }
 
-  private pickFile(accept: string, multiple: boolean, fn: (f: File[]) => void) {
+  private pickFile(accept: string, multiple: boolean, fn: (f: File[]) => void, capture = false) {
     const input = h('input', { type: 'file', accept }) as HTMLInputElement;
     if (multiple) input.multiple = true;
+    if (capture) input.setAttribute('capture', 'environment');
+    const t0 = performance.now();
     input.addEventListener('change', () => input.files?.length && fn(Array.from(input.files)));
+    // 고르기 창이 막힌 곳(Claude 앱 안 브라우저 등)에서는 바로 취소된다 → 끌어다 놓기 안내
+    input.addEventListener('cancel', () => performance.now() - t0 < 600 && toast('이 창에서는 파일 고르기가 열리지 않아요. 파일을 판 위에 끌어다 놓거나 크롬·엣지에서 여세요.', 5000));
     input.click();
+  }
+
+  // 끌어다 놓은·고른 파일을 종류에 맞게 (사진·PDF·웹 학습지·문서·소리·영상)
+  async handleFiles(files: File[]) {
+    const imgs = files.filter((f) => f.type.startsWith('image/'));
+    if (imgs.length) await this.insertImages(imgs);
+    for (const f of files) {
+      const n = f.name.toLowerCase();
+      if (f.type === 'application/pdf' || n.endsWith('.pdf')) await this.importPdfFile(f);
+      else if (/\.html?$/.test(n) || f.type === 'text/html') this.placeHtml(await f.text(), f.name.replace(/\.html?$/i, ''));
+      else if (/\.(md|markdown|txt)$/.test(n)) await this.importDoc(await f.text(), f.name.replace(/\.(md|markdown|txt)$/i, ''));
+      else if (f.type.startsWith('audio/') || /\.(mp3|m4a|wav|ogg|webm|aac)$/.test(n) && !f.type.startsWith('video/')) await this.insertMedia(f, 'audio');
+      else if (f.type.startsWith('video/') || /\.(mp4|mov|webm|m4v)$/.test(n)) await this.insertMedia(f, 'video');
+    }
+  }
+
+  // 소리·영상: 페이지 위 재생기
+  async insertMedia(file: File | Blob, kind: 'audio' | 'video', name = (file as File).name || (kind === 'audio' ? '녹음' : '영상')) {
+    const page = this.views.get(this.currentPage) ? this.currentPage : this.order[0];
+    if (file.size > 40 * 1024 * 1024) {
+      toast('40MB 넘는 파일은 판에 넣지 않아요. 유튜브 링크나 더 작은 파일로 넣어 주세요.', 5000);
+      return;
+    }
+    let src = await new Promise<string>((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result));
+      r.onerror = rej;
+      r.readAsDataURL(file);
+    });
+    if (this.store.status === 'connected') {
+      const key = `${kind}-${Date.now().toString(36)}.${kind === 'audio' ? 'webm' : 'mp4'}`;
+      if (await this.store.putBlob(key, file)) src = 'blob:' + key;
+    }
+    let w = kind === 'audio' ? 340 : 480, hh = kind === 'audio' ? 86 : 302;
+    if (kind === 'video') {
+      const dims = await new Promise<[number, number] | null>((res) => {
+        const v = document.createElement('video');
+        v.preload = 'metadata';
+        v.onloadedmetadata = () => res(v.videoWidth ? [v.videoWidth, v.videoHeight] : null);
+        v.onerror = () => res(null);
+        v.src = src.startsWith('blob:') && !src.startsWith('blob:http') ? this.store.resolveImg(src) : src;
+      });
+      if (dims) hh = Math.round((w * dims[1]) / dims[0]) + 32;
+    }
+    const [x, y] = this.spotOnPage(page, w, hh);
+    const o = this.store.addObj(page, { type: kind, x, y, w, h: hh, src, name });
+    this.selectObj(page, o.id);
+  }
+
+  addYoutube(url: string, page = this.currentPage) {
+    const id = youtubeId(url);
+    if (!id) {
+      toast('유튜브 주소를 알아보지 못했어요.');
+      return;
+    }
+    const pg = this.views.get(page) ? page : this.order[0];
+    const w = 520, hh = Math.round((520 * 9) / 16) + 32;
+    const [x, y] = this.spotOnPage(pg, w, hh);
+    const o = this.store.addObj(pg, { type: 'youtube', x, y, w, h: hh, url, name: '유튜브' });
+    this.selectObj(pg, o.id);
+    return o.id;
+  }
+
+  private askYoutube() {
+    const box = h('div', { class: 'menu wide' });
+    const input = h('input', { type: 'url', class: 'link-input', placeholder: 'https://www.youtube.com/watch?v=…  또는 youtu.be/…' }) as HTMLInputElement;
+    const ok = h('button', { type: 'button', class: 'mi small' }, '넣기');
+    const go = () => {
+      if (!input.value.trim()) return;
+      this.closePanel();
+      this.addYoutube(input.value.trim());
+    };
+    ok.addEventListener('click', go);
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') go();
+    });
+    box.append(h('div', { class: 'mh' }, '유튜브 링크'), h('div', { class: 'link-row' }, input, ok), h('p', { class: 'mnote' }, '페이지 위에 작은 창으로 놓이고, ⤢ 크게 를 누르면 학생 화면에도 크게 떠요.'));
+    this.showPanel(box);
+    window.setTimeout(() => input.focus(), 0);
+  }
+
+  // 녹음 → 소리 재생기 (선생님 목소리·학생 발음)
+  private recorder: MediaRecorder | null = null;
+  async toggleRecord() {
+    if (this.recorder) {
+      this.recorder.stop();
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      toast('마이크를 쓸 수 없어요. 브라우저의 마이크 허용을 확인해 주세요.', 4000);
+      return;
+    }
+    const rec = new MediaRecorder(stream);
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+    rec.onstop = () => {
+      stream.getTracks().forEach((t) => t.stop());
+      this.recorder = null;
+      this.root.classList.remove('recording');
+      const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+      const d = new Date();
+      void this.insertMedia(blob, 'audio', `녹음 ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`);
+    };
+    rec.start();
+    this.recorder = rec;
+    this.root.classList.add('recording');
+    toast('녹음 중… 빨간 단추를 누르면 끝나요', 3000);
+  }
+
+  // 문서(.md·.txt) → 새 글 페이지
+  async importDoc(text: string, name: string) {
+    const { marked } = await import('marked');
+    const DOMPurify = (await import('dompurify')).default;
+    const html = DOMPurify.sanitize(marked.parse(text.replace(/^---\n[\s\S]*?\n---\n/, ''), { async: false, gfm: true }) as string);
+    const idx = this.order.indexOf(this.currentPage);
+    const p = this.store.addPage({ kind: 'text', w: TEXT_W, h: TEXT_H }, idx + 1);
+    this.store.log({ kind: 'material', page: p.id, data: { op: 'import', type: 'md', name, chars: text.length } });
+    this.syncPages();
+    const ed = this.editors.get(p.id);
+    if (ed) ed.chain().insertContent(html).run();
+    this.gotoPage(p.id);
+    return p.id;
+  }
+
+  // 모두의 화면에 크게 (사진·영상·유튜브)
+  setPopup(p: { page: string; id: string } | null) {
+    if (this.role !== 'teacher') {
+      this.popupClosedLocally = p ? '' : this.popupKey();
+      this.renderPopup();
+      return;
+    }
+    this.store.setSetting('popup', p ? { ...p, t: Date.now() } : null);
+  }
+  private popupClosedLocally = '';
+  private popupEl: HTMLElement | null = null;
+  private popupKey(): string {
+    const p = this.store.getSetting<{ page: string; id: string; t: number } | null>('popup', null);
+    return p ? `${p.page}/${p.id}/${p.t}` : '';
+  }
+  private renderPopup() {
+    const p = this.store.getSetting<{ page: string; id: string; t: number } | null>('popup', null);
+    const key = this.popupKey();
+    if (!p || key === this.popupClosedLocally) {
+      this.popupEl?.remove();
+      this.popupEl = null;
+      return;
+    }
+    if (this.popupEl?.dataset.key === key) return;
+    this.popupEl?.remove();
+    const o = this.store.objList(p.page).find((x) => x.id === p.id);
+    if (!o) return;
+    const wrap = h('div', { class: 'popup', 'data-key': key });
+    const close = h('button', { type: 'button', class: 'popup-x', title: '닫기' }, this.role === 'teacher' ? '× 모두 닫기' : '×');
+    close.addEventListener('click', () => {
+      if (this.role === 'teacher') this.setPopup(null);
+      else {
+        this.popupClosedLocally = key;
+        this.renderPopup();
+      }
+    });
+    let content: HTMLElement;
+    if (o.type === 'img') {
+      content = h('img', { class: 'popup-media', alt: o.name || '' });
+      (content as HTMLImageElement).src = this.store.resolveImg(o.src);
+    } else if (o.type === 'video') {
+      content = h('video', { class: 'popup-media', controls: '', playsinline: '', autoplay: '' });
+      (content as HTMLVideoElement).src = this.store.resolveImg(o.src);
+    } else if (o.type === 'youtube') {
+      content = h('iframe', { class: 'popup-media popup-yt', allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: '', title: '유튜브' });
+      (content as HTMLIFrameElement).src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(youtubeId(o.url || '') || '')}?rel=0&autoplay=1`;
+    } else return;
+    wrap.append(content, close);
+    wrap.addEventListener('pointerdown', (e) => {
+      if (e.target === wrap) close.click();
+    });
+    this.root.append(wrap);
+    this.popupEl = wrap;
+    if (this.role === 'teacher') this.store.log({ kind: 'object', page: p.page, id: p.id, data: { op: 'popup', type: o.type } });
   }
 
   // 사진: 지금 보는 페이지 위에 원래 비율로 놓는다
@@ -1661,11 +1889,32 @@ export class BoardScreen {
     toast('판에 넣었어요');
   }
 
+  // 글을 지금 페이지 위 글상자로 (과제 답 등)
+  placeTextBox(text: string) {
+    const page = this.views.get(this.currentPage) ? this.currentPage : this.order[0];
+    const lines = text.split(/\n/).length;
+    const [x, y] = this.spotOnPage(page, 360, 40 + lines * 30);
+    const o = this.store.addObj(page, { type: 'box', x, y, w: 360, h: 44 });
+    const frag = this.store.boxFragment(o.id);
+    this.store.doc.transact(() => {
+      for (const line of text.split(/\n/)) {
+        const p = new Y.XmlElement('paragraph');
+        p.insert(0, [new Y.XmlText(line)]);
+        frag.push([p]);
+      }
+    }, LOCAL);
+    this.selectObj(page, o.id);
+    toast('판에 넣었어요');
+  }
+
   private async placePackFile(f: PackFile) {
     const file = await readPackFile(this.packFolder, f.path);
     if (!file) throw new Error('no file');
     const base = f.name.replace(/\.[^.]+$/, '');
     if (f.kind === 'html') this.placeHtml(await file.text(), base);
+    else if (f.kind === 'audio' || f.kind === 'video') await this.insertMedia(file, f.kind, base);
+    else if (f.kind === 'text') this.placeTextBox(await file.text());
+    else if (f.kind === 'md') await this.importDoc(await file.text(), base);
     else if (f.kind === 'img') await this.insertImages([file]);
     else if (f.kind === 'pdf') {
       const ids = await importPdf(this.store, await file.arrayBuffer(), base, this.order.indexOf(this.currentPage));
@@ -1693,6 +1942,20 @@ export class BoardScreen {
           readLessonDoc: async (name) => (await (await readPackFile(this.packFolder, [name]))?.text()) || '',
           otherBoards: () => loadIndex().filter((b) => b.id !== this.store.id && folderForBoard(b.id) === this.packFolder),
           close: () => this.toggleMemPanel(),
+          previewUrl: async (f) => {
+            const file = await readPackFile(this.packFolder, f.path);
+            return file ? URL.createObjectURL(file) : '';
+          },
+          hwConnected: () => !!hwConfig(),
+          loadHomework: async () => (await homeworkFor(this.pack?.name || '', this.pack?.id || '')).groups,
+          hwMedia: (fid) => hwMedia(fid),
+          placeData: async (dataUrl, mime, name) => {
+            const blob = await (await fetch(dataUrl)).blob();
+            const file = new File([blob], name, { type: mime });
+            if (mime.startsWith('image/')) await this.insertImages([file]);
+            else await this.insertMedia(file, mime.startsWith('video/') ? 'video' : 'audio', name);
+          },
+          placeText: (text) => this.placeTextBox(text),
         },
       );
       return;
@@ -1830,7 +2093,20 @@ export class BoardScreen {
       });
       return el;
     };
-    const toggle = (label: string, key: string, def: boolean) => item(label, () => s.setSetting(key, !s.getSetting(key, def)), { on: s.getSetting(key, def), off: !s.getSetting(key, def) });
+    // 켬·끔 스위치: 눌러도 메뉴가 닫히지 않는다 (여러 개를 한 번에 바꾸기)
+    const toggle = (label: string, key: string, def: boolean) => {
+      const on = () => s.getSetting(key, def) as boolean;
+      const el = h('button', { type: 'button', class: 'mi ' + (on() ? 'on' : 'off'), role: 'switch', 'aria-checked': String(on()), 'data-key': key }, h('span', {}, label));
+      el.addEventListener('mousedown', (e) => e.preventDefault());
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        s.setSetting(key, !on());
+        el.classList.toggle('on', on());
+        el.classList.toggle('off', !on());
+        el.setAttribute('aria-checked', String(on()));
+      });
+      return el;
+    };
     const menu = h('div', { class: 'menu' });
     const cur = this.views.get(this.currentPage);
     const timers = h('div', { class: 'mi-chips' }, h('span', { class: 'mi-chips-label' }, '타이머'));
@@ -1876,6 +2152,7 @@ export class BoardScreen {
       ...(canPickFolder() && !EMBEDDED ? [item('기록 폴더 정하기', '정하면 1분마다 자동 저장', () => void pickFolder().then((n) => n && toast(`기록 폴더: ${n}`)))] : []),
       item('글만 마크다운으로 받기', '', () => this.exportMd()),
       item('서버·선생님 열쇠', '여러 기기 연결', () => this.openServer()),
+      item('숙제 연결', hwConfig() ? '연결됨' : 'KWD 숙제 앱 주소·선생님 키', () => this.openHwSettings()),
     );
     this.showPanel(menu, anchor);
   }
@@ -2013,6 +2290,23 @@ export class BoardScreen {
       row('다른 랩탑', mk('teacher')),
       h('p', { class: 'mnote' }, EMBEDDED ? '시험용 창이라 다른 기기와 연결할 수 없어요. 설치본에서 서버 주소를 넣으면 링크 하나로 같이 봅니다.' : srv ? `서버 ${srv}` : '서버 주소가 없어 이 기기 안에서만 동작해요. ⋯ → 서버·선생님 열쇠.'),
     );
+    this.showPanel(box);
+  }
+
+  private openHwSettings() {
+    const c = hwConfig();
+    const box = h('div', { class: 'menu wide' });
+    const url = h('input', { type: 'url', class: 'link-input', placeholder: 'https://script.google.com/macros/s/…/exec', value: c?.url || '' }) as HTMLInputElement;
+    const key = h('input', { type: 'password', class: 'link-input', placeholder: '선생님 키', value: c?.key || '', autocomplete: 'off' }) as HTMLInputElement;
+    const save = h('button', { type: 'button', class: 'mi small' }, '저장');
+    save.addEventListener('click', () => {
+      setHwConfig(url.value.trim() && key.value.trim() ? { url: url.value.trim(), key: key.value.trim() } : null);
+      this.closePanel();
+      toast(hwConfig() ? '숙제 앱과 연결했어요' : '숙제 연결을 껐어요');
+      if (this.memPanel) this.renderMemPanel();
+    });
+    [url, key].forEach((i) => i.addEventListener('keydown', (e) => e.stopPropagation()));
+    box.append(h('div', { class: 'mh' }, 'KWD 숙제 연결'), h('div', { class: 'link-row' }, url), h('div', { class: 'link-row' }, key, save), h('p', { class: 'mnote' }, '숙제 앱(Apps Script) 배포 주소와 선생님 키. 이 기기에만 저장돼요. 연결하면 이 학생 → 과제 에서 학생이 낸 답·사진·녹음을 불러와요.'));
     this.showPanel(box);
   }
 

@@ -3,7 +3,7 @@
 import * as Y from 'yjs';
 import { IndexeddbPersistence } from 'y-indexeddb';
 import { WebsocketProvider } from 'y-websocket';
-import { Awareness } from 'y-protocols/awareness';
+import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate, removeAwarenessStates } from 'y-protocols/awareness';
 
 export type Role = 'teacher' | 'student' | 'assist';
 
@@ -29,7 +29,8 @@ export type PenKind = 'fountain' | 'ball' | 'brush' | 'pencil';
 // 페이지 위에 놓이는 것: 글상자·사진·웹 학습지 (페이지 좌표 px)
 export interface PageObject {
   id: string;
-  type: 'box' | 'img' | 'html';
+  type: 'box' | 'img' | 'html' | 'audio' | 'video' | 'youtube';
+  url?: string; // youtube: 원래 주소
   x: number;
   y: number;
   w: number;
@@ -203,6 +204,36 @@ export class BoardStore {
       if (origin !== 'export') this.dirtySince = this.dirtySince || Date.now();
     });
     if (serverUrl) this.connect(serverUrl);
+    else this.startLocalChannel();
+  }
+
+  // 서버가 없을 때: 같은 브라우저의 다른 탭·창(나란히 보기)과 바로 맞춘다
+  private bc: BroadcastChannel | null = null;
+  private startLocalChannel() {
+    if (typeof BroadcastChannel === 'undefined') return;
+    const bc = new BroadcastChannel('kwd-board-' + this.id);
+    this.bc = bc;
+    this.doc.on('update', (u: Uint8Array, origin: unknown) => {
+      if (origin !== 'bc') bc.postMessage({ t: 'u', u });
+    });
+    this.awareness.on('update', ({ added, updated, removed }: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => {
+      if (origin === 'bc') return;
+      bc.postMessage({ t: 'a', a: encodeAwarenessUpdate(this.awareness, added.concat(updated, removed)) });
+    });
+    bc.onmessage = (e: MessageEvent) => {
+      const m = e.data as { t: string; u?: Uint8Array; a?: Uint8Array; sv?: Uint8Array };
+      if (m.t === 'u' && m.u) Y.applyUpdate(this.doc, m.u, 'bc');
+      else if (m.t === 'a' && m.a) applyAwarenessUpdate(this.awareness, m.a, 'bc');
+      else if (m.t === 'hello' && m.sv) {
+        bc.postMessage({ t: 'u', u: Y.encodeStateAsUpdate(this.doc, m.sv) });
+        bc.postMessage({ t: 'a', a: encodeAwarenessUpdate(this.awareness, Array.from(this.awareness.getStates().keys())) });
+        bc.postMessage({ t: 'hello2', sv: Y.encodeStateVector(this.doc) });
+      } else if (m.t === 'hello2' && m.sv) bc.postMessage({ t: 'u', u: Y.encodeStateAsUpdate(this.doc, m.sv) });
+    };
+    const hello = () => bc.postMessage({ t: 'hello', sv: Y.encodeStateVector(this.doc) });
+    if (this.persistence) void this.persistence.whenSynced.then(hello);
+    else hello();
+    window.addEventListener('pagehide', () => removeAwarenessStates(this.awareness, [this.doc.clientID], 'leave'));
   }
 
   now() {
@@ -280,6 +311,17 @@ export class BoardStore {
     this.beforeInkChange?.();
     this.log({ kind: 'ink', page: pageId, data: { op: 'move', ids, dx: Math.round(dx), dy: Math.round(dy) } });
   }
+  // 부분 지우개: 획 하나를 남은 조각들로 바꾼다 (되돌리기 한 번에 묶이도록 따로 끊지 않음)
+  replaceStroke(pageId: string, id: string, parts: Stroke[]) {
+    const arr = this.ink(pageId);
+    const idx = arr.toArray().findIndex((s) => s.id === id);
+    if (idx < 0) return;
+    this.doc.transact(() => {
+      arr.delete(idx, 1);
+      if (parts.length) arr.insert(idx, parts);
+    }, LOCAL);
+    this.log({ kind: 'erase', page: pageId, id, data: { part: true, left: parts.length } });
+  }
   removeStrokes(pageId: string, ids: string[]) {
     const arr = this.ink(pageId);
     const set = new Set(ids);
@@ -342,6 +384,8 @@ export class BoardStore {
   // ---- 상태 ----
   connect(serverUrl: string) {
     this.serverUrl = serverUrl;
+    this.bc?.close();
+    this.bc = null;
     if (this.provider) {
       this.provider.destroy();
       this.provider = null;
@@ -475,6 +519,8 @@ export class BoardStore {
   destroy() {
     this.flushText();
     this.provider?.destroy();
+    removeAwarenessStates(this.awareness, [this.doc.clientID], 'leave');
+    this.bc?.close();
     this.persistence?.destroy();
     this.awareness.destroy();
     this.doc.destroy();

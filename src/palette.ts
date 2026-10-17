@@ -23,6 +23,7 @@ export interface PenPrefs {
   pens: PenPreset[];
   hl: PenPreset;
   eraser: number;
+  eraserMode?: 'stroke' | 'part';
   active: number; // 0..2 펜, 3 형광
   recent: string[];
   recentHl?: string[];
@@ -84,6 +85,7 @@ export function buildPenPopover(opts: {
   prefs: PenPrefs;
   onChange: (p: PenPreset) => void;
   onEraser?: (size: number) => void;
+  onEraserMode?: (m: 'stroke' | 'part') => void;
   onClearPage?: () => void;
   onStraighten?: (v: boolean) => void;
 }): HTMLElement {
@@ -91,6 +93,16 @@ export function buildPenPopover(opts: {
   box.addEventListener('pointerdown', (e) => e.stopPropagation());
   if (opts.kind === 'eraser') {
     box.append(h('div', { class: 'pp-title' }, '지우개'));
+    const modes = h('div', { class: 'pp-row pp-modes' });
+    for (const [label, v] of [['획 전체', 'stroke'], ['닿은 부분만', 'part']] as Array<[string, 'stroke' | 'part']>) {
+      const b = h('button', { type: 'button', class: 'pp-chip' + ((opts.prefs.eraserMode || 'stroke') === v ? ' on' : ''), 'data-mode': v }, label);
+      b.addEventListener('click', () => {
+        opts.onEraserMode?.(v);
+        modes.querySelectorAll('.pp-chip').forEach((x) => x.classList.toggle('on', x === b));
+      });
+      modes.append(b);
+    }
+    box.append(modes);
     const row = h('div', { class: 'pp-row' });
     for (const [label, v] of [['작게', 8], ['보통', 14], ['크게', 28]] as Array<[string, number]>) {
       const b = h('button', { type: 'button', class: 'pp-chip' + (opts.prefs.eraser === v ? ' on' : ''), 'data-er': String(v) }, label);
