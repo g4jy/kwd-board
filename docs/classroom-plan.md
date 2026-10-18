@@ -218,3 +218,4 @@ interface Call {
 - 입력: `Student_Lessons/_roster.json` (kwd-roster/v1) — 수업 후 자동화가 만든다. 판은 읽기만. 없으면 예전 찾기 목록.
 - 형식: { schema, generated_at, purposes:[{key,label}] (가로 순서), students:[{folder, name, country, purpose, stage, step, know[≤2], active, last_lesson, trial}] }
 - 단계·목적 고치기: 카드를 다른 칸으로 끌어 놓기 또는 카드 ⋯ → 단계·목적 → 저장. `Student_Lessons/_roster_teacher.json` (kwd-roster-teacher/v1, {students:{folder:{stage,purpose,at}}}) 에 저장, 자동화 값보다 우선. 자동화는 읽기만.
+- 상태 (10/19): 수업 중 / 쉬는 중(60일 수업 없음, 자동) / 보관(선생님이 ⋯ → 상태 → 보관 + 이유). 필터: 수업 중 · 쉬는 학생까지 · 보관함. 보관 카드 = 단계 · 수업 횟수 · 마지막 수업 · 이유. `_roster_teacher.json` 에 status·reason.

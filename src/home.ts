@@ -2,7 +2,7 @@
 // 학생을 누르면 그 학생의 오늘 판이 열리고, 브리핑·수업안·로드맵·지난 수업이 선생님 화면에만 붙는다.
 import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl } from './store';
 import { h, fmtDateTime, toast } from './ui';
-import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, loadRoster, saveRosterEdit, loadRosterTeacher, STAGE_ROWS, type StudentEntry, type BriefLesson, type Roster, type RosterStudent } from './kwdfolder';
+import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, loadRoster, saveRosterEdit, loadRosterTeacher, STAGE_ROWS, type StudentEntry, type BriefLesson, type Roster, type RosterStudent, type RosterEdit, type RosterStatus } from './kwdfolder';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -141,25 +141,35 @@ export class HomeScreen {
     const sec = h('section', { class: 'home-sec roster' });
     const byFolder = new Map(students.map((s) => [s.folder, s]));
     const cutoff = ymd(new Date(Date.now() - 60 * 86400000));
-    const isActive = (r: RosterStudent) => (r.active !== undefined ? r.active : !!r.last_lesson && r.last_lesson >= cutoff);
-    const activeN = roster.students.filter(isActive).length;
-    let showAll = activeN === 0;
+    // 상태: 선생님이 정한 것 > 자동화의 active > 최근 60일 수업
+    const statusOf = (r: RosterStudent): RosterStatus => r.status || (r.active !== undefined ? (r.active ? 'active' : 'paused') : r.last_lesson && r.last_lesson >= cutoff ? 'active' : 'paused');
+    const isActive = (r: RosterStudent) => statusOf(r) === 'active';
+    type View = 'now' | 'all' | 'arch';
+    let view: View = roster.students.some(isActive) ? 'now' : 'all';
     let dragging = false;
     let dragFolder = '';
     const search = h('input', { type: 'search', class: 'home-search roster-search', placeholder: '이름·나라로 찾기', 'aria-label': '학생 찾기', lang: 'ko' }) as HTMLInputElement;
-    const chipNow = h('button', { type: 'button', class: 'rs-chip' }, `지금 학생 ${activeN}`);
-    const chipAll = h('button', { type: 'button', class: 'rs-chip' }, `모두 ${roster.students.length}`);
-    const head = h('div', { class: 'roster-head' }, h('h2', {}, '학생'), h('div', { class: 'rs-chips' }, chipNow, chipAll), search);
+    const chips: Record<View, HTMLButtonElement> = {
+      now: h('button', { type: 'button', class: 'rs-chip' }) as HTMLButtonElement,
+      all: h('button', { type: 'button', class: 'rs-chip' }) as HTMLButtonElement,
+      arch: h('button', { type: 'button', class: 'rs-chip ghost' }) as HTMLButtonElement,
+    };
+    const head = h('div', { class: 'roster-head' }, h('h2', {}, '학생'), h('div', { class: 'rs-chips' }, chips.now, chips.all, chips.arch), search);
     const grid = h('div', { class: 'roster-wrap' });
     const purposes = [...roster.purposes];
     const known = new Set(purposes.map((p) => p.key));
     if (roster.students.some((r) => !r.purpose || !known.has(r.purpose))) purposes.push({ key: '', label: '목적 미정' });
     const rows = [...STAGE_ROWS, ''];
     const draw = () => {
-      chipNow.classList.toggle('on', !showAll);
-      chipAll.classList.toggle('on', showAll);
+      const n = (st: RosterStatus) => roster.students.filter((r) => statusOf(r) === st).length;
+      chips.now.textContent = `수업 중 ${n('active')}`;
+      chips.all.textContent = `쉬는 학생까지 ${n('active') + n('paused')}`;
+      chips.arch.textContent = `보관함 ${n('archived')}`;
+      chips.arch.hidden = !n('archived') && view !== 'arch';
+      for (const k of Object.keys(chips) as View[]) chips[k].classList.toggle('on', view === k);
       const q = search.value.trim().toLowerCase();
-      const list = roster.students.filter((r) => (q ? `${r.name} ${r.country || ''} ${r.folder}`.toLowerCase().includes(q) : showAll || isActive(r)));
+      const inView = (r: RosterStudent) => (view === 'arch' ? statusOf(r) === 'archived' : view === 'all' ? statusOf(r) !== 'archived' : isActive(r));
+      const list = roster.students.filter((r) => (q ? `${r.name} ${r.country || ''} ${r.folder}`.toLowerCase().includes(q) : inView(r)));
       const cell = (r: RosterStudent) => [STAGE_ROWS.includes(r.stage || '') ? r.stage! : '', r.purpose && known.has(r.purpose) ? r.purpose : ''];
       // 끄는 중에는 빈 줄·칸도 다 보여서 어디로든 옮길 수 있게
       const cols = dragging ? purposes : purposes.filter((p) => list.some((r) => cell(r)[1] === p.key));
@@ -187,12 +197,12 @@ export class HomeScreen {
             const f = e.dataTransfer?.getData('text/kwd-folder') || dragFolder;
             const r = roster.students.find((x) => x.folder === f);
             dragging = false;
-            if (r) void move(r, st, c.key);
+            if (r) void move(r, { stage: st, purpose: c.key });
             else draw();
           });
           const here = list.filter((r) => cell(r)[0] === st && cell(r)[1] === c.key).sort((a, b) => (b.last_lesson || '').localeCompare(a.last_lesson || ''));
           for (const r of here) {
-            const cd = this.rosterCard(r, byFolder.get(r.folder), isActive(r), (stage, purpose, trial) => void move(r, stage, purpose, trial), purposes, rows);
+            const cd = this.rosterCard(r, byFolder.get(r.folder), statusOf(r), (e) => void move(r, e), purposes, rows);
             cd.draggable = true;
             cd.addEventListener('dragstart', (e) => {
               dragFolder = r.folder;
@@ -216,34 +226,40 @@ export class HomeScreen {
       grid.append(t);
     };
     // 단계·목적 고치기: 카드를 다른 칸에 끌어 놓거나 카드의 ⋯ → 저장은 Student_Lessons/_roster_teacher.json (자동화보다 우선)
-    const move = async (r: RosterStudent, stage: string, purpose: string, trial?: boolean) => {
-      const edit: { stage?: string; purpose?: string; trial?: boolean } = {};
-      if ((r.stage || '') !== stage) edit.stage = stage;
-      if ((r.purpose || '') !== purpose) edit.purpose = purpose;
-      if (trial !== undefined && !!r.trial !== trial) edit.trial = trial;
+    const move = async (r: RosterStudent, e: RosterEdit) => {
+      const edit: RosterEdit = {};
+      if (e.stage !== undefined && (r.stage || '') !== e.stage) edit.stage = e.stage;
+      if (e.purpose !== undefined && (r.purpose || '') !== e.purpose) edit.purpose = e.purpose;
+      if (e.trial !== undefined && !!r.trial !== e.trial) edit.trial = e.trial;
+      if (e.status !== undefined && statusOf(r) !== e.status) edit.status = e.status;
+      if (e.reason !== undefined && (r.reason || '') !== e.reason) edit.reason = e.reason;
       if (!Object.keys(edit).length) return draw();
       Object.assign(r, edit);
       draw();
       const ok = await saveRosterEdit(r.folder, edit);
-      toast(ok ? `${r.name}: ${stage || '단계 미정'} · ${purposes.find((p) => p.key === purpose)?.label || '목적 미정'}${r.trial ? ' · 체험' : ''}` : '저장하지 못했어요 (폴더 쓰기 허용 필요)');
+      const st = { active: '', paused: ' · 쉬는 중', archived: ' · 보관함으로' }[statusOf(r)];
+      toast(ok ? `${r.name}: ${r.stage || '단계 미정'} · ${purposes.find((p) => p.key === (r.purpose || ''))?.label || '목적 미정'}${r.trial ? ' · 체험' : ''}${st}` : '저장하지 못했어요 (폴더 쓰기 허용 필요)');
     };
-    chipNow.addEventListener('click', () => ((showAll = false), draw()));
-    chipAll.addEventListener('click', () => ((showAll = true), draw()));
+    for (const k of Object.keys(chips) as View[]) chips[k].addEventListener('click', () => ((view = k), draw()));
     search.addEventListener('input', draw);
-    sec.append(head, grid, h('p', { class: 'home-note roster-tip' }, '카드를 다른 칸으로 끌어 놓거나 카드의 ⋯ 를 누르면 단계·목적을 바꿀 수 있어요. 고친 값은 다음 자동 갱신 때도 그대로 남아요.'));
+    sec.append(head, grid, h('p', { class: 'home-note roster-tip' }, '카드를 다른 칸으로 끌어 놓거나 카드의 ⋯ 를 누르면 단계·목적·상태를 바꿀 수 있어요. 고친 값은 다음 자동 갱신 때도 그대로 남아요.'));
     draw();
     return sec;
   }
 
-  private rosterCard(r: RosterStudent, s: StudentEntry | undefined, active: boolean, onMove: (stage: string, purpose: string, trial: boolean) => void, purposes: Array<{ key: string; label: string }>, stages: string[]): HTMLElement {
+  private rosterCard(r: RosterStudent, s: StudentEntry | undefined, status: RosterStatus, onSave: (e: RosterEdit) => void, purposes: Array<{ key: string; label: string }>, stages: string[]): HTMLElement {
+    const active = status === 'active';
     const know = (r.know || []).filter(Boolean).slice(0, 2);
     const more = h('span', { class: 'rs-more', role: 'button', tabindex: '0', title: '단계·목적 바꾸기' }, '⋯');
     const card = h(
       'div',
-      { class: 'rs-card' + (active ? '' : ' past') + (r.trial ? ' trial' : ''), role: 'button', tabindex: '0', title: [r.step, r.last_lesson ? `마지막 수업 ${r.last_lesson}` : ''].filter(Boolean).join(' · ') },
+      { class: 'rs-card' + (active || status === 'archived' ? '' : ' past') + (r.trial ? ' trial' : ''), role: 'button', tabindex: '0', title: [r.step, r.last_lesson ? `마지막 수업 ${r.last_lesson}` : ''].filter(Boolean).join(' · ') },
       h('span', { class: 'rs-top' }, h('span', { class: 'rs-name' }, r.name), r.country ? h('span', { class: 'rs-cc' }, r.country.toUpperCase()) : '', r.trial ? h('span', { class: 'rs-tag' }, '체험') : '', more),
-      ...know.map((k, i) => h('span', { class: i ? 'rs-know sub' : 'rs-know' }, k)),
+      ...(status === 'archived'
+        ? [h('span', { class: 'rs-know' }, [r.stage || '단계 미정', s?.lessons || r.lessons ? `수업 ${s?.lessons || r.lessons}회` : '', r.last_lesson ? `마지막 ${r.last_lesson}` : ''].filter(Boolean).join(' · ')), r.reason ? h('span', { class: 'rs-know sub' }, r.reason) : '']
+        : know.map((k, i) => h('span', { class: i ? 'rs-know sub' : 'rs-know' }, k))),
     );
+    card.classList.toggle('arch', status === 'archived');
     const open = () => this.openStudent(r.folder, s?.id || (/\(([^)]+)\)/.exec(r.folder) || [])[1] || '');
     card.addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('.rs-more, .rs-pick')) return;
@@ -271,12 +287,22 @@ export class HomeScreen {
         return line;
       };
       let trial = !!r.trial;
+      let st: RosterStatus = status;
+      const reason = h('input', { type: 'text', class: 'rs-reason', placeholder: '보관 이유 한 줄 (선택)', value: r.reason || '' }) as HTMLInputElement;
+      reason.hidden = st !== 'archived';
+      reason.addEventListener('keydown', (e) => e.stopPropagation());
+      reason.addEventListener('click', (e) => e.stopPropagation());
       const done = h('button', { type: 'button', class: 'rs-opt save' }, '저장');
-      done.addEventListener('click', () => onMove(stage, purpose, trial));
+      done.addEventListener('click', () => onSave({ stage, purpose, trial, status: st, reason: st === 'archived' ? reason.value.trim() : r.reason || '' }));
       box.append(
         row('단계', [...STAGE_ROWS.map((x) => [x, x] as [string, string]), ['', '미정']], () => stage, (v) => (stage = v)),
         row('목적', [...purposes.filter((p) => p.key).map((p) => [p.key, p.label] as [string, string]), ['', '미정']], () => purpose, (v) => (purpose = v)),
         row('체험', [['n', '아니요'], ['y', '체험 학생']], () => (trial ? 'y' : 'n'), (v) => (trial = v === 'y')),
+        row('상태', [['active', '수업 중'], ['paused', '쉬는 중'], ['archived', '보관']], () => st, (v) => {
+          st = v as RosterStatus;
+          reason.hidden = st !== 'archived';
+        }),
+        reason,
         done,
       );
       card.append(box);

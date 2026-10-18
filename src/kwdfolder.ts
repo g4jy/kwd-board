@@ -338,6 +338,9 @@ export interface RosterStudent {
   active?: boolean;
   last_lesson?: string; // YYYY-MM-DD
   trial?: boolean;
+  status?: 'active' | 'paused' | 'archived'; // 선생님이 정한 상태 (없으면 최근 수업으로 판단)
+  reason?: string; // 보관 이유 한 줄
+  lessons?: number; // 수업 횟수
 }
 export interface Roster {
   schema: 'kwd-roster/v1';
@@ -361,6 +364,8 @@ export async function loadRoster(): Promise<Roster | null> {
       if (o?.stage !== undefined) st.stage = o.stage;
       if (o?.purpose !== undefined) st.purpose = o.purpose;
       if (o?.trial !== undefined) st.trial = o.trial;
+      if (o?.status !== undefined) st.status = o.status;
+      if (o?.reason !== undefined) st.reason = o.reason;
     }
     return j;
   } catch {
@@ -370,7 +375,8 @@ export async function loadRoster(): Promise<Roster | null> {
 
 // 선생님 수정: Student_Lessons/_roster_teacher.json — 자동화는 이 파일을 읽어 존중하고, 고쳐 쓰지 않는다
 const TEACHER_FILE = '_roster_teacher.json';
-export type RosterEdit = { stage?: string; purpose?: string; trial?: boolean; at?: string };
+export type RosterStatus = 'active' | 'paused' | 'archived';
+export type RosterEdit = { stage?: string; purpose?: string; trial?: boolean; status?: RosterStatus; reason?: string; at?: string };
 export async function loadRosterTeacher(): Promise<Record<string, RosterEdit>> {
   try {
     const work = await storedWork();

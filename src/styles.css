@@ -2949,3 +2949,7 @@ body.in-demo { background: var(--bg); overflow: auto; }
 .rs-opt.save { align-self: flex-end; background: #2563eb; border-color: #2563eb; color: #fff; padding: 3px 12px; }
 .rg-cell.drop { background: #e8eefc; outline: 2px dashed #2563eb; outline-offset: -4px; }
 .roster-tip { margin-top: 8px; }
+.rs-chip.ghost:not(.on) { border-style: dashed; }
+.rs-card.arch { background: #f6f5f1; }
+.rs-card.arch .rs-name { color: #5b6478; }
+.rs-reason { font: inherit; font-size: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; }
