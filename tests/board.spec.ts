@@ -897,7 +897,7 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
     const r = JSON.parse(execFileSync('node', ['scripts/roster-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/roster' } }));
     expect(r.errs).toEqual([]);
     expect(r.cols).toEqual(['일상·여행', '한국 생활', '일·비즈니스', 'TOPIK·시험', 'K-문화·취미', '가족·뿌리', '목적 미정']);
-    expect(r.rows).toEqual(['씨앗', '새싹', '잎새', '꽃', '열매', '단계 미정']); // 학생 없는 단계(나무)는 숨김
+    expect(r.rows).toEqual(['씨앗', '새싹', '잎새', '꽃', '열매', '나무', '단계 미정']); // 단계 6줄은 비어도 보임
     expect(r.cards).toBe(20); // 지금 학생만
     expect([r.allCards, r.past]).toEqual([22, 2]);
     expect(r.inesCell).toEqual(['새싹', 'life']); // ⋯ 로 단계 정하기

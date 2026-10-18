@@ -173,7 +173,8 @@ export class HomeScreen {
       const cell = (r: RosterStudent) => [STAGE_ROWS.includes(r.stage || '') ? r.stage! : '', r.purpose && known.has(r.purpose) ? r.purpose : ''];
       // 끄는 중에는 빈 줄·칸도 다 보여서 어디로든 옮길 수 있게
       const cols = dragging ? purposes : purposes.filter((p) => list.some((r) => cell(r)[1] === p.key));
-      const rws = dragging ? rows : rows.filter((st) => list.some((r) => cell(r)[0] === st));
+      // 단계 6줄(씨앗~나무)은 늘 보인다 — 비어 있어도 거기로 옮길 수 있게. '단계 미정'만 있을 때 보인다
+      const rws = dragging ? rows : rows.filter((st) => st !== '' || list.some((r) => cell(r)[0] === st));
       grid.innerHTML = '';
       if (!list.length) {
         grid.append(h('p', { class: 'empty' }, '찾는 학생이 없어요.'));
