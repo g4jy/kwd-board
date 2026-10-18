@@ -74,6 +74,13 @@ await p.selectOption('.vf .mp-sort', 'cards');
 res.v.cards = await n();
 await p.selectOption('.mp-tools .mp-sort', 'stage');
 res.v.stageFirst = (await p.locator('.mp-dbrow .mp-rsub').first().innerText());
+// 카드 상태 거르기: 자꾸 잊음 → 새싹 안에서만
+await p.click('.vf-row.srs .vf-chip.lapsing');
+res.v.lapsing = await n();
+res.v.lapsingRows = await p.locator('.mp-dbrow .mp-rsub').evaluateAll((els) => els.every((e) => e.innerText.includes('자꾸 잊')));
+await p.click('.vf-row:not(.sub) .vf-chip:has-text("새싹")');
+res.v.lapsingSaessak = await n();
+res.v.chipsSrs = await p.locator('.vf-row.srs .vf-chip').allInnerTexts();
 await p.screenshot({ path: `${OUT}/5-vocab-cards.png` });
 res.errs = errs;
 console.log(JSON.stringify(res, null, 1));

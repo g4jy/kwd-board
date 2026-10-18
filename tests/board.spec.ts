@@ -823,5 +823,9 @@ test.describe('v7.1: 수업안 노트 없음 · 학생 정보 탭 · 단어 단�
     expect(r.v.firstRow).toContain('새싹 2');
     expect([r.v.lesson, r.v.cards]).toEqual([18, 214]);
     expect(r.v.stageFirst).toContain('씨앗 1');
+    expect(r.v.chipsSrs.map((c: string) => c.split('\n')[0])).toEqual(['익히는 중', '외움', '자꾸 잊음']);
+    expect(r.v.lapsingRows).toBe(true);
+    expect(r.v.lapsing).toBeGreaterThan(r.v.lapsingSaessak);
+    expect(r.v.lapsingSaessak).toBeGreaterThan(0);
   });
 });

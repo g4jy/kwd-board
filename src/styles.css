@@ -2821,3 +2821,5 @@ body.in-demo { background: var(--bg); overflow: auto; }
 .page.canvas > .page-text.note-empty .board-doc { min-height: 48px; }
 .page.canvas > .page-text.note-empty:hover { opacity: 1; background: rgba(255, 255, 255, .6); }
 .page.canvas > .page-text.note-empty:has(.ProseMirror[contenteditable='false']) { opacity: 0; pointer-events: none; } /* 쓸 수 없는 학생 화면에는 안 보이게 (쓰기 허락하면 보임) */
+.vf-row.srs .vf-chip.lapsing:not(.on) { border-color: #e8a87c; }
+.vf-row.srs .vf-chip.stable:not(.on) { border-color: #9cc5b0; }

@@ -173,7 +173,7 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
 // 중앙 DB에서 뽑은 전체 단어·문형 + 관련된 말
 const STAGE_NAMES: Record<string, string> = { 1: '씨앗', 2: '새싹', 3: '잎새', 4: '꽃', 5: '열매', 6: '나무' };
 const SRS_KO: Record<string, string> = { learning: '카드 익히는 중', stable: '카드 외움', lapsing: '카드 자꾸 잊음', due: '카드 복습 때' };
-let dbView: { kind: 'w' | 'g'; sort: 'recent' | 'first' | 'seen' | 'stage'; q: string; stage: string; step: string; src: '' | 'lesson' | 'cards' } = { kind: 'w', sort: 'recent', q: '', stage: '', step: '', src: '' };
+let dbView: { kind: 'w' | 'g'; sort: 'recent' | 'first' | 'seen' | 'stage'; q: string; stage: string; step: string; src: '' | 'lesson' | 'cards'; srs: '' | 'learning' | 'stable' | 'lapsing' } = { kind: 'w', sort: 'recent', q: '', stage: '', step: '', src: '', srs: '' };
 const stepNum = (s?: string) => Number((/(\d+)$/.exec(s || '') || [])[1] || 0);
 const STAGE_ORDER = ['씨앗', '새싹', '잎새', '꽃', '열매', '나무'];
 // 단계 이름은 kwd-app 세트의 단계(씨앗 2 …)를 따른다. 세트가 없으면 레벨(1~6)로
@@ -226,7 +226,7 @@ function renderDbVocab(body: HTMLElement, dbIn: BoardData, mem: StudentMemory | 
     list.innerHTML = '';
     const q = dbView.q.trim().toLowerCase();
     if (dbView.kind === 'w') {
-      let vs = db.vocab.filter((v) => (!q || v.w.includes(q) || v.en.toLowerCase().includes(q)) && (!dbView.stage || stageOf(v) === dbView.stage) && (!dbView.step || v.step === dbView.step) && (!dbView.src || (dbView.src === 'lesson' ? v.src !== 'cards' : v.src === 'cards')));
+      let vs = db.vocab.filter((v) => (!q || v.w.includes(q) || v.en.toLowerCase().includes(q)) && (!dbView.stage || stageOf(v) === dbView.stage) && (!dbView.step || v.step === dbView.step) && (!dbView.src || (dbView.src === 'lesson' ? v.src !== 'cards' : v.src === 'cards')) && (!dbView.srs || (v.srs === 'due' ? 'lapsing' : v.srs) === dbView.srs));
       vs = [...vs].sort((a, b) => (dbView.sort === 'first' ? num(a.first) - num(b.first) : dbView.sort === 'seen' ? b.seen - a.seen : dbView.sort === 'stage' ? stageRank(a) - stageRank(b) || a.w.localeCompare(b.w) : num(b.last ?? b.first) - num(a.last ?? a.first)));
       countEl.textContent = `${vs.length}개`;
       for (const v of vs.slice(0, 300)) {
@@ -318,6 +318,18 @@ function renderDbVocab(body: HTMLElement, dbIn: BoardData, mem: StudentMemory | 
       src.value = dbView.src;
       src.addEventListener('change', () => ((dbView = { ...dbView, src: src.value as typeof dbView.src }), draw()));
       filters.append(src);
+    }
+    // 카드 상태 (익히는 중 · 외움 · 자꾸 잊음) — 단어 앱·숙제 카드 결과에서
+    if (db.vocab.some((v) => v.srs)) {
+      const row = h('div', { class: 'vf-row srs', role: 'group', 'aria-label': '카드 상태' });
+      const n = (k: string) => db.vocab.filter((v) => (v.srs === 'due' ? 'lapsing' : v.srs) === k).length;
+      for (const [k, label] of [['learning', '익히는 중'], ['stable', '외움'], ['lapsing', '자꾸 잊음']] as const) {
+        const on = dbView.srs === k;
+        const b = h('button', { type: 'button', class: 'vf-chip sm ' + k + (on ? ' on' : ''), 'aria-pressed': String(on) }, label, h('small', {}, String(n(k))));
+        b.addEventListener('click', () => ((dbView = { ...dbView, srs: on ? '' : k }), redraw()));
+        row.append(b);
+      }
+      filters.append(row);
     }
   }
   const note = h('p', { class: 'mp-note' }, `단어를 누르면 이어진 말이 나와요 (${(db.sources?.relations || ['같은 챕터', '같은 묶음']).join(' · ')}). 동의어·반의어·우리말샘 유사도는 아직 DB에 없어요. · ${db.generated_at.slice(5, 16).replace('T', ' ')} 기준`);
