@@ -71,7 +71,7 @@ export class DemoScreen {
     const foot = h('div', { class: 'demo-foot' });
     const reset = h('button', { type: 'button', class: 'linkish' }, '체험 판 처음부터 다시');
     reset.addEventListener('click', () => {
-      const old = `demo7a${demoRun()}`;
+      const old = `demo71${demoRun()}`;
       saveIndex(loadIndex().filter((b) => !b.id.startsWith(old)));
       try {
         indexedDB.deleteDatabase('kwd-board-' + boardIdFor(DEMO_FOLDER));
