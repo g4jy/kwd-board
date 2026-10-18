@@ -697,6 +697,52 @@ export async function openStudentWriter(folder: string, sub: string, name: strin
   }
 }
 
+// 수업 녹화 폴더: Student_Lessons/<학생>/녹화/<수업 시각>/ (학생 폴더가 없으면 Student_Lessons/_수업녹화/<판>/<수업 시각>/).
+// 같은 이름이 있으면 ' (2)'… 를 붙여 새로 만든다. 파일은 그 안에. 폴더 연결이 없으면 null(→ 내려받기)
+export async function makeLessonDir(folder: string, board: string, stamp: string): Promise<{ path: string; open: (name: string) => Promise<FileSystemWritableFileStream | null> } | null> {
+  const work = await storedWork();
+  if (!work || (work as unknown as VDir) instanceof VDir) return null;
+  try {
+    const p = (await work.requestPermission?.({ mode: 'readwrite' })) || 'granted';
+    if (p !== 'granted') return null;
+    const sl = await work.getDirectoryHandle('Student_Lessons', { create: true });
+    let base: FileSystemDirectoryHandle;
+    let path: string;
+    if (folder) {
+      base = await (await sl.getDirectoryHandle(folder)).getDirectoryHandle('녹화', { create: true });
+      path = `${folder}/녹화`;
+    } else {
+      base = await (await sl.getDirectoryHandle('_수업녹화', { create: true })).getDirectoryHandle(board, { create: true });
+      path = `_수업녹화/${board}`;
+    }
+    let name = stamp;
+    for (let k = 2; k < 50; k++) {
+      try {
+        await base.getDirectoryHandle(name); // 이미 있음 → 다음 이름
+        name = `${stamp} (${k})`;
+      } catch {
+        break;
+      }
+    }
+    const dir = await base.getDirectoryHandle(name, { create: true });
+    return {
+      path: `${path}/${name}`,
+      open: async (file: string) => {
+        try {
+          const fh = await dir.getFileHandle(file, { create: true });
+          return await (fh as FileSystemFileHandle & { createWritable(): Promise<FileSystemWritableFileStream> }).createWritable();
+        } catch (e) {
+          console.warn('writer', e);
+          return null;
+        }
+      },
+    };
+  } catch (e) {
+    console.warn('lesson dir', e);
+    return null;
+  }
+}
+
 export async function saveToStudentFolder(folder: string, sub: string, name: string, text: string): Promise<string | null> {
   const work = await storedWork();
   if (!work || (work as unknown as VDir) instanceof VDir) return null;

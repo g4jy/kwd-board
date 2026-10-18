@@ -12,13 +12,27 @@ export interface ClassroomHost {
   role: Role;
   demo: boolean;
   serverUrl: () => string;
-  openWriter: OpenWriter; // KWD 폴더 학생 녹화/ (없으면 null)
+  lessonDir: (stem: string) => Promise<{ path: string; open: OpenWriter } | null>; // 수업마다 새 폴더 (KWD 폴더가 없으면 null → 내려받기)
   stem: () => string; // 녹화 파일 이름 앞부분
-  saveBundle: () => Promise<void>;
+  saveBundle: (open: OpenWriter | null) => Promise<boolean>; // 판 기록(.kwd.zip)을 같은 수업 폴더에
   meta: () => Record<string, unknown>;
 }
 
 type CamView = 'board' | 'cams';
+// 카메라 칸 배치 (기기마다 따로 저장, 상대 화면은 안 바뀜): 겹쳐(내 화면 작게) · 위아래 · 나란히 · 나 숨기기
+type CamMode = 'pip' | 'stack' | 'side' | 'solo';
+interface CamLayout {
+  mode: CamMode;
+  w: number; // 0 = 기본 폭
+  x?: number;
+  y?: number;
+}
+const MODES: Array<[CamMode, string]> = [
+  ['pip', '겹쳐 보기'],
+  ['stack', '위아래'],
+  ['side', '나란히'],
+  ['solo', '내 화면 숨기기'],
+];
 async function camAllowed(): Promise<boolean> {
   try {
     const q = (n: string) => navigator.permissions.query({ name: n as PermissionName });
@@ -43,6 +57,13 @@ export class Classroom {
   private timer = 0;
   private confirmEnd = 0;
   private offs: Array<() => void> = [];
+  private recOpen: OpenWriter | null = null;
+  private recPath = '';
+  private tiles!: HTMLElement;
+  private grip!: HTMLElement;
+  private layKey = '';
+  private lay: CamLayout = { mode: 'pip', w: 0 };
+  private layOpen = false;
 
   constructor(private host: ClassroomHost) {
     const { role } = host;
@@ -54,7 +75,12 @@ export class Classroom {
     this.ctrl = h('div', { class: 'cam-ctrl' });
     const remoteBox = h('div', { class: 'cam-tile remote' }, this.remoteV, h('span', { class: 'cam-name' }, role === 'teacher' ? '학생' : '선생님'), h('span', { class: 'cam-wait' }, role === 'teacher' ? '학생을 기다리는 중' : '선생님을 기다리는 중'));
     const localBox = h('div', { class: 'cam-tile local' }, this.localV, h('span', { class: 'cam-name' }, '나'));
-    this.dock.append(h('div', { class: 'cam-tiles' }, remoteBox, localBox), this.status, this.ctrl);
+    this.grip = h('span', { class: 'cam-grip', title: '끌어서 크기 바꾸기' });
+    this.tiles = h('div', { class: 'cam-tiles', title: '끌어서 옮기기' }, remoteBox, localBox, this.grip);
+    this.dock.append(this.tiles, this.status, this.ctrl);
+    this.layKey = 'kwd.camLayout.' + role;
+    this.lay = this.loadLayout();
+    this.bindLayout();
     if (role === 'assist') {
       this.dock.hidden = true;
       return;
@@ -67,6 +93,7 @@ export class Classroom {
       this.lessonBtn = h('button', { type: 'button', class: 'lesson-btn' }, '수업 시작') as HTMLButtonElement;
       this.lessonBtn.addEventListener('click', () => void this.toggleLesson());
       this.rec.onEnded = () => void this.endLesson(); // 크롬의 '공유 중지'
+      this.rec.onMedia = (op, sp) => host.store.log({ kind: 'media', data: { op, kind: sp.kind, name: sp.name, ref: sp.ref, at_s: op === 'play' ? sp.from_s : sp.to_s } });
     }
     const setObs = () => this.applyView();
     host.store.settings.observe(setObs);
@@ -244,8 +271,124 @@ export class Classroom {
       const big = this.view() === 'cams';
       btn(big ? '판 보기' : '얼굴 크게', '학생 화면도 같이 바뀌어요', () => this.setView(big ? 'board' : 'cams'));
     }
+    if (!this.dock.classList.contains('big')) btn('배치', '카메라 칸 모양·자리', () => ((this.layOpen = !this.layOpen), this.render()), 'ghost lay-b' + (this.layOpen ? ' on' : ''));
+    if (this.layOpen && !this.dock.classList.contains('big')) this.ctrl.append(this.layoutMenu());
     const st2 = c.stats();
     if (st2.quality === 'bad' || ['failed', 'disconnected'].includes(st2.state)) btn('다시 연결', '연결이 나쁠 때', () => c.reconnect(), 'ghost');
+  }
+
+  // ---- 카메라 칸 배치: 끌어서 옮기기 · 모서리로 크기 · 배치 고르기 (이 기기에만 저장) ----
+  private loadLayout(): CamLayout {
+    try {
+      const j = JSON.parse(localStorage.getItem(this.layKey) || 'null') as CamLayout | null;
+      if (j && MODES.some(([m]) => m === j.mode)) return { mode: j.mode, w: Number(j.w) || 0, x: j.x, y: j.y };
+    } catch {
+      /* 없음 */
+    }
+    return { mode: 'pip', w: 0 };
+  }
+  private saveLayout() {
+    try {
+      localStorage.setItem(this.layKey, JSON.stringify(this.lay));
+    } catch {
+      /* ignore */
+    }
+  }
+  layout(): CamLayout {
+    return { ...this.lay };
+  }
+  setLayout(p: Partial<CamLayout> | null) {
+    this.lay = p === null ? { mode: 'pip', w: 0 } : { ...this.lay, ...p };
+    this.saveLayout();
+    this.applyLayout();
+  }
+  private applyLayout() {
+    const d = this.dock;
+    const { mode, w, x, y } = this.lay;
+    d.dataset.layout = mode;
+    if (w) d.style.setProperty('--cam-w', w + 'px');
+    else d.style.removeProperty('--cam-w');
+    const moved = x !== undefined && y !== undefined;
+    d.classList.toggle('moved', moved);
+    if (moved) {
+      // 화면이 작아져도 칸이 밖으로 나가지 않게
+      const r = d.getBoundingClientRect();
+      const cx = Math.max(4, Math.min(x!, window.innerWidth - Math.max(80, r.width) - 4));
+      const cy = Math.max(4, Math.min(y!, window.innerHeight - 60));
+      d.style.left = cx + 'px';
+      d.style.top = cy + 'px';
+    } else {
+      d.style.left = '';
+      d.style.top = '';
+    }
+  }
+  private bindLayout() {
+    const d = this.dock;
+    const drag = (e: PointerEvent, kind: 'move' | 'size') => {
+      if (d.classList.contains('big') || e.button > 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const r = d.getBoundingClientRect();
+      const tw = this.tiles.getBoundingClientRect().width;
+      const sx = e.clientX, sy = e.clientY;
+      let movedPx = 0;
+      const el = e.currentTarget as HTMLElement;
+      el.setPointerCapture?.(e.pointerId);
+      const onMove = (ev: PointerEvent) => {
+        const dx = ev.clientX - sx, dy = ev.clientY - sy;
+        movedPx = Math.max(movedPx, Math.abs(dx) + Math.abs(dy));
+        if (movedPx < 5) return;
+        d.classList.add('dragging');
+        if (kind === 'move') {
+          this.lay = { ...this.lay, x: Math.round(r.left + dx), y: Math.round(r.top + dy) };
+        } else {
+          const per = this.lay.mode === 'side' ? 2 : 1;
+          const nw = Math.round(Math.max(120, Math.min(window.innerWidth - 24, tw + dx)) / per);
+          // 오른쪽에 붙어 있던 칸은 왼쪽 위 자리를 고정하고 키운다
+          this.lay = { ...this.lay, w: Math.max(120, Math.min(720, nw)), x: Math.round(r.left), y: Math.round(r.top) };
+        }
+        this.applyLayout();
+      };
+      const onUp = () => {
+        el.removeEventListener('pointermove', onMove);
+        el.removeEventListener('pointerup', onUp);
+        el.removeEventListener('pointercancel', onUp);
+        d.classList.remove('dragging');
+        if (movedPx >= 5) this.saveLayout();
+      };
+      el.addEventListener('pointermove', onMove);
+      el.addEventListener('pointerup', onUp);
+      el.addEventListener('pointercancel', onUp);
+    };
+    this.tiles.addEventListener('pointerdown', (e) => {
+      if (e.target === this.grip) return;
+      drag(e, 'move');
+    });
+    this.grip.addEventListener('pointerdown', (e) => drag(e, 'size'));
+    const onResize = () => this.applyLayout();
+    window.addEventListener('resize', onResize);
+    this.offs.push(() => window.removeEventListener('resize', onResize));
+    this.applyLayout();
+  }
+  private layoutMenu(): HTMLElement {
+    const box = h('div', { class: 'cam-lay' });
+    for (const [m, label] of MODES) {
+      const b = h('button', { type: 'button', class: 'cam-b' + (this.lay.mode === m ? ' on' : ''), 'data-mode': m }, label);
+      b.addEventListener('click', () => {
+        this.setLayout({ mode: m });
+        this.layOpen = false;
+        this.render();
+      });
+      box.append(b);
+    }
+    const reset = h('button', { type: 'button', class: 'cam-b ghost' }, '처음대로');
+    reset.addEventListener('click', () => {
+      this.setLayout(null);
+      this.layOpen = false;
+      this.render();
+    });
+    box.append(reset, h('span', { class: 'cam-lay-note' }, '칸을 끌면 옮겨지고, 오른쪽 아래 모서리를 끌면 크기가 바뀌어요. 이 기기에만 저장돼요.'));
+    return box;
   }
 
   // ---- 보기 모드: 판 + 작은 카메라 / 얼굴 크게 (선생님이 바꾸면 학생도) ----
@@ -282,7 +425,11 @@ export class Classroom {
     }
     try {
       this.lessonBtn!.disabled = true;
-      await this.rec.start({ stage: this.host.stage, mine: this.call?.local || null, theirs: this.call?.remote() || null, stem: this.host.stem(), open: this.host.openWriter, now: this.host.store.now() });
+      const stem = this.host.stem();
+      const dir = await this.host.lessonDir(stem.replace(/_#\d+$/, ''));
+      this.recOpen = dir?.open || null;
+      this.recPath = dir?.path || '';
+      await this.rec.start({ stage: this.host.stage, mine: this.call?.local || null, theirs: this.call?.remote() || null, stem, open: this.recOpen || (async () => null), now: this.host.store.now() });
       this.host.store.meta.set('recording', { startedAt: this.rec.startedAt, files: this.rec.files, crop: this.rec.cropped || 'none' });
       this.host.store.log({ kind: 'lesson', data: { op: 'start', rec: this.rec.files, crop: this.rec.cropped || 'none' } });
       toast(this.rec.cropped ? '수업을 시작했어요 · 판과 목소리를 녹화해요' : '수업을 시작했어요 · 녹화 중');
@@ -299,12 +446,15 @@ export class Classroom {
     if (!this.rec.active) return;
     this.confirmEnd = 0;
     const dur = Math.round((this.host.store.now() - this.rec.startedAt) / 1000);
-    const { saved, blobs } = await this.rec.stop({ board: this.host.store.id, ...this.host.meta(), call: this.call?.stats() }, this.host.openWriter);
+    const open = this.recOpen;
+    const { saved, blobs } = await this.rec.stop({ board: this.host.store.id, ...this.host.meta(), call: this.call?.stats() }, open || (async () => null));
     this.host.store.log({ kind: 'lesson', data: { op: 'end', seconds: dur, saved: saved.length } });
-    for (const b of blobs) downloadBlob(b.name, b.blob);
-    toast(saved.length ? `녹화 ${saved.length}개를 학생 폴더 녹화/ 에 저장했어요` : '녹화 파일을 내려받았어요', 5000);
     this.renderLesson();
-    await this.host.saveBundle();
+    for (const b of blobs) downloadBlob(b.name, b.blob);
+    // 판 기록도 같은 수업 폴더에 (묻는 창 없이)
+    const bundled = await this.host.saveBundle(open);
+    toast(saved.length ? `수업 폴더에 저장했어요 · ${this.recPath}${bundled ? ' (녹화 + 판 기록)' : ''}` : '녹화 파일을 내려받았어요', 6000);
+    this.recOpen = null;
   }
 
   private renderLesson() {

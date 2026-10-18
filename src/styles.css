@@ -2827,13 +2827,17 @@ body.in-demo { background: var(--bg); overflow: auto; }
 .vf-row.srs .vf-chip.stable:not(.on) { border-color: #9cc5b0; }
 
 /* ===== v8 교실: 카메라 칸 · 입장 · 수업 시작 ===== */
-.cam-dock { position: fixed; top: calc(56px + env(safe-area-inset-top, 0px)); right: max(56px, env(safe-area-inset-right, 0px)); z-index: 6; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; width: 232px; pointer-events: none; }
+.cam-dock { --cam-w: 232px; position: fixed; top: calc(56px + env(safe-area-inset-top, 0px)); right: max(56px, env(safe-area-inset-right, 0px)); z-index: 6; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; width: var(--cam-w); pointer-events: none; }
+.cam-dock.moved:not(.big) { right: auto; align-items: flex-start; }
+.cam-dock.moved:not(.big) .cam-ctrl { justify-content: flex-start; }
 .cam-dock > * { pointer-events: auto; }
-.board:has(.mem-panel) .cam-dock:not(.big) { right: calc(max(52px, env(safe-area-inset-right, 0px)) + min(360px, 90vw) + 12px); }
-.cam-tiles { position: relative; width: 232px; }
+.board:has(.mem-panel) .cam-dock:not(.big):not(.moved) { right: calc(max(52px, env(safe-area-inset-right, 0px)) + min(360px, 90vw) + 12px); }
+.cam-tiles { position: relative; width: var(--cam-w); cursor: grab; touch-action: none; user-select: none; }
+.cam-dock.dragging .cam-tiles { cursor: grabbing; }
+.cam-dock.big .cam-tiles { cursor: default; }
 .cam-tile { position: relative; background: #1f2a44; border-radius: 12px; overflow: hidden; box-shadow: 0 6px 20px rgba(20, 25, 40, .18); }
 .cam-tile video { width: 100%; height: 100%; object-fit: cover; display: block; background: #1f2a44; }
-.cam-tile.remote { width: 232px; aspect-ratio: 16 / 10; }
+.cam-tile.remote { width: 100%; aspect-ratio: 16 / 10; }
 .cam-tile.local { position: absolute; right: 8px; bottom: 8px; width: 74px; aspect-ratio: 4 / 3; border: 2px solid #fff; border-radius: 9px; box-shadow: none; }
 .cam-tile.local video { transform: scaleX(-1); }
 .cam-name { position: absolute; left: 8px; bottom: 6px; font-size: 11.5px; color: #fff; background: rgba(20, 25, 40, .55); padding: 1px 7px; border-radius: 999px; }
@@ -2846,7 +2850,7 @@ body.in-demo { background: var(--bg); overflow: auto; }
 .cam-dock[data-state="off"] .cam-tiles, .cam-dock[data-state="off"] .cam-status { display: none; }
 .cam-dock.nudge .cam-b.primary { animation: camNudge 1.2s ease-in-out infinite; }
 @keyframes camNudge { 50% { box-shadow: 0 0 0 6px rgba(240, 180, 60, .45); } }
-.cam-status { font-size: 11.5px; color: var(--muted); background: rgba(255, 255, 255, .9); border-radius: 999px; padding: 2px 9px; max-width: 232px; }
+.cam-status { font-size: 11.5px; color: var(--muted); background: rgba(255, 255, 255, .9); border-radius: 999px; padding: 2px 9px; max-width: max(232px, var(--cam-w)); }
 .cam-status:empty { display: none; }
 .cam-status[data-q="good"]::before, .cam-status[data-q="ok"]::before, .cam-status[data-q="bad"]::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; background: #4caf73; vertical-align: 1px; }
 .cam-status[data-q="ok"]::before { background: #e3a43b; }
@@ -2865,9 +2869,9 @@ body.in-demo { background: var(--bg); overflow: auto; }
 .cam-dock.big .cam-status { align-self: flex-start; }
 .cam-dock.big .cam-name { font-size: 13px; }
 @media (max-width: 700px) {
-  .cam-dock:not(.big) { top: calc(54px + env(safe-area-inset-top, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); width: 132px; }
-  .cam-dock:not(.big) .cam-tiles, .cam-dock:not(.big) .cam-tile.remote { width: 132px; }
-  .cam-dock:not(.big) .cam-tile.local { width: 44px; right: 4px; bottom: 4px; }
+  .cam-dock { --cam-w: 132px; }
+  .cam-dock:not(.big) { top: calc(54px + env(safe-area-inset-top, 0px)); right: max(8px, env(safe-area-inset-right, 0px)); }
+  .cam-dock:not(.big)[data-layout="pip"] .cam-tile.local { width: 34%; right: 4px; bottom: 4px; }
   .cam-dock:not(.big) .cam-status { display: none; }
   .cam-dock.big .cam-tiles { grid-template-columns: 1fr; grid-template-rows: 2fr 1fr; }
   .cam-dock.big .cam-tile.local { aspect-ratio: auto; height: 100%; }
@@ -2889,3 +2893,19 @@ body.in-demo { background: var(--bg); overflow: auto; }
 .join-nocam { align-self: center; font-size: 13px; }
 .join-note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
 .join-board { align-self: center; font-size: 12.5px; color: var(--muted); margin-top: -6px; }
+
+/* v8.1 카메라 칸 배치 */
+.cam-tile.local { width: 32%; }
+.cam-dock:not(.big)[data-layout="stack"] .cam-tiles { display: grid; gap: 6px; }
+.cam-dock:not(.big)[data-layout="side"] { width: calc(var(--cam-w) * 2 + 6px); }
+.cam-dock:not(.big)[data-layout="side"] .cam-tiles { width: calc(var(--cam-w) * 2 + 6px); display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.cam-dock:not(.big)[data-layout="stack"] .cam-tile.local, .cam-dock:not(.big)[data-layout="side"] .cam-tile.local { position: relative; right: auto; bottom: auto; width: 100%; aspect-ratio: 16 / 10; border: 0; border-radius: 12px; box-shadow: 0 6px 20px rgba(20, 25, 40, .18); }
+.cam-dock:not(.big)[data-layout="stack"] .cam-tile.local .cam-name, .cam-dock:not(.big)[data-layout="side"] .cam-tile.local .cam-name { display: block; }
+.cam-dock:not(.big)[data-layout="solo"] .cam-tile.local { display: none; }
+.cam-grip { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; cursor: nwse-resize; z-index: 2; background: linear-gradient(135deg, transparent 50%, rgba(255, 255, 255, .7) 50% 60%, transparent 60% 72%, rgba(255, 255, 255, .7) 72% 82%, transparent 82%); opacity: 0; transition: opacity .15s; }
+.cam-tiles:hover .cam-grip, .cam-dock.dragging .cam-grip { opacity: 1; }
+@media (hover: none) { .cam-grip { opacity: .8; width: 24px; height: 24px; } }
+.cam-dock.big .cam-grip { display: none; }
+.cam-b.on { background: #1f2a44; border-color: #1f2a44; color: #fff; }
+.cam-lay { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px; justify-content: inherit; background: rgba(255, 255, 255, .96); border: 1px solid var(--line); border-radius: 12px; padding: 6px; }
+.cam-lay-note { flex-basis: 100%; font-size: 11px; color: var(--muted); line-height: 1.4; }

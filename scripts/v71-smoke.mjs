@@ -32,6 +32,7 @@ await p.click('.toolbar [data-tool="text"]');
 await p.locator('.page.canvas > .page-text').click();
 await p.keyboard.type('메모 한 줄');
 res.noteTyped = await p.evaluate(() => window.__kwd.editor().getText().trim());
+await p.waitForFunction(() => !document.querySelector('.page.canvas > .page-text.note-empty'), null, { timeout: 3000 }).catch(() => {});
 res.noteOpen = await p.locator('.page.canvas > .page-text.note-empty').count();
 await p.keyboard.press('Control+z');
 // 2) 학생 정보 탭

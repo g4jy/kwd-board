@@ -854,7 +854,17 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
     expect(r.crop).toBe('element'); // 판만 (카메라 칸·패널 빠짐)
     expect(r.confirm).toContain('한 번 더');
     const names = r.files.map((f: { name: string }) => f.name);
-    expect(names.filter((n: string) => /\.webm$/.test(n))).toHaveLength(3);
+    expect(names.filter((n: string) => /\.webm$/.test(n))).toHaveLength(4);
+    expect(names.some((n: string) => /_Media\.webm$/.test(n))).toBe(true); // 판 자료 소리 따로
+    expect(r.meta.schema).toBe('kwd-lesson-rec/v2');
+    expect(r.meta.media.map((m: { kind: string; name: string }) => m.kind + ':' + m.name)).toEqual(['audio:듣기 자료']);
+    expect(r.meta.media[0].to_s - r.meta.media[0].from_s).toBeGreaterThan(1.5);
+    expect(r.events).toContain('media:play');
+    expect(r.layMode).toBe('side');
+    expect(r.layAfter.saved.mode).toBe('side');
+    expect(r.layAfter.saved.x).toBeLessThan(1000); // 옮겨짐
+    expect(r.layAfter.w).toBeGreaterThan(500); // 나란히 + 키움
+    expect(r.studentLayout).toBe('pip'); // 학생 화면은 그대로
     expect(names.some((n: string) => /_Teacher\.webm$/.test(n))).toBe(true);
     expect(names.some((n: string) => /_Student\.webm$/.test(n))).toBe(true);
     expect(names.some((n: string) => /\.kwd\.zip$/.test(n))).toBe(true);
@@ -865,5 +875,22 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
     expect(r.events).toContain('lesson:end');
     expect(r.events).toContain('call:connected');
     expect(r.afterLeave).toBe('wait');
+  });
+  test('수업 끝 → 묻는 창 없이 학생 폴더 녹화/<수업 시각>/ 에 녹화 4줄 + _rec.json + 판 기록, 다음 수업은 새 폴더', () => {
+    const r = JSON.parse(execFileSync('node', ['scripts/v81-folder.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/v81f' } }));
+    expect(r.errs).toEqual([]);
+    expect(r.pickers).toEqual([]);
+    expect(r.downloads).toEqual([]);
+    const dirs = Object.keys(r.tree);
+    expect(dirs).toHaveLength(2);
+    for (const k of dirs) {
+      expect(k).toMatch(/^Mina K \(1234567\)\/녹화\/\d{4}-\d{2}-\d{2} \d{2}-\d{2}( \(2\))?$/);
+      const names = r.tree[k].map((f: [string, number]) => f[0]);
+      expect(names.filter((n: string) => /\.webm$/.test(n))).toHaveLength(4);
+      expect(names.some((n: string) => /_rec\.json$/.test(n))).toBe(true);
+      expect(names.some((n: string) => /\.kwd\.zip$/.test(n))).toBe(true);
+      for (const f of r.tree[k]) expect(f[1]).toBeGreaterThan(100);
+    }
+    expect(r.toast1).toContain('녹화 + 판 기록');
   });
 });

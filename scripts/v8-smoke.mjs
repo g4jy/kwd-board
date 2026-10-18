@@ -60,13 +60,31 @@ await t.screenshot({ path: `${OUT}/4-teacher-big.png` });
 await s.screenshot({ path: `${OUT}/5-student-big.png` });
 await t.click('.cam-b:has-text("판 보기")');
 await s.waitForFunction(() => !document.querySelector('.cam-dock.big'), null, { timeout: 5000 });
+// 카메라 칸 배치: 나란히 → 끌어서 옮기기 → 모서리로 키우기 → 새로 열어도 그대로 (이 기기만)
+await t.click('.cam-b.lay-b');
+await t.click('.cam-lay .cam-b[data-mode="side"]');
+res.layMode = await t.locator('.cam-dock').getAttribute('data-layout');
+const tb = await t.locator('.cam-tiles').boundingBox();
+await t.mouse.move(tb.x + 40, tb.y + 30); await t.mouse.down(); await t.mouse.move(tb.x - 300, tb.y + 330, { steps: 8 }); await t.mouse.up();
+const gb = await t.locator('.cam-grip').boundingBox();
+await t.mouse.move(gb.x + 9, gb.y + 9); await t.mouse.down(); await t.mouse.move(gb.x + 129, gb.y + 69, { steps: 8 }); await t.mouse.up();
+res.layAfter = await t.evaluate(() => { const r = document.querySelector('.cam-dock').getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), saved: JSON.parse(localStorage.getItem('kwd.camLayout.teacher')) }; });
+res.studentLayout = await s.locator('.cam-dock').getAttribute('data-layout'); // 학생 화면은 그대로
+await t.screenshot({ path: `${OUT}/4b-teacher-layout.png` });
 // 수업 시작 (녹화)
 await t.click('.lesson-btn');
 await t.waitForFunction(() => document.querySelector('.lesson-btn')?.classList.contains('rec'), null, { timeout: 10000 });
 res.recLabel = await t.locator('.lesson-btn').innerText();
 res.crop = await t.evaluate(() => window.__kwd.store.meta.get('recording')?.crop);
 await t.keyboard.type('녹화 중에 쓴 글');
-await t.waitForTimeout(4000);
+// 녹화 중 판 자료(소리 파일) 재생 → 자료 줄 + 재생 구간
+const tone = fs.readFileSync('tests/fixtures/tone.webm').toString('base64');
+await t.evaluate((b) => window.__kwd.insertMediaBytes(b, '듣기 자료', 'audio'), tone);
+await t.waitForSelector('.obj audio', { state: 'attached', timeout: 8000 });
+await t.evaluate(() => { const a = document.querySelector('.obj audio'); a.muted = false; return a.play(); });
+await t.waitForTimeout(3000);
+await t.evaluate(() => document.querySelector('.obj audio').pause());
+await t.waitForTimeout(1500);
 await t.screenshot({ path: `${OUT}/6-recording.png` });
 // 끝내기: 두 번
 const downloads = [];
@@ -81,9 +99,10 @@ for (const d of downloads) {
   const p = `${OUT}/dl_${d.suggestedFilename().replace(/[^\w.#-]/g, '_')}`;
   await d.saveAs(p);
   res.files.push({ name: d.suggestedFilename(), bytes: fs.statSync(p).size });
+  if (/_Media\.webm$/.test(d.suggestedFilename())) res.mediaPath = p;
   if (/_rec\.json$/.test(d.suggestedFilename())) res.meta = JSON.parse(fs.readFileSync(p, 'utf8'));
 }
-res.events = await t.evaluate(() => window.__kwd.store.events.toArray().filter((e) => e.kind === 'lesson' || e.kind === 'call').map((e) => e.kind + ':' + (e.data?.op || '')));
+res.events = await t.evaluate(() => window.__kwd.store.events.toArray().filter((e) => e.kind === 'lesson' || e.kind === 'call' || e.kind === 'media').map((e) => e.kind + ':' + (e.data?.op || '')));
 // 학생이 나가면 선생님은 기다림으로
 await s.close();
 await t.waitForTimeout(3000);

@@ -13,7 +13,7 @@ import { buildBundle, bundleName, boardMarkdown, canPickFolder, pickFolder, fold
 import { importPdf, importHtml, htmlWithBridge, joinText } from './importer';
 import { loadPrefs, savePrefs, penSlot, renderSlot, buildPenPopover, type PenPrefs } from './palette';
 import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY, type StudentMemory } from './memory';
-import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, openStudentWriter, type StudentPack, type PackFile } from './kwdfolder';
+import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, makeLessonDir, type StudentPack, type PackFile } from './kwdfolder';
 import { annotatedWorksheet } from './wsexport';
 import { Classroom } from './classroom';
 import { renderStudentPanel, type SplitSeg, type PanelTab } from './studentpanel';
@@ -190,14 +190,14 @@ export class BoardScreen {
         role: this.role,
         demo: isDemo(),
         serverUrl: () => this.store.serverUrl || '',
-        openWriter: (name) => openStudentWriter(this.packFolder, '녹화', name),
+        lessonDir: (stem) => makeLessonDir(this.packFolder, this.params.id, stem),
         stem: () => {
           const d = new Date(this.store.now());
           const p2 = (n: number) => String(n).padStart(2, '0');
           const n = this.pack?.brief?.next_lesson || (this.pack?.lessons[0] ? this.pack.lessons[0].n + 1 : 0);
           return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}-${p2(d.getMinutes())}${n ? `_#${n}` : ''}`;
         },
-        saveBundle: () => this.saveBundleNow(),
+        saveBundle: (open) => this.saveLessonBundle(open),
         meta: () => ({ student_folder: this.packFolder ? 'PC_ONLY' : null, lesson_no: this.pack?.brief?.next_lesson || null, packet_id: this.pack?.packet?.packet_id || null }),
       });
     }
@@ -258,6 +258,8 @@ export class BoardScreen {
       memory: () => this.memory,
       bundle: () => buildBundle({ store: this.store, editors: this.editors, packetId: this.pack?.packet?.packet_id }),
       importPdfBytes: (b64: string, name: string) => this.importPdfBytes(b64, name),
+      insertMediaBytes: (b64: string, name: string, kind: 'audio' | 'video') => this.insertMedia(new Blob([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], { type: kind + '/webm' }), kind, name),
+      classroom: () => this.classroom,
       importHtmlText: (html: string, name: string) => importHtml(this.store, html, name, this.order.indexOf(this.currentPage)),
       setMemory: (m: unknown) => this.setMemory(normalize(m, this.studentNo())),
       goto: (id: string) => this.gotoPage(id),
@@ -588,7 +590,7 @@ export class BoardScreen {
     let side = this.panelSide() || (this.rail && !this.rail.hidden && W > 700 ? 56 : 0);
     // 카메라 칸이 켜져 있으면 그 오른쪽 자리를 비켜 준다 (넓은 화면)
     const dock = this.classroom?.dock;
-    if (dock && W > 900 && dock.dataset.state !== 'off' && !dock.classList.contains('big') && getComputedStyle(dock).display !== 'none') side = Math.max(side, window.innerWidth - dock.getBoundingClientRect().left + 8);
+    if (dock && W > 900 && dock.dataset.state !== 'off' && !dock.classList.contains('big') && getComputedStyle(dock).display !== 'none' && dock.getBoundingClientRect().left > window.innerWidth / 2) side = Math.max(side, window.innerWidth - dock.getBoundingClientRect().left + 8);
     const top = 64, bottom = this.role === 'student' && this.toolbar.hidden ? 24 : 96;
     const aw = Math.max(80, W - side - pad * 2), ah = Math.max(80, H - top - bottom - pad);
     const s = Math.min(maxS, Math.max(this.vp.min, Math.min(aw / Math.max(1, x1 - x0), ah / Math.max(1, y1 - y0))));
@@ -1919,10 +1921,12 @@ export class BoardScreen {
       (content as HTMLImageElement).src = this.store.resolveImg(o.src);
     } else if (o.type === 'video') {
       content = h('video', { class: 'popup-media', controls: '', playsinline: '', autoplay: '' });
-      (content as HTMLVideoElement).src = this.store.resolveImg(o.src);
+      const u = this.store.resolveImg(o.src);
+      if (/^https?:/.test(u) && !u.startsWith(location.origin)) (content as HTMLVideoElement).crossOrigin = 'anonymous';
+      (content as HTMLVideoElement).src = u;
     } else if (o.type === 'youtube') {
       content = h('iframe', { class: 'popup-media popup-yt', allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: '', title: '유튜브' });
-      (content as HTMLIFrameElement).src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(youtubeId(o.url || '') || '')}?rel=0&autoplay=1`;
+      (content as HTMLIFrameElement).src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(youtubeId(o.url || '') || '')}?rel=0&enablejsapi=1&origin=${encodeURIComponent(location.origin)}&autoplay=1`;
     } else return;
     wrap.append(content, close);
     wrap.addEventListener('pointerdown', (e) => {
@@ -2494,6 +2498,25 @@ export class BoardScreen {
     } catch (e) {
       console.warn('autosave', e);
     }
+  }
+
+  // 수업 끝: 판 기록을 수업 폴더에. 기록 폴더가 정해져 있으면 거기에도(묻지 않고). 둘 다 없으면 내려받기
+  private async saveLessonBundle(open: ((name: string) => Promise<{ write(d: Blob): Promise<void>; close(): Promise<void> } | null>) | null): Promise<boolean> {
+    const { name, blob } = await buildBundle({ store: this.store, editors: this.editors, packetId: this.pack?.packet?.packet_id });
+    let ok = false;
+    const w = open ? await open(name) : null;
+    if (w) {
+      await w.write(blob);
+      await w.close();
+      ok = true;
+    }
+    if (canPickFolder() && !EMBEDDED && (await folderName())) ok = (await writeToFolder(name, blob, true)) || ok;
+    if (ok) {
+      this.store.dirtySince = 0;
+      this.lastBundleAt = Date.now();
+      this.renderChip();
+    } else downloadBlob(name, blob);
+    return ok;
   }
 
   private async saveBundleNow() {

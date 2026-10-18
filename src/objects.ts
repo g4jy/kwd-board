@@ -224,9 +224,14 @@ export class PageObjects {
       else {
         const id = youtubeId(o.url || '') || '';
         media = h('iframe', { class: 'obj-media obj-yt', title: o.name || '유튜브', allow: 'autoplay; encrypted-media; picture-in-picture; fullscreen', allowfullscreen: '', referrerpolicy: 'strict-origin-when-cross-origin' });
-        (media as HTMLIFrameElement).src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?rel=0`;
+        (media as HTMLIFrameElement).src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(id)}?rel=0&enablejsapi=1&origin=${encodeURIComponent(location.origin)}`;
       }
-      if (o.type !== 'youtube') (media as HTMLMediaElement).src = this.ctx.store.resolveImg(o.src);
+      // 서버(다른 주소)의 파일도 녹화 '자료' 줄로 소리를 뽑을 수 있게 CORS 로 받는다
+      if (o.type !== 'youtube') {
+        const u = this.ctx.store.resolveImg(o.src);
+        if (/^https?:/.test(u) && !u.startsWith(location.origin)) (media as HTMLMediaElement).crossOrigin = 'anonymous';
+        (media as HTMLMediaElement).src = u;
+      }
       bar.prepend(grip);
       if (o.type !== 'audio') {
         const big = h('button', { type: 'button', class: 'obj-big inbar', title: '모두의 화면에 크게 보기' }, '⤢ 크게');
