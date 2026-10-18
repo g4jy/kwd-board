@@ -13,7 +13,13 @@
     curriculum_lesson_group_members, curriculum_grammar_family_members
 동의어·반의어 표와 우리말샘 벡터(임베딩)는 DB에 없다 — 만들어지면 여기에 더한다.
 
+단계(10/18): 단어마다 kwd-app 노트(data/l1/notes.tsv·sets.tsv)와 맞춰 레벨(1~6)과 단계 이름(씨앗 1 … 나무)을 붙인다.
+숙제 단어 카드 결과(grader/kwd_sync/word_events.jsonl)가 있으면 그 학생이 카드로 공부한 단어도 더하고
+(`src`: lesson 수업에서 · cards 카드로만 · both), 카드 상태(`srs`: learning · stable · lapsing)를 붙인다.
+kwd-app 이 단어 일정의 주인이 되면(4단계 card_state) 같은 칸을 그쪽에서 채운다.
+
   python kwd_board_export.py [--db C:/KWD/data/x.db] [--work C:/KWD/work] [--student 이름]
+                             [--app C:/Users/<나>/Projects/kwd-app] [--word-events …/word_events.jsonl] [--hw-roster roster.json]
 표준 라이브러리만. DB는 mode=ro 로 연다.
 """
 import argparse
@@ -150,12 +156,122 @@ def export_student(c, st, idx, cat_words):
     }
 
 
+STAGES = {1: '씨앗', 2: '새싹', 3: '잎새', 4: '꽃', 5: '열매', 6: '나무'}
+
+
+def read_tsv(path):
+    try:
+        with open(path, encoding='utf-8-sig') as f:
+            head = f.readline().rstrip('\n').split('\t')
+            return [dict(zip(head, line.rstrip('\n').split('\t'))) for line in f if line.strip()]
+    except OSError:
+        return []
+
+
+def app_index(app):
+    """kwd-app 노트 → 레벨·단계. 한국어 기본형으로도 찾는다."""
+    if not app:
+        return {}, {}
+    notes = {r['id']: r for r in read_tsv(os.path.join(app, 'data', 'l1', 'notes.tsv')) if r.get('id')}
+    step_of = {}
+    for r in read_tsv(os.path.join(app, 'data', 'l1', 'sets.tsv')):
+        for nid in (r.get('word_ids') or '').split(','):
+            nid = nid.strip()
+            if nid and nid not in step_of:
+                step_of[nid] = r.get('step_name') or ''
+    by_ko = {}
+    for nid, r in notes.items():
+        try:
+            lvl = int(r.get('level') or 0)
+        except ValueError:
+            lvl = 0
+        info = {'note': nid, 'level': lvl or None, 'step': step_of.get(nid) or (STAGES.get(lvl, '') if lvl else ''), 'en': r.get('en') or '', 'pos': r.get('pos') or ''}
+        notes[nid] = {**r, **info}
+        for k in {(r.get('ko') or '').strip(), (r.get('yo') or '').strip()}:
+            if k and k not in by_ko:
+                by_ko[k] = info
+    return notes, by_ko
+
+
+def card_states(path, roster_path):
+    """숙제 단어 카드 결과 → 학생(preply_id 또는 숙제 student_id) → 노트 → 상태."""
+    out = {}
+    if not path or not os.path.exists(path):
+        return out
+    roster = {}
+    if roster_path and os.path.exists(roster_path):
+        try:
+            for r in json.load(open(roster_path, encoding='utf-8')):
+                roster[r.get('student_id')] = str(r.get('preply_id') or r.get('folder') or '')
+        except (OSError, ValueError):
+            pass
+    with open(path, encoding='utf-8') as f:
+        for line in f:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            who = roster.get(e.get('student_id')) or str(e.get('preply_id') or e.get('student_id') or '')
+            key = e.get('note_id') or ('ko:' + (e.get('ko') or ''))
+            st = out.setdefault(who, {}).setdefault(key, {'ko': e.get('ko') or '', 'en': e.get('en') or '', 'good': 0, 'again': 0, 'last': '', 'last_result': ''})
+            r = e.get('result')
+            if r in ('good', 'hard'):
+                st['good'] += 1
+            elif r == 'again':
+                st['again'] += 1
+            if (e.get('at') or '') >= st['last']:
+                st['last'], st['last_result'] = e.get('at') or '', r or ''
+    for cards in out.values():
+        for st in cards.values():
+            st['srs'] = 'lapsing' if st['last_result'] == 'again' and st['good'] else 'learning' if st['good'] < 3 else 'stable'
+    return out
+
+
+def add_stages(data, notes, by_ko, cards):
+    """단어마다 단계를 붙이고, 카드로만 공부한 단어를 더한다."""
+    seen = set()
+    for v in data['vocab']:
+        info = by_ko.get(v['w'])
+        if info:
+            v.update({k: info[k] for k in ('note', 'level', 'step') if info.get(k)})
+            seen.add(info['note'])
+        elif (v.get('chapter') or {}).get('level', '').startswith('L'):
+            try:
+                v['level'] = int(v['chapter']['level'][1:])
+                v['step'] = STAGES.get(v['level'], '')
+            except ValueError:
+                pass
+        v['src'] = 'lesson'
+    for key, st in cards.items():
+        info = notes.get(key) or by_ko.get(st['ko'])
+        w = (info or {}).get('ko') or st['ko']
+        hit = next((v for v in data['vocab'] if v['w'] == w or v.get('note') == key), None)
+        if hit:
+            hit['src'], hit['srs'] = 'both', st['srs']
+            continue
+        if not w:
+            continue
+        data['vocab'].append({'w': w, 'en': st['en'] or (info or {}).get('en', ''), 'cat': '', 'pos': (info or {}).get('pos', ''), 'topik': None,
+                              'first': None, 'last': None, 'seen': st['good'] + st['again'], 'status': '', 'rel': {}, 'src': 'cards', 'srs': st['srs'],
+                              'note': (info or {}).get('note'), 'level': (info or {}).get('level'), 'step': (info or {}).get('step', ''), 'card_last': st['last'][:10]})
+    data['stages'] = STAGES
+    return data
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--db')
     ap.add_argument('--work', default='C:/KWD/work')
     ap.add_argument('--student', help='이름이나 폴더 이름 일부')
+    ap.add_argument('--app', help='kwd-app 저장소 (notes.tsv·sets.tsv)')
+    ap.add_argument('--word-events', help='숙제 단어 카드 결과 word_events.jsonl')
+    ap.add_argument('--hw-roster', help='숙제 student_id ↔ preply_id 표 (json 목록)')
     a = ap.parse_args()
+    app = a.app or next(iter(glob.glob('C:/Users/*/Projects/kwd-app') + glob.glob('C:/KWD/kwd-app')), None)
+    notes, by_ko = app_index(app)
+    ev = a.word_events or next(iter(glob.glob(os.path.join(a.work, 'hw_platform/grader/kwd_sync/word_events.jsonl'))), None)
+    cards_all = card_states(ev, a.hw_roster)
+    print(f"kwd-app 노트 {len(notes)}개 ({app or '없음'}) · 카드 결과 학생 {len(cards_all)}명 ({ev or '없음'})")
     db = a.db or (glob.glob('C:/KWD/data/*.db') or [None])[0]
     if not db or not os.path.exists(db):
         sys.exit('DB를 찾지 못했어요: --db 로 알려 주세요')
@@ -181,12 +297,14 @@ def main():
         if a.student and a.student.lower() not in (folder + ' ' + (st[1] or '')).lower():
             continue
         data = export_student(c, st, idx, cat_words)
+        add_stages(data, notes, by_ko, cards_all.get(str(st[2] or ''), {}) or cards_all.get(folder, {}))
         if not data['vocab'] and not data['grammar']:
             continue
         with open(os.path.join(out, folder + '.json'), 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
         n += 1
-        print(f"{folder}: 단어 {len(data['vocab'])} · 문형 {len(data['grammar'])}")
+        staged = sum(1 for v in data['vocab'] if v.get('step'))
+        print(f"{folder}: 단어 {len(data['vocab'])} (단계 붙음 {staged}) · 문형 {len(data['grammar'])}")
     print(f'{n}명 → {out}')
 
 

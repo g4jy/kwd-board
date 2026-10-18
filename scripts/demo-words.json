@@ -1,0 +1,1762 @@
+[
+{
+"note": "n00308",
+"w": "저",
+"en": "I / Me",
+"pos": "대명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n04124",
+"w": "네",
+"en": "yes",
+"pos": "감탄사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00325",
+"w": "아니요",
+"en": "No",
+"pos": "감탄사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00363",
+"w": "학생",
+"en": "Student",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00361",
+"w": "선생님",
+"en": "Teacher",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00359",
+"w": "사람",
+"en": "Person",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00373",
+"w": "한국",
+"en": "Korea",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00357",
+"w": "이름",
+"en": "Name",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00352",
+"w": "회사원",
+"en": "Office worker",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00358",
+"w": "대학생",
+"en": "College student",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00368",
+"w": "미국",
+"en": "the United States",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00552",
+"w": "의사",
+"en": "Doctor",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00369",
+"w": "일본",
+"en": "Japan",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00575",
+"w": "직업",
+"en": "Job / Occupation",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00376",
+"w": "중국",
+"en": "China",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00381",
+"w": "나라",
+"en": "Country / Nation",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00377",
+"w": "캐나다",
+"en": "Canada",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00311",
+"w": "나",
+"en": "I / Me",
+"pos": "대명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00383",
+"w": "영어",
+"en": "English",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00809",
+"w": "호주",
+"en": "Australia",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00803",
+"w": "개발자",
+"en": "(software) developer",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00810",
+"w": "직장인",
+"en": "working person; employee",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00372",
+"w": "영국",
+"en": "United Kingdom",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00811",
+"w": "간호사",
+"en": "nurse",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00378",
+"w": "국적",
+"en": "Nationality",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00386",
+"w": "프랑스",
+"en": "France",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00813",
+"w": "요리사",
+"en": "cook; chef",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00584",
+"w": "전공",
+"en": "Major",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00385",
+"w": "베트남",
+"en": "Vietnam",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00812",
+"w": "디자이너",
+"en": "designer",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 1"
+},
+{
+"note": "n00289",
+"w": "지금",
+"en": "Now",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00077",
+"w": "오늘",
+"en": "Today",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00182",
+"w": "가다",
+"en": "to go",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00122",
+"w": "오다",
+"en": "to come",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00200",
+"w": "먹다",
+"en": "to eat",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00190",
+"w": "마시다",
+"en": "to drink",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00146",
+"w": "보다",
+"en": "to see / to watch",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00881",
+"w": "공부하다",
+"en": "study",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00882",
+"w": "일하다",
+"en": "work",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00437",
+"w": "집",
+"en": "Home / House",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00195",
+"w": "자다",
+"en": "to sleep",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00142",
+"w": "쉬다",
+"en": "to rest",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00883",
+"w": "운동하다",
+"en": "exercise",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00109",
+"w": "매일",
+"en": "Every day",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00880",
+"w": "씨",
+"en": "polite word after an adult's name (like Mr./Ms.)",
+"pos": "의존 명사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00158",
+"w": "읽다",
+"en": "to read",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00155",
+"w": "듣다",
+"en": "to listen / to hear",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00461",
+"w": "커피",
+"en": "Coffee",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00458",
+"w": "밥",
+"en": "Rice / Meal",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00481",
+"w": "물",
+"en": "Water",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00588",
+"w": "학교",
+"en": "School",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00586",
+"w": "회사",
+"en": "Company / Work",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00197",
+"w": "일어나다",
+"en": "to get up",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00263",
+"w": "보통",
+"en": "Usually / Ordinary",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00272",
+"w": "일찍",
+"en": "Early",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00181",
+"w": "만나다",
+"en": "to meet",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00132",
+"w": "쓰다",
+"en": "to write / to use / to wear (a hat)",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00603",
+"w": "영화",
+"en": "Movie / Film",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00617",
+"w": "음악",
+"en": "Music",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00884",
+"w": "전화하다",
+"en": "make a phone call",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 2"
+},
+{
+"note": "n00064",
+"w": "주말",
+"en": "Weekend",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00925",
+"w": "평일",
+"en": "weekday",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00926",
+"w": "휴일",
+"en": "day off / holiday",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00276",
+"w": "자주",
+"en": "Often",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00291",
+"w": "주로",
+"en": "mainly, mostly",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00927",
+"w": "쇼핑하다",
+"en": "shop",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00928",
+"w": "잠",
+"en": "sleep",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00071",
+"w": "낮",
+"en": "Daytime",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00931",
+"w": "낮잠",
+"en": "nap",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00627",
+"w": "파티",
+"en": "Party",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00613",
+"w": "등산",
+"en": "Hiking / Climbing",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00929",
+"w": "또",
+"en": "again; also",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00933",
+"w": "외출",
+"en": "going out",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00525",
+"w": "담배",
+"en": "Cigarette / Tobacco",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00130",
+"w": "피우다",
+"en": "to smoke / to bloom (flowers)",
+"pos": "동사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00389",
+"w": "운전",
+"en": "Driving",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00631",
+"w": "구경",
+"en": "Sightseeing / Watching",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00930",
+"w": "데이트",
+"en": "date (romantic)",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00932",
+"w": "독서",
+"en": "reading (books)",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00934",
+"w": "집안일",
+"en": "housework",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00935",
+"w": "설거지",
+"en": "washing dishes",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00464",
+"w": "음식",
+"en": "Food",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00269",
+"w": "정말",
+"en": "Really / Truth",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00230",
+"w": "맛있다",
+"en": "to be delicious",
+"pos": "형용사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00250",
+"w": "맛없다",
+"en": "not tasty",
+"pos": "형용사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00225",
+"w": "좋다",
+"en": "to be good / to be nice",
+"pos": "형용사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00222",
+"w": "비싸다",
+"en": "to be expensive",
+"pos": "형용사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00942",
+"w": "싸다",
+"en": "cheap",
+"pos": "형용사",
+"level": 1,
+"step": "씨앗 3"
+},
+{
+"note": "n00469",
+"w": "메뉴",
+"en": "Menu",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00993",
+"w": "메뉴판",
+"en": "menu board/book",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00995",
+"w": "아메리카노",
+"en": "Americano",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00996",
+"w": "카페라테",
+"en": "cafe latte",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00498",
+"w": "김밥",
+"en": "Gimbap",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00484",
+"w": "비빔밥",
+"en": "bibimbap",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00494",
+"w": "떡볶이",
+"en": "Tteokbokki",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n01005",
+"w": "영수증",
+"en": "receipt",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n01004",
+"w": "봉투",
+"en": "carrier bag (at a shop); envelope",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n01007",
+"w": "휴지",
+"en": "tissue; toilet paper",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00336",
+"w": "손님",
+"en": "Guest / Customer",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00470",
+"w": "케이크",
+"en": "Cake",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n01000",
+"w": "만두",
+"en": "dumplings",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00997",
+"w": "녹차",
+"en": "green tea",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00456",
+"w": "김치찌개",
+"en": "kimchi stew",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00475",
+"w": "된장찌개",
+"en": "soybean-paste stew",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00999",
+"w": "샌드위치",
+"en": "sandwich",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n01006",
+"w": "빨대",
+"en": "straw",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00998",
+"w": "쿠키",
+"en": "cookie",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00462",
+"w": "불고기",
+"en": "Bulgogi",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n01001",
+"w": "국수",
+"en": "noodles",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n01002",
+"w": "치킨",
+"en": "fried chicken",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n01008",
+"w": "포크",
+"en": "fork",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n01003",
+"w": "피자",
+"en": "pizza",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n01009",
+"w": "냅킨",
+"en": "napkin",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00994",
+"w": "주문",
+"en": "order",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 4"
+},
+{
+"note": "n00076",
+"w": "어제",
+"en": "Yesterday",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00075",
+"w": "그저께",
+"en": "The day before yesterday",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00118",
+"w": "지난주",
+"en": "Last week",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00117",
+"w": "지난달",
+"en": "Last month",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n01064",
+"w": "아까",
+"en": "earlier",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n01067",
+"w": "어젯밤",
+"en": "last night",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n01066",
+"w": "후",
+"en": "after, later",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00116",
+"w": "전",
+"en": "Before / Former",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00087",
+"w": "일월",
+"en": "January",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00088",
+"w": "이월",
+"en": "February",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00089",
+"w": "삼월",
+"en": "March",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00090",
+"w": "사월",
+"en": "April",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00091",
+"w": "오월",
+"en": "May",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00092",
+"w": "유월",
+"en": "June",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00093",
+"w": "칠월",
+"en": "July",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00094",
+"w": "팔월",
+"en": "August",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00095",
+"w": "구월",
+"en": "September",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00096",
+"w": "시월",
+"en": "October",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00097",
+"w": "십일월",
+"en": "November",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00098",
+"w": "십이월",
+"en": "December",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n01068",
+"w": "오랜만",
+"en": "after a long time",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n01069",
+"w": "저번",
+"en": "last time",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 5"
+},
+{
+"note": "n00079",
+"w": "모레",
+"en": "The day after tomorrow",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n00643",
+"w": "계획",
+"en": "Plan",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n00114",
+"w": "이번",
+"en": "This time",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n00287",
+"w": "이따가",
+"en": "Later",
+"pos": "부사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n00646",
+"w": "축하",
+"en": "congratulations; celebration",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01135",
+"w": "결혼",
+"en": "marriage",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01136",
+"w": "결혼식",
+"en": "wedding ceremony",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01140",
+"w": "크리스마스",
+"en": "Christmas",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01138",
+"w": "설날",
+"en": "Lunar New Year's Day",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01139",
+"w": "추석",
+"en": "Chuseok (harvest festival)",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01137",
+"w": "명절",
+"en": "traditional holiday",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01141",
+"w": "연휴",
+"en": "consecutive holidays, a holiday break",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01142",
+"w": "공휴일",
+"en": "public holiday",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01143",
+"w": "새해",
+"en": "new year",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01145",
+"w": "소풍",
+"en": "picnic, outing",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n00587",
+"w": "졸업",
+"en": "Graduation",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01146",
+"w": "잔치",
+"en": "feast, party",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01144",
+"w": "방문",
+"en": "a visit (to a person or place)",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01147",
+"w": "집들이",
+"en": "housewarming party",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n01134",
+"w": "휴식",
+"en": "rest",
+"pos": "명사",
+"level": 1,
+"step": "씨앗 6"
+},
+{
+"note": "n00299",
+"w": "좀",
+"en": "a bit; please (softens a request)",
+"pos": "부사",
+"level": 1,
+"step": "새싹 1"
+},
+{
+"note": "n00123",
+"w": "열다",
+"en": "to open",
+"pos": "동사",
+"level": 1,
+"step": "새싹 1"
+},
+{
+"note": "n00137",
+"w": "닫다",
+"en": "to close",
+"pos": "동사",
+"level": 1,
+"step": "새싹 1"
+},
+{
+"note": "n00163",
+"w": "도와주다",
+"en": "to help",
+"pos": "동사",
+"level": 1,
+"step": "새싹 1"
+},
+{
+"note": "n01241",
+"w": "알겠어요",
+"en": "I understand",
+"pos": "동사",
+"level": 2,
+"step": "새싹 1"
+},
+{
+"note": "n01234",
+"w": "말하다",
+"en": "speak; say",
+"pos": "동사",
+"level": 2,
+"step": "새싹 1"
+},
+{
+"note": "n00285",
+"w": "천천히",
+"en": "Slowly",
+"pos": "부사",
+"level": 1,
+"step": "새싹 1"
+},
+{
+"note": "n00283",
+"w": "다시",
+"en": "Again",
+"pos": "부사",
+"level": 1,
+"step": "새싹 1"
+},
+{
+"note": "n00054",
+"w": "잠깐",
+"en": "A moment",
+"pos": "부사",
+"level": 1,
+"step": "새싹 1"
+},
+{
+"note": "n00183",
+"w": "켜다",
+"en": "to turn on",
+"pos": "동사",
+"level": 1,
+"step": "새싹 1"
+},
+{
+"note": "n00125",
+"w": "끄다",
+"en": "to turn off",
+"pos": "동사",
+"level": 1,
+"step": "새싹 1"
+},
+{
+"note": "n01238",
+"w": "불",
+"en": "light (in a room)",
+"pos": "명사",
+"level": 2,
+"step": "새싹 1"
+},
+{
+"note": "n01235",
+"w": "가져오다",
+"en": "bring",
+"pos": "동사",
+"level": 2,
+"step": "새싹 1"
+},
+{
+"note": "n00052",
+"w": "전화번호",
+"en": "Phone number",
+"pos": "명사",
+"level": 1,
+"step": "새싹 1"
+},
+{
+"note": "n01237",
+"w": "확인하다",
+"en": "check",
+"pos": "동사",
+"level": 2,
+"step": "새싹 1"
+},
+{
+"note": "n00414",
+"w": "주소",
+"en": "Address",
+"pos": "명사",
+"level": 1,
+"step": "새싹 1"
+},
+{
+"note": "n00157",
+"w": "보내다",
+"en": "to send",
+"pos": "동사",
+"level": 1,
+"step": "새싹 1"
+},
+{
+"note": "n01240",
+"w": "한테",
+"en": "to; toward a person",
+"pos": "조사",
+"level": 2,
+"step": "새싹 1"
+},
+{
+"note": "n01355",
+"w": "꼭",
+"en": "surely; without fail",
+"pos": "부사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n01352",
+"w": "약",
+"en": "medicine",
+"pos": "명사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n01348",
+"w": "과제",
+"en": "assignment",
+"pos": "명사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n01351",
+"w": "제출",
+"en": "submission; handing in",
+"pos": "명사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n01349",
+"w": "신청",
+"en": "application; signing up",
+"pos": "명사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n01353",
+"w": "서류",
+"en": "document; papers",
+"pos": "명사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n01350",
+"w": "예약",
+"en": "reservation; booking",
+"pos": "명사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n00539",
+"w": "여권",
+"en": "Passport",
+"pos": "명사",
+"level": 1,
+"step": "새싹 2"
+},
+{
+"note": "n01357",
+"w": "연락",
+"en": "contact; getting in touch",
+"pos": "명사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n00284",
+"w": "빨리",
+"en": "Quickly",
+"pos": "부사",
+"level": 1,
+"step": "새싹 2"
+},
+{
+"note": "n01356",
+"w": "늦게",
+"en": "late",
+"pos": "부사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n01360",
+"w": "내다",
+"en": "pay; hand in",
+"pos": "동사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n01365",
+"w": "요금",
+"en": "fee; charge (for a service)",
+"pos": "명사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n01358",
+"w": "빨래",
+"en": "laundry",
+"pos": "명사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n01359",
+"w": "장보기",
+"en": "grocery shopping",
+"pos": "명사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n01364",
+"w": "월급",
+"en": "monthly pay",
+"pos": "명사",
+"level": 2,
+"step": "새싹 2"
+},
+{
+"note": "n01486",
+"w": "한번",
+"en": "(give it) a try; once",
+"pos": "부사",
+"level": 2,
+"step": "새싹 3"
+},
+{
+"note": "n00105",
+"w": "처음",
+"en": "Beginning / First time",
+"pos": "명사",
+"level": 1,
+"step": "새싹 3"
+},
+{
+"note": "n00223",
+"w": "괜찮다",
+"en": "to be okay / to be all right",
+"pos": "형용사",
+"level": 1,
+"step": "새싹 3"
+},
+{
+"note": "n01487",
+"w": "앱",
+"en": "app",
+"pos": "명사",
+"level": 2,
+"step": "새싹 3"
+},
+{
+"note": "n01485",
+"w": "추천하다",
+"en": "recommend",
+"pos": "동사",
+"level": 2,
+"step": "새싹 3"
+},
+{
+"note": "n01490",
+"w": "새",
+"en": "new",
+"pos": "관형사",
+"level": 2,
+"step": "새싹 3"
+},
+{
+"note": "n01492",
+"w": "상품",
+"en": "product; goods (for sale)",
+"pos": "명사",
+"level": 2,
+"step": "새싹 3"
+},
+{
+"note": "n01488",
+"w": "사이트",
+"en": "website",
+"pos": "명사",
+"level": 2,
+"step": "새싹 3"
+},
+{
+"note": "n00126",
+"w": "바꾸다",
+"en": "to change / to exchange",
+"pos": "동사",
+"level": 1,
+"step": "새싹 3"
+},
+{
+"note": "n01495",
+"w": "사이즈",
+"en": "size (of clothes or shoes)",
+"pos": "명사",
+"level": 2,
+"step": "새싹 3"
+},
+{
+"note": "n01496",
+"w": "색깔",
+"en": "color",
+"pos": "명사",
+"level": 2,
+"step": "새싹 3"
+},
+{
+"note": "n01489",
+"w": "문제",
+"en": "problem; question (on a test)",
+"pos": "명사",
+"level": 2,
+"step": "새싹 3"
+},
+{
+"note": "n01632",
+"w": "이런",
+"en": "this kind of",
+"pos": "관형사",
+"level": 2,
+"step": "새싹 4"
+},
+{
+"note": "n01633",
+"w": "그런",
+"en": "that kind of",
+"pos": "관형사",
+"level": 2,
+"step": "새싹 4"
+},
+{
+"note": "n01634",
+"w": "저런",
+"en": "that kind of (over there)",
+"pos": "관형사",
+"level": 2,
+"step": "새싹 4"
+},
+{
+"note": "n00516",
+"w": "것",
+"en": "Thing / Object",
+"pos": "의존 명사",
+"level": 1,
+"step": "새싹 4"
+},
+{
+"note": "n01630",
+"w": "거",
+"en": "thing (spoken form of 것)",
+"pos": "의존 명사",
+"level": 2,
+"step": "새싹 4"
+},
+{
+"note": "n00443",
+"w": "중",
+"en": "during; among",
+"pos": "의존 명사",
+"level": 1,
+"step": "새싹 4"
+},
+{
+"note": "n01631",
+"w": "아무",
+"en": "any (with a negative: no ... at all)",
+"pos": "관형사",
+"level": 2,
+"step": "새싹 4"
+},
+{
+"note": "n01638",
+"w": "자장면",
+"en": "jajangmyeon (black bean noodles)",
+"pos": "명사",
+"level": 2,
+"step": "새싹 4"
+},
+{
+"note": "n02303",
+"w": "전하다",
+"en": "to pass on, to convey (news, a message, regards)",
+"pos": "동사",
+"level": 3,
+"step": "잎새 1"
+},
+{
+"note": "n02304",
+"w": "소식",
+"en": "news (about someone or something)",
+"pos": "명사",
+"level": 3,
+"step": "잎새 1"
+},
+{
+"note": "n02309",
+"w": "안부",
+"en": "regards; news of how someone is doing",
+"pos": "명사",
+"level": 3,
+"step": "잎새 1"
+},
+{
+"note": "n02310",
+"w": "들려주다",
+"en": "to let (someone) hear; to tell (a story)",
+"pos": "동사",
+"level": 3,
+"step": "잎새 1"
+},
+{
+"note": "n02311",
+"w": "알려지다",
+"en": "to become known",
+"pos": "동사",
+"level": 3,
+"step": "잎새 1"
+},
+{
+"note": "n02312",
+"w": "알아내다",
+"en": "to find out, to work out",
+"pos": "동사",
+"level": 3,
+"step": "잎새 1"
+},
+{
+"note": "n02428",
+"w": "지시",
+"en": "instruction",
+"pos": "명사",
+"level": 3,
+"step": "잎새 2"
+},
+{
+"note": "n02429",
+"w": "작성",
+"en": "writing up, filling out (a form)",
+"pos": "명사",
+"level": 3,
+"step": "잎새 2"
+},
+{
+"note": "n02430",
+"w": "서명",
+"en": "signature",
+"pos": "명사",
+"level": 3,
+"step": "잎새 2"
+},
+{
+"note": "n02431",
+"w": "사인",
+"en": "signature, autograph",
+"pos": "명사",
+"level": 3,
+"step": "잎새 2"
+}
+]

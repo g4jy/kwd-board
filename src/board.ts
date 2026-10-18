@@ -279,8 +279,10 @@ export class BoardScreen {
     this.initialView();
     this.renderChip();
     if (this.role === 'teacher') {
+      // 빈 판이면 바로 칠 수 있게 노트에 커서. 자료가 깔린 판이면 노트를 접어 둔 채로 (10/18)
       const first = this.editors.get(this.order[0]);
-      window.setTimeout(() => first?.commands.focus('end'), 60);
+      const busy = this.store.objList(this.order[0]).length > 0 || isDemo();
+      if (!busy) window.setTimeout(() => first?.commands.focus('end'), 60);
     }
     this.store.log({ kind: 'presence', data: { op: 'join', ua: navigator.userAgent.slice(0, 80) } });
   }
@@ -352,6 +354,19 @@ export class BoardScreen {
       editor.on('selectionUpdate', () => this.renderBubble(editor));
       editor.on('blur', () => window.setTimeout(() => !this.bubble.contains(document.activeElement) && !this.bubble.matches(':hover') && this.hideBubble(), 150));
       editor.on('update', () => this.layoutSoon());
+      if (isCanvas) {
+        // 비어 있는 노트는 작게 접어 둔다 (판에 흰 A4 가 덩그러니 있지 않게, 10/18). 누르면 펼쳐져서 바로 쓴다
+        const fold = () => {
+          const empty = editor.isEmpty && !editor.isFocused;
+          if (host.classList.contains('note-empty') !== empty) {
+            host.classList.toggle('note-empty', empty);
+            this.layoutSoon();
+            this.renderRailSoon();
+          }
+        };
+        for (const ev of ['update', 'focus', 'blur', 'create'] as const) editor.on(ev, () => window.setTimeout(fold, 0));
+        window.setTimeout(fold, 0);
+      }
       if (this.memory && this.role === 'teacher') this.attachHints(editor);
       if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.layoutSoon()).observe(host);
     } else {
@@ -571,7 +586,7 @@ export class BoardScreen {
       const v = this.views.get(id)!;
       if (this.isCanvas(id)) {
         const nh = Math.min(Math.max(300, v.editorHost?.offsetHeight || 600), 1000);
-        out.push({ key: 'note', icon: '✎', label: '', title: '노트', page: id, rect: [0, v.y, TEXT_W, v.y + nh] });
+        if (!v.editorHost?.classList.contains('note-empty')) out.push({ key: 'note', icon: '✎', label: '', title: '노트', page: id, rect: [0, v.y, TEXT_W, v.y + nh] });
         const objs = this.store.objList(id).filter((o) => o.type !== 'box').sort((a, b) => a.y - b.y || a.x - b.x);
         for (const o of objs) {
           const mat = o.mid ? this.store.materials.get(o.mid) : null;
@@ -2112,7 +2127,8 @@ export class BoardScreen {
   }
 
   private maybeInsertHeader() {
-    if (!this.memory || this.store.meta.get('headerAt')) return;
+    // KWD 폴더 학생은 오늘 탭의 '대화 재료'가 이 일을 한다 → 노트에 머리말을 넣지 않는다 (10/18)
+    if (!this.memory || this.pack || this.store.meta.get('headerAt')) return;
     const first = this.editors.get(this.order[0]);
     if (!first) return;
     if (first.state.doc.textContent.trim().length > 0) return; // 이미 쓰기 시작한 판에는 넣지 않는다
@@ -2224,9 +2240,6 @@ export class BoardScreen {
       const f = find(re);
       return f ? readPackFile(this.packFolder, f.path) : null;
     };
-    const T = (text: string) => ({ type: 'text', text });
-    const P = (...cc: unknown[]) => ({ type: 'paragraph', content: cc });
-    const H = (level: number, text: string) => ({ type: 'heading', attrs: { level }, content: [T(text)] });
     const label = (x: number, y: number, text: string, w = 420) => {
       const o = this.store.addObj(c, { type: 'box', x, y, w, h: 44 });
       const frag = this.store.boxFragment(o.id);
@@ -2239,24 +2252,7 @@ export class BoardScreen {
     };
     const X = TEXT_W + 80;
     try {
-      // 노트: 선생님이 수업 중에 쓰는 곳. 위는 지난 과제에서 고칠 것, 아래는 오늘 할 것
-      const ed = this.editors.get(c);
-      const blank = (answer: string) => ({ type: 'blank', attrs: { answer } });
-      const cell = (t: string, head = false) => ({ type: head ? 'tableHeader' : 'tableCell', content: [P(T(t))] });
-      ed?.chain()
-        .insertContentAt(0, [
-          H(1, '#12 추석에 뭐 했어요?'),
-          P(T('오늘 목표: 추석에 한 일 3문장 말하기 (-았/었어요) · 맛 형용사 4개')),
-          H(3, '과제 피드백 — 지난 수업 뒤 6일 과제에서'),
-          { type: 'correction', attrs: { original: '조금 비쌋지만 맛있었어요.' }, content: [T('조금 비쌌지만 맛있었어요.')] },
-          { type: 'correction', attrs: { original: '친구를 만나요 가요.' }, content: [T('친구를 만나러 가요.')] },
-          H(3, '빈칸 — 학생이 채워요'),
-          P(T('추석에 송편을 '), blank('만들었어요'), T('.')),
-          P(T('김치는 조금 '), blank('매워요'), T('.')),
-          H(3, '맛 형용사'),
-          { type: 'table', content: [{ type: 'tableRow', content: [cell('말', true), cell('뜻', true), cell('예', true)] }, { type: 'tableRow', content: [cell('달아요'), cell('sweet'), cell('송편은 달아요.')] }, { type: 'tableRow', content: [cell('매워요'), cell('spicy'), cell('김치는 매워요.')] }] },
-        ])
-        .run();
+      // 노트는 비워 둔다: 수업 내용은 수업 페이지·슬라이드에 (10/18)
       // 1) 수업 페이지 (인터랙티브): 학생이 직접 누르고, 그 위에 단계마다 필기
       const ws = await file(/수업페이지\.html$/);
       if (ws) {

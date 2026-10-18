@@ -53,6 +53,17 @@ export interface LessonPacket {
   time_split?: { total_min: number; segments: PacketSegment[]; reasons_ko?: string[] };
   talk_kit?: TalkKit;
   teacher_notes?: { watch_out?: string[]; ask?: string[] };
+  learner?: Learner;
+}
+
+// 학생 한눈에 (10/18): 긴 프로필·상태 문서를 수업 후 자동화가 줄여 둔 것. 판은 그대로 보여 준다
+export interface Learner {
+  card?: { stage?: string; level_label?: string; since?: string; lessons_total?: number; per_week?: number; goals?: string[]; interests?: string[]; works_well?: string[]; avoid?: string[]; native?: string };
+  now?: { solid?: string[]; shaky?: string[]; next?: string[] };
+  errors?: Array<{ label: string; n: number; trend?: 'better' | 'same' | 'worse' | 'new'; wrong?: string; right?: string; last?: number }>;
+  patterns?: Array<{ p: string; en?: string; stage?: string; status: 'solid' | 'practicing' | 'shaky' | 'new'; first?: number; last?: number; uses?: number }>;
+  words?: { lesson?: number; cards?: number; lapsing?: number; stage_counts?: Record<string, number> };
+  sources?: Array<{ kind: string; ref: string }>;
 }
 
 export function validPacket(j: unknown): j is LessonPacket {

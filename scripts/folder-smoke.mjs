@@ -57,6 +57,13 @@ res.lessonDoc = (await p.locator('.mp-viewer').innerText()).slice(0, 120);
 await p.waitForFunction(() => window.__kwd.memory()?.vocab?.length > 0, null, { timeout: 5000 });
 await p.click('.mp-tab[data-tab="vocab"]');
 res.vocab = await p.locator('.mp-body .mp-row').allInnerTexts();
+// 노트에 머리말은 넣지 않는다(10/18) → 배운 말을 치면 힌트가 붙는지
+res.header = await p.evaluate(() => window.__kwd.editor().getText().trim());
+await p.click('.mp-close');
+await p.click('.toolbar [data-tool="text"]');
+await p.locator('.page.canvas > .page-text').click();
+await p.keyboard.type('저는 ' + res.vocab[0].split('\n')[0] + ' 좋아요');
+await p.waitForTimeout(300);
 res.hints = await p.evaluate(() => document.querySelectorAll('.mem-hint').length);
 await p.screenshot({ path: `${OUT}/4-vocab.png` });
 // 체험 학생

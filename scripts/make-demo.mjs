@@ -128,7 +128,7 @@ if (AUD && fs.existsSync(path.join(AUD, 'listen.ogg'))) {
 }
 
 // 8) 학생 정보 · 지난 수업 · 수업 기록
-put(S + 'Student_Profile_Mina K.md', `# Student Profile: Mina K. (체험용 가상 학생)\n\n- 나라: 캐나다 · 시간대: 토론토\n- 레벨: 초급 2 (TOPIK 1 준비)\n- 관심: 요리, 여행, K-드라마\n- 목표: 내년 봄 서울 여행에서 식당·시장 대화\n- 수업: 주 2회 50분, 지금까지 11번\n\n## 잘하는 것\n- 발음이 또렷함, 새 단어를 빨리 외움\n\n## 어려워하는 것\n- 받침 있는 과거형 (-었어요), 조사 은/는·이/가\n`);
+put(S + 'Student_Profile_Mina K.md', `# Student Profile: Mina K. (체험용 가상 학생)\n\n## 1. Executive Summary\n- 초급 2, 주 1회 50분, 11번째 수업까지. 캐나다(토론토).\n- 목표: 한국 친구들과 주말·명절 이야기, 내년 봄 서울 여행.\n\n## 2. Personal Intelligence\n- 요리·여행·K-드라마. 캐나다 한국 친구들과 송편 모임.\n\n## 3. Pedagogical Diagnosis\n- 강점: 발음이 또렷함, 새 단어를 빨리 외움.\n- 약점: 받침 ㅆ 철자, 이/가 ↔ 은/는.\n- 잘 맞는 방법: 사진으로 먼저 말하기, 바로 고쳐 주기.\n\n## 4. Vocabulary Watchlist\n- 비싸다, 반찬, 매워요\n\n## 5. Detailed Lesson Log\n- #11 부산 이야기로 과거형\n- #10 맛 형용사, -고 싶어요\n\n## 6. Action Plan & Next Steps\n- -았/었어요 3문장, -(으)ㄹ 거예요 맛보기\n`);
 put(S + 'student_roadmap_current.md', `# 로드맵 (체험용)\n\n| 단계 | 내용 | 상태 |\n|---|---|---|\n| 1 | 자기소개·숫자 | 끝 |\n| 2 | 음식·맛 | 진행 중 |\n| 3 | 과거형 이야기 | 진행 중 |\n| 4 | 미래 계획 -(으)ㄹ 거예요 | 다음 |\n| 5 | 식당에서 주문하기 | 다음 |\n`);
 put(S + 'Current_Learning_Status.md', `# 지금 배우는 상태\n\n- 과거형: 규칙 동사는 익숙, ㅂ불규칙(맵다→매웠어요) 아직\n- 조사: 이/가 와 은/는 자주 헷갈림\n- 숙제: 3번 연속 냄, 녹음도 함\n`);
 put(S + '#10_Mina K_@D-14@-19-00.md', `# #10 수업\n\n## 배운 것\n- 맛있어요, 매워요, 반찬\n- -고 싶어요\n\n## 교정\n- 친구를 만나요 가요 → 친구를 만나러 가요\n\n## 숙제\n- 맛 일기 3줄\n`);
@@ -141,9 +141,7 @@ put(S + '.lesson_data_11.json', ld(11, '@D-7@', [['날씨', 'weather', 'practice
 const V = (w, en, cat, first, last, seen, status, rel, chapter) => ({ w, en, cat, pos: '', topik: 1, first, last, seen, status, chapter, rel });
 const ch1 = { code: 'M0012', target: '-았/었어요', level: 'L1' };
 const ch2 = { code: 'M0020', target: '맛 형용사', level: 'L1' };
-put(
-  'board_data/Mina K (9000001).json',
-  JSON.stringify({
+const BD = {
     generated_at: '2026-10-17T06:50:00',
     sources: { relations: ['같은 챕터(커리큘럼 배정)', '같은 묶음(단어 분류)', '헷갈리는 짝(문형 비교)', '같은 수업 묶음·같은 계열(커리큘럼)'], missing: ['동의어·반의어 표', '우리말샘 벡터 유사도'] },
     vocab: [
@@ -172,8 +170,27 @@ put(
       { p: '-고 싶어요', en: 'want to', cat: 'ending', sub: 'desire', meaning: 'Expresses a wish.', ex: '떡볶이를 먹고 싶어요.', ex_en: 'I want to eat tteokbokki.', status: 'practiced', first: 9, count: 3, rel: { '같은 계열 (Desire and intention)': ['-(으)려고 해요', '-(으)ㄹ 거예요'] } },
       { p: '-았/었어요', en: 'past tense', cat: 'tense', sub: 'past', meaning: 'Past tense polite.', ex: '부산에 갔어요.', ex_en: 'I went to Busan.', status: 'introduced', first: 11, count: 2, chapter: ch1, rel: { '헷갈리는 짝': ['-아/어요'], '같은 수업 묶음': ['-(으)ㄹ 거예요'], '이 챕터 단어': ['만들다', '지내다', '다녀오다'] } },
     ],
-  }),
-);
+};
+// 단계(10/18): kwd-app 노트와 맞춘 레벨·단계, 카드로만 공부한 단어(숙제 단어 카드 결과) — 체험은 kwd-app 노트 220개(scripts/demo-words.json)로
+{
+  const W = JSON.parse(fs.readFileSync('scripts/demo-words.json', 'utf8'));
+  const byW = new Map(W.map((x) => [x.w, x]));
+  const alias = { 맛있어요: '맛있다', 매워요: '맵다' };
+  for (const v of BD.vocab) {
+    const x = byW.get(v.w) || byW.get(alias[v.w]);
+    if (x) Object.assign(v, { note: x.note, level: x.level, step: x.step });
+    v.src = x && (x.note.charCodeAt(5) % 3 === 0) ? 'both' : 'lesson';
+    if (v.src === 'both') v.srs = v.status === 'uncertain' ? 'lapsing' : 'stable';
+  }
+  const have = new Set(BD.vocab.map((v) => v.w));
+  W.forEach((x, i) => {
+    if (have.has(x.w)) return;
+    const srs = i % 11 === 0 ? 'lapsing' : x.level === 1 && i % 3 ? 'stable' : 'learning';
+    BD.vocab.push({ w: x.w, en: x.en, cat: '', pos: x.pos, topik: null, first: null, last: null, seen: 1 + (i % 7), status: '', rel: {}, src: 'cards', srs, note: x.note, level: x.level, step: x.step, card_last: '@D-' + (1 + (i % 9)) + '@' });
+  });
+  BD.stages = { 1: '씨앗', 2: '새싹', 3: '잎새', 4: '꽃', 5: '열매', 6: '나무' };
+}
+put('board_data/Mina K (9000001).json', JSON.stringify(BD));
 
 // 10) 체험 수업 학생 (준비 문서만)
 put(T + 'Trial_Prep_DEMO.md', `# Trial Lesson Prep: Tom (체험용 가상 학생)\n\n## 1. 사전 설문\n- 목표: 내년 여름 한국 여행\n- 한글: 읽을 수 있음, 뜻은 잘 모름\n- 좋아하는 것: 축구, 라면\n\n## 2. 오늘 할 것\n1. 자기소개 (저는 ___예요)\n2. 여행 표현 5개\n3. 다음 수업 계획 정하기\n`);
@@ -253,6 +270,30 @@ const PACKET = {
     sources: [{ kind: 'post_lesson', ref: 'post_lesson #11' }, { kind: 'cards', ref: 'kwd-app srs' }, { kind: 'homework_digest', ref: 'marks' }],
   },
   teacher_notes: { watch_out: ['ㅆ 받침 철자 (비쌌지만, 있었어요)'] },
+  learner: {
+    card: { stage: '씨앗 6', level_label: '초급 2', since: '@D-120@', lessons_total: 11, per_week: 1, goals: ['한국 친구들과 주말·명절 이야기 5분', '내년 봄 서울 여행'], interests: ['요리', '여행', 'K-드라마'], works_well: ['사진·그림으로 먼저 말하기', '틀린 것은 바로 고쳐 주기'], avoid: ['긴 문법 설명'], native: 'English' },
+    now: { solid: ['-아/어요 (현재)', '-고 싶어요', '맛 형용사 맛있어요'], shaky: ['받침 ㅆ 철자 (비쌌지만)', '이/가 ↔ 은/는'], next: ['-았/었어요로 3문장 이어 말하기', '-(으)ㄹ 거예요 맛보기'] },
+    errors: [
+      { label: '받침 ㅆ 철자', n: 4, trend: 'same', wrong: '비쌋지만', right: '비쌌지만', last: 11 },
+      { label: '이/가 ↔ 은/는', n: 3, trend: 'better', wrong: '오늘 날씨는 좋아요', right: '오늘 날씨가 좋아요', last: 10 },
+      { label: '-(으)러 가요', n: 2, trend: 'new', wrong: '친구를 만나요 가요', right: '친구를 만나러 가요', last: 10 },
+      { label: 'ㅂ 불규칙', n: 2, trend: 'same', wrong: '맵었어요', right: '매웠어요', last: 9 },
+      { label: '발음: ㄹ 받침 이어 읽기', n: 2, trend: 'same', wrong: '[만드어써요]', right: '[만드러써요]', last: 11 },
+      { label: '시간 조사 에', n: 1, trend: 'better', wrong: '주말 부산에 갔어요', right: '주말에 부산에 갔어요', last: 8 },
+    ],
+    patterns: [
+      { p: '은/는', en: 'topic', stage: '씨앗 1', status: 'solid', first: 1, last: 11, uses: 9 },
+      { p: '-아/어요', en: 'polite present', stage: '씨앗 2', status: 'solid', first: 2, last: 11, uses: 12 },
+      { p: '이/가', en: 'subject', stage: '씨앗 2', status: 'shaky', first: 3, last: 10, uses: 4 },
+      { p: '-고 싶어요', en: 'want to', stage: '씨앗 4', status: 'practicing', first: 9, last: 10, uses: 3 },
+      { p: 'N에 가요', en: 'go to N', stage: '씨앗 3', status: 'solid', first: 5, last: 11, uses: 7 },
+      { p: '-(으)러 가요', en: 'go to do', stage: '씨앗 6', status: 'shaky', first: 10, last: 10, uses: 1 },
+      { p: '-았/었어요', en: 'past', stage: '씨앗 6', status: 'practicing', first: 11, last: 11, uses: 2 },
+      { p: '-(으)ㄹ 거예요', en: 'will', stage: '새싹 1', status: 'new', first: 12, last: 12, uses: 0 },
+    ],
+    words: { lesson: 18, cards: 210, lapsing: 21 },
+    sources: [{ kind: 'profile', ref: 'Student_Profile ## 1·2·3·6' }, { kind: 'db', ref: 'student_grammar · errors' }, { kind: 'cards', ref: 'word_events.jsonl' }],
+  },
   privacy: { contains_real_data: false, leaves_pc: false, mirror_ok: true, student_device_ok: false },
   checks: { schema_ok: true, split_sum_ok: true, display_form_ok: true, sources_missing: [], warnings: [] },
 };

@@ -6,7 +6,7 @@ import { h, fmtDate } from './ui';
 import { vocabNote, type StudentMemory } from './memory';
 import type { StudentPack, PackFile, BoardData } from './kwdfolder';
 import { type HwHistory, type HwMedia, type HwDay, type HwItem } from './homework';
-import { talkKitMarkdown, PACE_KO, type TalkKit, type PacketRoadmap } from './packet';
+import { talkKitMarkdown, PACE_KO, type TalkKit, type PacketRoadmap, type Learner } from './packet';
 
 export interface PanelActions {
   insertLine(line: string): void; // 판의 지금 줄 아래에
@@ -127,13 +127,7 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
     if (doc) body.append(section(pack.plan ? `수업안 #${pack.plan.n}` : '체험 수업 준비', mdToEl(doc.text)));
     if (pack.homework) body.append(details('과제 초안', mdToEl(pack.homework.text), false));
   } else if (tab === 'student') {
-    const rm = pack.packet?.roadmap;
-    if (rm?.path?.length || rm?.goal_start) renderRoadmap(body, rm);
-    if (pack.profile) body.append(details('학생 정보', mdToEl(pack.profile), !rm?.path?.length));
-    if (pack.roadmap) body.append(details(rm?.path?.length ? '로드맵 문서' : '로드맵', mdToEl(pack.roadmap), !pack.profile && !rm?.path?.length));
-    if (pack.status) body.append(details('지금 배우는 상태', mdToEl(pack.status), false));
-    if (mem?.errors.length) body.append(details(`자주 틀린 것 ${mem.errors.length}`, h('div', {}, ...mem.errors.slice(0, 30).map((e) => row(`${e.wrong ? '✗ ' + e.wrong : e.type}`, [e.right ? '✓ ' + e.right : '', e.count && e.count > 1 ? `${e.count}번` : '', e.last || ''].filter(Boolean).join(' · ')))), false));
-    if (mem?.grammar.length) body.append(details(`배운 문형 ${mem.grammar.length}`, h('div', {}, ...mem.grammar.slice(-40).reverse().map((g) => row(g.pattern, [g.name, g.first ? `${g.first} 처음` : '', (g.examples || [])[0]].filter(Boolean).join(' · '), `${g.pattern}${g.examples?.[0] ? ' — ' + g.examples[0] : ''}`))), false));
+    renderStudent(body, pack, mem, act);
   } else if (tab === 'lessons') {
     const list = h('div', { class: 'mp-list' });
     const viewer = h('div', { class: 'mp-viewer', hidden: '' });
@@ -177,7 +171,17 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
 }
 
 // 중앙 DB에서 뽑은 전체 단어·문형 + 관련된 말
-let dbView: { kind: 'w' | 'g'; sort: 'recent' | 'first' | 'seen'; q: string } = { kind: 'w', sort: 'recent', q: '' };
+const STAGE_NAMES: Record<string, string> = { 1: '씨앗', 2: '새싹', 3: '잎새', 4: '꽃', 5: '열매', 6: '나무' };
+const SRS_KO: Record<string, string> = { learning: '카드 익히는 중', stable: '카드 외움', lapsing: '카드 자꾸 잊음', due: '카드 복습 때' };
+let dbView: { kind: 'w' | 'g'; sort: 'recent' | 'first' | 'seen' | 'stage'; q: string; stage: string; step: string; src: '' | 'lesson' | 'cards' } = { kind: 'w', sort: 'recent', q: '', stage: '', step: '', src: '' };
+const stepNum = (s?: string) => Number((/(\d+)$/.exec(s || '') || [])[1] || 0);
+const STAGE_ORDER = ['씨앗', '새싹', '잎새', '꽃', '열매', '나무'];
+// 단계 이름은 kwd-app 세트의 단계(씨앗 2 …)를 따른다. 세트가 없으면 레벨(1~6)로
+const stageOf = (v: { step?: string; level?: number | null }) => (v.step ? v.step.split(' ')[0] : v.level ? STAGE_NAMES[v.level] || '' : '');
+const stageRank = (v: { step?: string; level?: number | null }) => {
+  const i = STAGE_ORDER.indexOf(stageOf(v));
+  return (i < 0 ? 9 : i) * 100 + stepNum(v.step);
+};
 function renderDbVocab(body: HTMLElement, dbIn: BoardData, mem: StudentMemory | null, act: PanelActions, insBtn: (line: string, label?: string) => HTMLElement) {
   // DB에 아직 안 들어간 단어(수업 기록 .lesson_data 에만 있는 것)도 합친다
   const inDb = new Set(dbIn.vocab.map((v) => v.w));
@@ -198,7 +202,7 @@ function renderDbVocab(body: HTMLElement, dbIn: BoardData, mem: StudentMemory | 
   const search = h('input', { type: 'search', class: 'mp-search', placeholder: dbView.kind === 'w' ? '단어·뜻 찾기' : '문형 찾기', lang: 'ko', value: dbView.q }) as HTMLInputElement;
   search.addEventListener('keydown', (e) => e.stopPropagation());
   const sort = h('select', { class: 'mp-sort', 'aria-label': '순서' }) as HTMLSelectElement;
-  for (const [v, l] of [['recent', '최근 수업 순'], ['first', '처음 배운 순'], ['seen', '많이 나온 순']]) sort.append(h('option', { value: v }, l));
+  for (const [v, l] of [['recent', '최근 수업 순'], ['first', '처음 배운 순'], ['seen', '많이 나온 순'], ['stage', '단계 순']]) sort.append(h('option', { value: v }, l));
   sort.value = dbView.sort;
   const list = h('div', { class: 'mp-list' });
   const relBox = (rel: Record<string, string[]>) => {
@@ -222,10 +226,11 @@ function renderDbVocab(body: HTMLElement, dbIn: BoardData, mem: StudentMemory | 
     list.innerHTML = '';
     const q = dbView.q.trim().toLowerCase();
     if (dbView.kind === 'w') {
-      let vs = db.vocab.filter((v) => !q || v.w.includes(q) || v.en.toLowerCase().includes(q));
-      vs = [...vs].sort((a, b) => (dbView.sort === 'first' ? num(a.first) - num(b.first) : dbView.sort === 'seen' ? b.seen - a.seen : num(b.last ?? b.first) - num(a.last ?? a.first)));
+      let vs = db.vocab.filter((v) => (!q || v.w.includes(q) || v.en.toLowerCase().includes(q)) && (!dbView.stage || stageOf(v) === dbView.stage) && (!dbView.step || v.step === dbView.step) && (!dbView.src || (dbView.src === 'lesson' ? v.src !== 'cards' : v.src === 'cards')));
+      vs = [...vs].sort((a, b) => (dbView.sort === 'first' ? num(a.first) - num(b.first) : dbView.sort === 'seen' ? b.seen - a.seen : dbView.sort === 'stage' ? stageRank(a) - stageRank(b) || a.w.localeCompare(b.w) : num(b.last ?? b.first) - num(a.last ?? a.first)));
+      countEl.textContent = `${vs.length}개`;
       for (const v of vs.slice(0, 300)) {
-        const sub = [v.en, v.first != null ? `#${v.first} 처음` : '', v.seen > 1 ? `${v.seen}번` : '', v.chapter ? `챕터 ${v.chapter.target}` : '', review.has(v.w) ? '오늘 복습' : '', (v as { only?: boolean }).only ? '수업 기록에만 (DB 아직)' : ''].filter(Boolean).join(' · ');
+        const sub = [v.en, v.step || '', v.src === 'cards' ? '카드로만' : v.first != null ? `#${v.first} 처음` : '', v.src !== 'cards' && v.seen > 1 ? `${v.seen}번` : '', v.srs ? SRS_KO[v.srs] : '', review.has(v.w) ? '오늘 복습' : '', (v as { only?: boolean }).only ? '수업 기록에만 (DB 아직)' : ''].filter(Boolean).join(' · ');
         const r = h('div', { class: 'mp-row mp-dbrow' + (review.has(v.w) ? ' review' : '') }, h('button', { type: 'button', class: 'mp-main mp-open', 'aria-expanded': 'false' }, v.w), h('div', { class: 'mp-rsub' }, sub), insBtn(`${v.w}${v.en ? ' : ' + v.en : ''}`));
         const open = r.querySelector('.mp-open') as HTMLElement;
         open.addEventListener('click', () => {
@@ -274,8 +279,49 @@ function renderDbVocab(body: HTMLElement, dbIn: BoardData, mem: StudentMemory | 
     dbView = { ...dbView, sort: sort.value as typeof dbView.sort };
     draw();
   });
+  // 단계 거르기: 씨앗 · 새싹 · 잎새 · 꽃 · 열매 · 나무 (고르면 그 안의 작은 단계 1, 2, 3…) + 어디서 (수업 · 카드)
+  const countEl = h('span', { class: 'mp-count' });
+  const filters = h('div', { class: 'vf' });
+  const redraw = () => {
+    body.innerHTML = '';
+    renderDbVocab(body, db, mem, act, insBtn);
+  };
+  if (dbView.kind === 'w') {
+    const stages = STAGE_ORDER.filter((st) => db.vocab.some((v) => stageOf(v) === st));
+    if (stages.length) {
+      const row = h('div', { class: 'vf-row', role: 'group', 'aria-label': '단계' });
+      const chip = (label: string, on: boolean, n: number, go: () => void) => {
+        const b = h('button', { type: 'button', class: 'vf-chip' + (on ? ' on' : ''), 'aria-pressed': String(on) }, label, h('small', {}, String(n)));
+        b.addEventListener('click', go);
+        row.append(b);
+      };
+      chip('전체', !dbView.stage, db.vocab.length, () => ((dbView = { ...dbView, stage: '', step: '' }), redraw()));
+      for (const st of stages) chip(st, dbView.stage === st, db.vocab.filter((v) => stageOf(v) === st).length, () => ((dbView = { ...dbView, stage: dbView.stage === st ? '' : st, step: '' }), redraw()));
+      filters.append(row);
+      if (dbView.stage) {
+        const steps = [...new Set(db.vocab.filter((v) => stageOf(v) === dbView.stage && v.step).map((v) => v.step!))].sort((a, b) => stepNum(a) - stepNum(b));
+        if (steps.length > 1) {
+          const r2 = h('div', { class: 'vf-row sub', role: 'group', 'aria-label': '작은 단계' });
+          for (const st of steps) {
+            const on = dbView.step === st;
+            const b = h('button', { type: 'button', class: 'vf-chip sm' + (on ? ' on' : ''), 'aria-pressed': String(on) }, st.replace(/^\S+\s/, ''), h('small', {}, String(db.vocab.filter((v) => v.step === st).length)));
+            b.addEventListener('click', () => ((dbView = { ...dbView, step: on ? '' : st }), redraw()));
+            r2.append(b);
+          }
+          filters.append(r2);
+        }
+      }
+    }
+    if (db.vocab.some((v) => v.src === 'cards')) {
+      const src = h('select', { class: 'mp-sort', 'aria-label': '어디서' }) as HTMLSelectElement;
+      for (const [v, l] of [['', '수업 + 카드'], ['lesson', '수업에서 배운 것'], ['cards', '카드로만 공부']]) src.append(h('option', { value: v }, l));
+      src.value = dbView.src;
+      src.addEventListener('change', () => ((dbView = { ...dbView, src: src.value as typeof dbView.src }), draw()));
+      filters.append(src);
+    }
+  }
   const note = h('p', { class: 'mp-note' }, `단어를 누르면 이어진 말이 나와요 (${(db.sources?.relations || ['같은 챕터', '같은 묶음']).join(' · ')}). 동의어·반의어·우리말샘 유사도는 아직 DB에 없어요. · ${db.generated_at.slice(5, 16).replace('T', ' ')} 기준`);
-  body.append(seg, h('div', { class: 'mp-tools' }, search, sort), list, note);
+  body.append(seg, filters, h('div', { class: 'mp-tools' }, search, sort, countEl), list, note);
   draw();
 }
 
@@ -574,4 +620,115 @@ function renderRoadmap(body: HTMLElement, rm: PacketRoadmap) {
   const lists: Array<[string, string[] | undefined]> = [['오늘', rm.today], ['이번 주 (다음 수업까지)', rm.this_week]];
   for (const [k, xs] of lists) if (xs?.length) box.append(h('div', { class: 'rm-todo' }, h('span', { class: 'rm-k' }, k), h('ul', {}, ...xs.map((x) => h('li', {}, x)))));
   body.append(box);
+}
+
+// 학생 정보 탭 (10/18): 학생 카드 → 로드맵 → 지금 상태 → 자주 틀린 것 → 배운 문형 → 원본 문서(작게)
+// 수업 후 자동화가 묶음(learner)에 줄여 둔 것을 먼저, 없으면 DB·수업 기록에서 같은 모양으로
+const PAT_KO: Record<string, string> = { solid: '익숙', practicing: '연습 중', shaky: '흔들림', new: '처음' };
+const TREND_KO: Record<string, string> = { better: '줄어듦', same: '그대로', worse: '늘어남', new: '새로' };
+function learnerFallback(pack: StudentPack, mem: StudentMemory | null): Learner {
+  const L: Learner = {};
+  const b = pack.brief;
+  const lessons = pack.lessons[0]?.n;
+  if (b?.level_hint || lessons) L.card = { level_label: b?.level_hint || '', lessons_total: lessons };
+  // 자주 틀린 것: 같은 종류끼리 묶어 횟수
+  const by = new Map<string, { label: string; n: number; wrong?: string; right?: string; lastS?: string }>();
+  for (const e of mem?.errors || []) {
+    const k = e.type + (e.pattern ? ' ' + e.pattern : '');
+    const cur = by.get(k) || { label: k, n: 0 };
+    cur.n += e.count || 1;
+    if (!cur.lastS || (e.last || '') >= cur.lastS) Object.assign(cur, { wrong: e.wrong, right: e.right, lastS: e.last || '' });
+    by.set(k, cur);
+  }
+  if (by.size) L.errors = [...by.values()].sort((a, b) => b.n - a.n).map((e) => ({ label: e.label, n: e.n, wrong: e.wrong, right: e.right }));
+  const M: Record<string, 'solid' | 'practicing' | 'shaky' | 'new'> = { mastered: 'solid', practiced: 'practicing', introduced: 'new', uncertain: 'shaky', review: 'shaky' };
+  if (pack.db?.grammar.length) L.patterns = pack.db.grammar.map((g) => ({ p: g.p, en: g.en, stage: STAGE_NAMES[(/^L(\d)$/.exec(g.chapter?.level || '') || [])[1] || ''] || g.chapter?.level || '', status: M[g.status] || 'practicing', first: g.first ?? undefined, uses: g.count }));
+  else if (mem?.grammar.length) L.patterns = mem.grammar.map((g) => ({ p: g.pattern, en: g.name, status: 'practicing', uses: g.count }));
+  if (pack.db?.vocab.length) L.words = { lesson: pack.db.vocab.filter((v) => v.src !== 'cards').length, cards: pack.db.vocab.filter((v) => v.src && v.src !== 'lesson').length, lapsing: pack.db.vocab.filter((v) => v.srs === 'lapsing').length };
+  return L;
+}
+function renderStudent(body: HTMLElement, pack: StudentPack, mem: StudentMemory | null, act: PanelActions) {
+  const fb = learnerFallback(pack, mem);
+  const L: Learner = { ...fb, ...(pack.packet?.learner || {}) };
+  const sec = (title: string, ...kids: Node[]) => h('section', { class: 'mp-sec st-sec' }, h('h4', {}, title), ...kids);
+  const more = (rows: HTMLElement[], n: number, wrap: HTMLElement) => {
+    rows.slice(0, n).forEach((r) => wrap.append(r));
+    if (rows.length > n) {
+      const b = h('button', { type: 'button', class: 'linkish st-more' }, `${rows.length - n}개 더 보기`);
+      b.addEventListener('click', () => {
+        rows.slice(n).forEach((r) => wrap.insertBefore(r, b));
+        b.remove();
+      });
+      wrap.append(b);
+    }
+    return wrap;
+  };
+  // 1) 학생 카드
+  const c = L.card;
+  if (c) {
+    const facts = [c.stage, c.level_label, c.lessons_total ? `수업 ${c.lessons_total}번` : '', c.per_week ? `주 ${c.per_week}회` : '', c.since ? c.since.slice(2).replace(/-/g, '.') + '부터' : '', c.native ? `모국어 ${c.native}` : ''].filter((x): x is string => !!x);
+    const card = h('div', { class: 'st-card' }, h('div', { class: 'st-facts' }, ...facts.map((f) => h('span', {}, f))));
+    if (c.goals?.length) card.append(h('div', { class: 'st-line' }, h('b', {}, '목표'), ' ', c.goals.join(' · ')));
+    if (c.interests?.length) card.append(h('div', { class: 'st-line' }, h('b', {}, '좋아하는 것'), ' ', c.interests.join(' · ')));
+    if (c.works_well?.length) card.append(h('div', { class: 'st-line' }, h('b', {}, '잘 맞는 방법'), ' ', c.works_well.join(' · ')));
+    if (c.avoid?.length) card.append(h('div', { class: 'st-line warn' }, h('b', {}, '피할 것'), ' ', c.avoid.join(' · ')));
+    body.append(card);
+  }
+  // 2) 로드맵 한눈에
+  const rm = pack.packet?.roadmap;
+  if (rm?.path?.length || rm?.goal_start) renderRoadmap(body, rm);
+  // 3) 지금 상태: 익숙한 것 · 흔들리는 것 · 다음
+  const nw = L.now;
+  if (nw && (nw.solid?.length || nw.shaky?.length || nw.next?.length)) {
+    const grid = h('div', { class: 'st-now' });
+    const col = (k: string, title: string, xs?: string[]) => xs?.length && grid.append(h('div', { class: 'st-col ' + k }, h('b', {}, title), h('ul', {}, ...xs.map((x) => h('li', {}, x)))));
+    col('solid', '익숙해요', nw.solid);
+    col('shaky', '흔들려요', nw.shaky);
+    col('next', '다음에', nw.next);
+    body.append(sec('지금 상태', grid));
+  }
+  // 4) 자주 틀린 것
+  if (L.errors?.length) {
+    const rows = L.errors.map((e) =>
+      h('div', { class: 'st-err' }, h('div', { class: 'st-err-top' }, h('b', {}, e.label), h('span', { class: 'st-n' }, `${e.n}번`), e.trend ? h('span', { class: 'st-trend ' + e.trend }, TREND_KO[e.trend]) : '', e.last ? h('span', { class: 'st-last' }, `#${e.last}`) : ''), e.wrong || e.right ? h('div', { class: 'st-eg' }, e.wrong ? h('s', {}, e.wrong) : '', e.wrong && e.right ? ' → ' : '', e.right || '') : ''),
+    );
+    body.append(sec(`자주 틀린 것`, more(rows, 5, h('div', { class: 'st-list' }))));
+  }
+  // 5) 배운 문형: 상태별 수 + 목록(흔들림·연습 중 먼저)
+  if (L.patterns?.length) {
+    const order = { shaky: 0, practicing: 1, new: 2, solid: 3 } as Record<string, number>;
+    const counts = h('div', { class: 'st-pcount' });
+    for (const k of ['shaky', 'practicing', 'new', 'solid']) {
+      const n = L.patterns.filter((p) => p.status === k).length;
+      if (n) counts.append(h('span', { class: 'st-pc ' + k }, `${PAT_KO[k]} ${n}`));
+    }
+    const rows = [...L.patterns]
+      .sort((a, b) => order[a.status] - order[b.status] || (b.last || b.first || 0) - (a.last || a.first || 0))
+      .map((p) => h('div', { class: 'st-pat' }, h('span', { class: 'st-dot ' + p.status, title: PAT_KO[p.status] }), h('b', {}, p.p), h('span', { class: 'st-sub' }, [p.en, p.stage, p.first ? `#${p.first} 처음` : '', p.uses ? `${p.uses}번` : ''].filter(Boolean).join(' · '))));
+    body.append(sec(`배운 문형 ${L.patterns.length}`, counts, more(rows, 8, h('div', { class: 'st-list' }))));
+  }
+  // 6) 단어 한 줄 (자세히는 단어 탭)
+  const w = L.words;
+  if (w && (w.lesson || w.cards)) body.append(h('p', { class: 'mp-p muted st-words' }, [w.lesson ? `수업에서 배운 말 ${w.lesson}` : '', w.cards ? `카드로 공부 ${w.cards}` : '', w.lapsing ? `자꾸 잊는 말 ${w.lapsing}` : ''].filter(Boolean).join(' · ') + ' — 단어 탭에서 단계별로'));
+  // 7) 원본 문서 (작게): 긴 근거 문서는 여기서만
+  const docs: Array<[string, string | undefined]> = [['학생 프로필', pack.profile], ['로드맵 문서', pack.roadmap], ['학습 상태 문서', pack.status]];
+  const have = docs.filter(([, t]) => t);
+  if (have.length) {
+    const links = h('div', { class: 'st-docs' }, h('span', {}, '원본 문서'));
+    for (const [name, text] of have) {
+      const b = h('button', { type: 'button', class: 'linkish' }, name);
+      b.addEventListener('click', () => {
+        body.innerHTML = '';
+        const back = h('button', { type: 'button', class: 'mp-back' }, '← 학생 정보');
+        back.addEventListener('click', () => {
+          body.innerHTML = '';
+          renderStudent(body, pack, mem, act);
+        });
+        body.append(back, mdToEl(text!));
+      });
+      links.append(b);
+    }
+    body.append(links);
+  }
+  if (!body.childElementCount) body.append(h('p', { class: 'mp-empty' }, '아직 학생 정보가 없어요'));
 }

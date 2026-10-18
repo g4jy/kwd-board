@@ -669,6 +669,7 @@ test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
     expect(r.htmlObj).toBe('#3_수업페이지');
     expect(r.lessonDoc).toContain('수업 2');
     expect(r.vocab.length).toBeGreaterThanOrEqual(5);
+    expect(r.header).toBe(''); // 노트에 머리말 없음 (대화 재료가 대신)
     expect(r.hints).toBeGreaterThan(0);
     expect(r.trialTabs).toContain('오늘');
     expect(r.trialToday).toContain('여행 한국어');
@@ -686,16 +687,16 @@ test.describe('v5: 체험 화면·지우개 부분·자료 종류·숙제·요�
     expect(r.badge).toContain('체험 중');
     expect(r.pages).toBe(1); // 무한 판 하나
     for (const t of ['html', 'img', 'youtube', 'video', 'audio', 'box']) expect(r.objs).toContain(t);
-    expect(r.rail[0]).toBe('노트');
-    expect(r.rail).toContain('웹 학습지 · #12 수업 페이지');
-    expect(r.firstText).toContain('과제 피드백');
+    expect(r.rail).not.toContain('노트'); // 수업안 노트 없음 (10/18): 빈 노트는 접혀 있고 목록에도 없다
+    expect(r.rail[0]).toBe('웹 학습지 · #12 수업 페이지');
+    expect(r.firstText.trim()).toBe('');
     expect(r.tabs).toEqual(['오늘', '수업안·자료', '과제', '학생 정보', '지난 수업', '단어']);
     expect(r.tab_plan).toContain('영상');
     expect(r.tab_hw).toContain('지난 수업');
     expect(r.tab_hw).toContain('수업에서 짚을 것');
     expect(r.tab_today).toContain('오늘 50분');
     expect(r.summary).toContain('웹 학습지');
-    expect(r.tab_vocab).toContain('단어 18');
+    expect(r.tab_vocab).toContain('단어 232'); // 수업 18 + 카드로만 214
     expect(r.rel).toContain('같은 묶음');
     expect(r.grammarRows).toBe(4);
   });
@@ -793,5 +794,34 @@ test.describe('v7: 수업 묶음 · 배분 고치기 · 대화 재료 · 로드�
     expect(r.packetInDoc).toEqual([]);
     expect(r.manifestPacket).toMatch(/^pk_demo_mina_\d{4}-\d{2}-\d{2}$/);
     expect(r.segEvents.at(-1)).toBe('segment:talk');
+  });
+});
+
+test.describe('v7.1: 수업안 노트 없음 · 학생 정보 탭 · 단어 단계 거르기', () => {
+  test.describe.configure({ timeout: 240_000 });
+  test('노트 접힘 · 학생 카드·로드맵·지금 상태·자주 틀린 것·배운 문형·원본 문서 · 씨앗/새싹 단계와 작은 단계 · 수업/카드', () => {
+    const out = execFileSync('node', ['scripts/v71-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/v71t' } });
+    const r = JSON.parse(out.slice(out.indexOf('{\n')));
+    expect(r.errs).toEqual([]);
+    expect([r.noteText, r.noteFolded, r.railNote]).toEqual(['', 1, 0]);
+    expect(r.noteH).toBeLessThan(140);
+    expect([r.noteTyped, r.noteOpen]).toEqual(['메모 한 줄', 0]); // 누르면 펼쳐져 바로 쓴다
+    expect(r.st.facts[0]).toBe('씨앗 6');
+    expect(r.st.roadmapSteps).toBe(6);
+    expect(r.st.now).toEqual(['익숙해요', '흔들려요', '다음에']);
+    expect(r.st.errRows).toBe(5);
+    expect(r.st.errMore).toBe('1개 더 보기');
+    expect(r.st.patRows).toBe(8);
+    expect(r.st.docs).toEqual(['학생 프로필', '로드맵 문서', '학습 상태 문서']);
+    expect(r.st.oldMdOpen).toBe(0); // 긴 문서를 탭에 펼치지 않는다
+    expect(r.docView).toContain('Executive');
+    expect(r.backOk).toBe(1);
+    expect(r.v.chips.map((c: string) => c.split('\n')[0])).toEqual(['전체', '씨앗', '새싹', '잎새']);
+    expect(r.v.saessak).toBe(54);
+    expect(r.v.sub.map((c: string) => c.split('\n')[0])).toEqual(['1', '2', '3', '4']);
+    expect(r.v.saessak2).toBe(16);
+    expect(r.v.firstRow).toContain('새싹 2');
+    expect([r.v.lesson, r.v.cards]).toEqual([18, 214]);
+    expect(r.v.stageFirst).toContain('씨앗 1');
   });
 });

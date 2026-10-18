@@ -470,6 +470,13 @@ export interface DbWord {
   status: string;
   chapter?: { code: string; target: string; level: string };
   rel: Record<string, string[]>;
+  // 단계(10/18): kwd-app 노트와 맞춘 레벨 1~6 · 단계 이름(씨앗 1 … 나무) · 어디서 · 카드 상태
+  note?: string | null;
+  level?: number | null;
+  step?: string;
+  src?: 'lesson' | 'cards' | 'both';
+  srs?: 'learning' | 'stable' | 'lapsing' | 'due';
+  card_last?: string;
 }
 export interface DbPattern {
   p: string;
@@ -490,6 +497,7 @@ export interface BoardData {
   sources?: { relations: string[]; missing: string[] };
   vocab: DbWord[];
   grammar: DbPattern[];
+  stages?: Record<string, string>;
 }
 async function boardDataFor(folder: string): Promise<BoardData | undefined> {
   const work = await storedWork();
