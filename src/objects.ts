@@ -216,7 +216,7 @@ export class PageObjects {
       el.append(label, img, big, del);
       this.bindMove(v, el, true);
     } else if (o.type === 'audio' || o.type === 'video' || o.type === 'youtube') {
-      const icon = o.type === 'audio' ? '🔊' : o.type === 'video' ? '🎬' : '▶';
+      const icon = o.type === 'audio' ? '♪' : '▶';
       const bar = h('div', { class: 'obj-bar' }, h('span', { class: 'obj-name' }, `${icon} ${o.name || (o.type === 'youtube' ? '유튜브' : o.type === 'audio' ? '소리' : '영상')}`));
       let media: HTMLElement;
       if (o.type === 'audio') media = h('audio', { class: 'obj-media', controls: '', preload: 'metadata' });
@@ -261,7 +261,7 @@ export class PageObjects {
       bar.prepend(grip);
       if (this.ctx.canType() && this.ctx.addWsBox) bar.append(btn('T', '이 단계 위에 글상자', () => this.ctx.addWsBox!(wsLayerId(o.id, v.data.step || 1), Math.max(16, v.data.w / 2 - 130), 40), 'ws-t'));
       bar.append(btn('⤢', this.ctx.role === 'teacher' ? '학습지를 크게 (학생 화면도)' : '학습지를 크게', () => this.ctx.focusObj(this.pageId, o.id)));
-      if (this.ctx.role === 'teacher' && this.ctx.saveWs) bar.append(btn('💾', '필기 넣은 학습지 저장 (학생 폴더 또는 내려받기)', () => this.ctx.saveWs!(this.pageId, o.id)));
+      if (this.ctx.role === 'teacher' && this.ctx.saveWs) bar.append(btn('저장', '필기 넣은 학습지 저장 (학생 폴더 또는 내려받기)', () => this.ctx.saveWs!(this.pageId, o.id)));
       bar.append(del);
       el.append(bar, frame, layer, size);
       v.frame = frame;

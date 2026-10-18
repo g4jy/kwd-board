@@ -1,6 +1,7 @@
 // KWD 폴더 연결: 선생님 PC의 work 폴더(C:\KWD\work 또는 구글 드라이브 거울)를 한 번 고르면
 // 오늘 수업(intake/<날짜>/brief_data.json)과 학생 폴더(Student_Lessons/<이름 (번호)>)를 판이 직접 읽는다.
 // AI·서버 없이 브라우저 안에서만 읽고, 학생 기기로는 아무것도 보내지 않는다.
+import { validPacket, indexEntries, type LessonPacket } from './packet';
 import type { StudentMemory, MemVocab, MemGrammar, MemError, MemHomework, MemLesson } from './memory';
 
 type DirHandle = FileSystemDirectoryHandle & {
@@ -141,8 +142,8 @@ export async function useDemoFolder(): Promise<boolean> {
         let blob: Blob = await r.blob();
         // @D-7@ = 오늘에서 7일 전 (체험은 언제 열어도 '지난 수업 뒤 6일')
         const dd = (n: number) => ymd(new Date(now.getTime() - n * 86400000));
-        const tok = (t: string) => t.replace(/@D-(\d+)@/g, (_m, n) => dd(Number(n)));
-        const path = tok(p.replace('intake/TODAY/', `intake/${today}/`)).split('/');
+        const tok = (t: string) => t.replace(/@D([-+])(\d+)@/g, (_m, sg, n) => dd(sg === '-' ? Number(n) : -Number(n)));
+        const path = tok(p.replace('intake/TODAY/', `intake/${today}/`).replace('lesson_packets/TODAY/', `lesson_packets/${today}/`)).split('/');
         if (/\.(json|md|txt)$/.test(p)) blob = new Blob([tok((await blob.text()).replace(/TODAY/g, today).replace(/NOW\+(\d+)/g, (_m, n) => hm(Number(n))))], { type: blob.type || 'text/plain' });
         let d = root;
         for (const seg of path.slice(0, -1)) {
@@ -453,6 +454,7 @@ export interface StudentPack {
   brief?: BriefLesson;
   db?: BoardData; // work/board_data/<폴더>.json (중앙 DB에서 뽑은 전체 단어·문형)
   hwHistory?: import('./homework').HwHistory; // 과제/hw_history.json (숙제 플랫폼이 내보낸 날마다 과제·피드백)
+  packet?: LessonPacket; // work/lesson_packets/<오늘>/ (수업 직전 자동화 묶음, 이 창 메모리에만)
 }
 
 // night/kwd_board_export.py 가 만든 것
@@ -502,6 +504,40 @@ async function boardDataFor(folder: string): Promise<BoardData | undefined> {
   } catch {
     return undefined;
   }
+}
+
+// 오늘 수업 묶음: work/lesson_packets/<오늘>/_index.json → 학생 폴더로 찾기. 없으면 그 폴더의 묶음들을 훑어 student.folder_ref 로
+export async function packetFor(folder: string, date = ymd()): Promise<LessonPacket | undefined> {
+  const work = await storedWork();
+  if (!work) return undefined;
+  const lp = await sub(work, 'lesson_packets');
+  const day = lp ? await sub(lp, date) : null;
+  if (!day) return undefined;
+  const read = async (name: string) => {
+    const t = await textOf(day, name);
+    if (!t) return undefined;
+    try {
+      const j = JSON.parse(t);
+      return validPacket(j) ? j : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  try {
+    const idx = await textOf(day, '_index.json');
+    if (idx) {
+      const hit = indexEntries(JSON.parse(idx)).find((e) => e.folder === folder);
+      if (hit) return await read(hit.file);
+    }
+  } catch {
+    /* 깨진 목록 → 훑기 */
+  }
+  for (const e of await entries(day)) {
+    if (e.kind !== 'file' || !e.name.endsWith('.json') || e.name.startsWith('_')) continue;
+    const p = await read(e.name);
+    if (p?.student?.folder_ref === folder) return p;
+  }
+  return undefined;
 }
 
 async function studentDir(folder: string): Promise<DirHandle | null> {
@@ -576,6 +612,7 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
   pack.files.sort((a, b) => numOf(b.name) - numOf(a.name) || a.name.localeCompare(b.name));
   pack.lessonData.sort((a, b) => numOf(a) - numOf(b));
   pack.db = await boardDataFor(folder);
+  pack.packet = await packetFor(folder);
   return pack;
 }
 

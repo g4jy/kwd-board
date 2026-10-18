@@ -1,0 +1,33 @@
+// 나란히: 선생님이 슬라이드로 가면 학생 폰에 슬라이드가 보이는지
+import { chromium } from 'playwright';
+import fs from 'node:fs';
+const BASE = process.env.BASE || 'http://localhost:4173';
+const OUT = process.env.OUT || 'test-results/v7';
+fs.mkdirSync(OUT, { recursive: true });
+const b = await chromium.launch();
+const p = await (await b.newContext({ viewport: { width: 1500, height: 900 } })).newPage();
+const errs = [];
+p.on('pageerror', (e) => errs.push(String(e)));
+await p.goto(`${BASE}/#/demo/split`);
+await p.waitForFunction(() => [...document.querySelectorAll('.dev-frame')].every((f) => f.src.includes('#/b/')), null, { timeout: 40000 });
+await p.waitForTimeout(3000);
+const fr = (r) => p.frames().find((f) => f.url().includes('r=' + r));
+const t = fr('t'), s = fr('s');
+const res = {};
+const vis = (f) => f.evaluate(() => {
+  const W = innerWidth, H = innerHeight;
+  return [...document.querySelectorAll('.obj-slide, .obj')].filter((e) => e.classList.contains('obj-slide')).map((e) => { const r = e.getBoundingClientRect(); const img = e.querySelector('img,canvas'); return { on: r.right > 0 && r.left < W && r.bottom > 0 && r.top < H, w: Math.round(r.width), img: img ? (img.complete === false ? 'loading' : (img.naturalWidth ?? img.width)) : 'none' }; });
+});
+res.sSlidesStart = await vis(s);
+res.rail = await t.locator('.rail-item').evaluateAll((els) => els.map((e) => e.dataset.key + ':' + e.title));
+const slideKey = await t.locator('.rail-item').evaluateAll((els) => (els.find((e) => /슬라이드|slide/i.test(e.title)) || els[1]).dataset.key);
+await t.evaluate((k) => document.querySelector(`.rail-item[data-key="${k}"]`).click(), slideKey);
+await p.waitForTimeout(1500);
+res.tSlides = await vis(t);
+res.sSlides = await vis(s);
+res.sView = await s.evaluate(() => { const v = window.__kwd.vp.view; return [Math.round(v.x), Math.round(v.y), v.s.toFixed(3)]; });
+res.tView = await t.evaluate(() => { const v = window.__kwd.vp.view; return [Math.round(v.x), Math.round(v.y), v.s.toFixed(3)]; });
+await p.screenshot({ path: `${OUT}/split-slide.png` });
+res.errs = errs;
+console.log(JSON.stringify(res, null, 1));
+await b.close();

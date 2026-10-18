@@ -15,7 +15,7 @@ import { loadPrefs, savePrefs, penSlot, renderSlot, buildPenPopover, type PenPre
 import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY, type StudentMemory } from './memory';
 import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, type StudentPack, type PackFile } from './kwdfolder';
 import { annotatedWorksheet } from './wsexport';
-import { renderStudentPanel, type PanelTab } from './studentpanel';
+import { renderStudentPanel, type SplitSeg, type PanelTab } from './studentpanel';
 import { hwConfig, setHwConfig, hwMedia, historyFromApp } from './homework';
 import { h, download, downloadBlob, fmtDate, fmtClock, toast, EMBEDDED } from './ui';
 
@@ -177,7 +177,7 @@ export class BoardScreen {
       if (this.packFolder && !this.pack) void this.loadFolderStudent(true);
       else this.toggleMemPanel();
     });
-    const lookBtn = h('button', { type: 'button', class: 'look-btn', title: '학생 화면을 지금 내 화면(또는 고른 것)으로' }, '👀 여기 보세요');
+    const lookBtn = h('button', { type: 'button', class: 'look-btn', title: '학생 화면을 지금 내 화면(또는 고른 것)으로' }, '여기 보세요');
     lookBtn.addEventListener('click', () => this.lookHere());
     const topRight = h('div', { class: 'top-right' }, this.timerEl, ...(this.role === 'teacher' ? [lookBtn] : []), this.memBtn);
     this.followBtn = h('button', { type: 'button', class: 'follow-btn', hidden: '' }, '선생님 화면으로');
@@ -234,7 +234,7 @@ export class BoardScreen {
       tool: () => this.tool,
       prefs: () => this.prefs,
       memory: () => this.memory,
-      bundle: () => buildBundle({ store: this.store, editors: this.editors }),
+      bundle: () => buildBundle({ store: this.store, editors: this.editors, packetId: this.pack?.packet?.packet_id }),
       importPdfBytes: (b64: string, name: string) => this.importPdfBytes(b64, name),
       importHtmlText: (html: string, name: string) => importHtml(this.store, html, name, this.order.indexOf(this.currentPage)),
       setMemory: (m: unknown) => this.setMemory(normalize(m, this.studentNo())),
@@ -643,9 +643,12 @@ export class BoardScreen {
     const o = this.store.objList(page).find((x) => x.id === id);
     if (!v || !o) return;
     this.userMovedView();
-    this.fitRect(o.x, v.y + o.y, o.x + o.w, v.y + o.y + o.h, 24);
+    // 글상자는 글이 늘면 화면에서만 커진다 → 실제 높이로
+    const el = v.el.querySelector<HTMLElement>(`[data-obj="${id}"]`);
+    const oh = Math.max(o.h, el?.offsetHeight || 0);
+    this.fitRect(o.x, v.y + o.y, o.x + o.w, v.y + o.y + oh, 24);
     if (look) {
-      this.store.setSetting('look', { x0: o.x, y0: v.y + o.y, x1: o.x + o.w, y1: v.y + o.y + o.h, t: Date.now() });
+      this.store.setSetting('look', { x0: o.x, y0: v.y + o.y, x1: o.x + o.w, y1: v.y + o.y + oh, t: Date.now() });
     }
     this.pushViewport();
   }
@@ -663,7 +666,12 @@ export class BoardScreen {
       this.vp.set({ s, x: (W - this.panelSide() - TEXT_W * s) / 2, y: 70 - it.rect[1] * s });
     } else this.fitRect(it.rect[0], it.rect[1], it.rect[2], it.rect[3]);
     this.renderRail();
-    if (this.role === 'teacher') this.store.log({ kind: 'page', page: it.page, id: key === 'note' ? undefined : key, data: { op: 'show', item: it.title } });
+    if (this.role === 'teacher') {
+      this.store.log({ kind: 'page', page: it.page, id: key === 'note' ? undefined : key, data: { op: 'show', item: it.title } });
+      // 목록에서 고르면 학생 화면도 같은 것으로 (10/18: 나란히에서 학생은 판 전체를 아주 작게 보고 있었다)
+      const [x0, y0, x1, y1] = it.rect.map((v) => Math.round(v));
+      this.store.setSetting('look', { x0, y0, x1, y1: key === 'note' ? Math.min(y1, y0 + 900) : y1, t: Date.now(), quiet: true });
+    }
     this.pushViewport();
   }
 
@@ -1127,7 +1135,7 @@ export class BoardScreen {
   }
 
   private flashLook() {
-    const el = h('div', { class: 'look-flash' }, '👀 선생님: 여기 보세요');
+    const el = h('div', { class: 'look-flash' }, '선생님: 여기 보세요');
     this.root.append(el);
     window.setTimeout(() => el.remove(), 1800);
   }
@@ -1225,7 +1233,7 @@ export class BoardScreen {
     }
     this.root.classList.toggle('hide-carets', !showCaret && this.role === 'student');
     // '여기 보세요': 학생 화면을 선생님이 고른 곳으로 (그 뒤로는 학생이 움직이기 전까지 따라감)
-    const look = this.store.getSetting<{ x0: number; y0: number; x1: number; y1: number; t: number } | null>('look', null);
+    const look = this.store.getSetting<{ x0: number; y0: number; x1: number; y1: number; t: number; quiet?: boolean } | null>('look', null);
     if (this.role !== 'teacher' && look && look.t !== this.lookSeen) {
       const first = this.lookSeen === 0 && Date.now() - look.t > 15000; // 늦게 들어온 학생에게 옛날 것은 다시 안 함
       this.lookSeen = look.t;
@@ -1233,7 +1241,7 @@ export class BoardScreen {
         this.following = true;
         this.followBtn.hidden = true;
         this.fitRect(look.x0, look.y0, look.x1, look.y1, 16, this.vp.max);
-        this.flashLook();
+        if (!look.quiet) this.flashLook();
       }
     }
     if (this.role !== 'teacher' && this.store.getSetting('followAll', false) && !this.following) {
@@ -1287,7 +1295,7 @@ export class BoardScreen {
     else if (this.role === 'assist') bar.append(pens, eraser, sep(), undo, redo);
     else {
       // 학생: 글·펜·지우개·되돌리기 + 과제 사진 찍어 올리기 (글 쓰기 허락이 있을 때)
-      const cam = btn('camera', '📷 사진', '사진 찍어 판에 올리기', 'cam');
+      const cam = btn('camera', '사진', '사진 찍어 판에 올리기', 'cam');
       bar.append(text, pens, eraser, undo, cam);
     }
     bar.addEventListener('click', (e) => {
@@ -1402,9 +1410,7 @@ export class BoardScreen {
     if (t !== 'select') this.clearSelection();
     for (const v of this.views.values()) v.objs?.refreshSelection();
     if (t === 'text') {
-      // 지금 보는 페이지의 편집기에만 커서를 둔다 (다른 페이지로 튀지 않게)
-      const ed = this.editors.get(this.currentPage);
-      if (this.role === 'teacher' && ed) ed.commands.focus();
+      // 도구만 바꾼다. 커서를 억지로 두면 브라우저가 그 글로 화면을 끌고 가서(10/18) 쓰고 싶은 곳을 눌러 쓰게 한다
     } else {
       (document.activeElement as HTMLElement | null)?.blur?.();
       this.hideBubble();
@@ -2174,18 +2180,6 @@ export class BoardScreen {
     });
   }
 
-  private insertLineToBoard(line: string, tag = '') {
-    const ed = this.activeEditor || this.editors.get(this.currentPage) || this.editors.get(this.order.find((id) => this.views.get(id)?.info.kind === 'text') || '');
-    if (!ed) return;
-    const { $from } = ed.state.selection;
-    const at = $from.depth >= 1 ? $from.end(1) : ed.state.doc.content.size;
-    const empty = $from.parent.isTextblock && $from.parent.textContent === '';
-    if (empty) ed.chain().focus().insertContent(line).run();
-    else ed.chain().focus().setTextSelection(at).splitBlock().insertContent(line).run();
-    this.store.log({ kind: 'text', page: this.currentPage, src: 'memory', text: line, data: { op: 'insert', tab: tag } });
-    toast('판에 넣었어요');
-  }
-
   // 글을 지금 페이지 위 글상자로 (과제 답 등)
   placeTextBox(text: string) {
     const page = this.views.get(this.currentPage) ? this.currentPage : this.order[0];
@@ -2338,7 +2332,7 @@ export class BoardScreen {
           this.renderMemPanel();
         },
         {
-          insertLine: (line) => this.insertLineToBoard(line, this.packTab),
+          insertLine: (line) => this.placeTextBox(line),
           placeFile: (f) => this.placePackFile(f),
           readLessonDoc: async (name) => (await (await readPackFile(this.packFolder, [name]))?.text()) || '',
           otherBoards: () => loadIndex().filter((b) => b.id !== this.store.id && folderForBoard(b.id) === this.packFolder),
@@ -2376,9 +2370,21 @@ export class BoardScreen {
           },
           placeText: (text) => this.placeTextBox(text),
           startTimer: (sec, label) => {
-            this.startTimer(sec);
+            this.startTimer(sec, label);
             toast(`${label} ${Math.round(sec / 60)}분 타이머`);
           },
+          split: () => this.todaySplit(),
+          setSplit: (segs) => {
+            // 판에는 칸 이름·분만 (묶음 내용은 넣지 않는다)
+            this.store.setSetting('split', segs.map((g) => ({ key: g.key, label: g.label, min: g.min })));
+            this.store.log({ kind: 'segment_edit', data: { split: segs.map((g) => `${g.key}:${g.min}`).join(' ') } });
+          },
+          startSegment: (g) => {
+            this.startTimer(g.min * 60, g.label);
+            this.store.log({ kind: 'segment', data: { key: g.key, min: g.min, packet_id: this.pack?.packet?.packet_id || null } });
+            toast(`${g.label} ${g.min}분 시작`);
+          },
+          placeTalkKit: (md) => void this.placeTalkKit(md),
         },
       );
       return;
@@ -2403,16 +2409,10 @@ export class BoardScreen {
     }
     const search = h('input', { type: 'search', class: 'mp-search', placeholder: '찾기', lang: 'ko' }) as HTMLInputElement;
     const list = h('div', { class: 'mp-list' });
+    // 노트 줄로 끼우지 않고, 지금 보는 곳에 글상자로 (10/18)
     const insert = (line: string) => {
-      const ed = this.activeEditor || this.editors.get(this.currentPage) || this.editors.get(this.order[0]);
-      if (!ed) return;
-      const { $from } = ed.state.selection;
-      const at = $from.depth >= 1 ? $from.end(1) : ed.state.doc.content.size;
-      const empty = $from.parent.isTextblock && $from.parent.textContent === '';
-      if (empty) ed.chain().focus().insertContent(line).run();
-      else ed.chain().focus().setTextSelection(at).splitBlock().insertContent(line).run();
-      this.store.log({ kind: 'text', page: this.currentPage, src: 'memory', text: line, data: { op: 'insert', tab: this.memTab } });
-      toast('판에 넣었어요');
+      this.placeTextBox(line);
+      this.store.log({ kind: 'text', page: this.currentPage, src: 'memory', text: line, data: { op: 'place', tab: this.memTab } });
     };
     const render = () => {
       list.innerHTML = '';
@@ -2437,7 +2437,7 @@ export class BoardScreen {
       for (const r of filtered) {
         const row = h('div', { class: 'mp-row' }, h('div', { class: 'mp-main' }, r.main), h('div', { class: 'mp-rsub' }, r.sub));
         if (r.line) {
-          const ins = h('button', { type: 'button', class: 'mp-ins', title: '판의 지금 줄 아래에 넣기' }, '판에 넣기');
+          const ins = h('button', { type: 'button', class: 'mp-ins', title: '지금 보는 곳에 글상자로 놓기' }, '판에 놓기');
           ins.addEventListener('mousedown', (e) => e.preventDefault());
           ins.addEventListener('click', () => insert(r.line!));
           row.append(ins);
@@ -2463,7 +2463,7 @@ export class BoardScreen {
     if (!this.store.dirtySince && !final) return;
     if (!this.store.meta.get('startedAt')) return;
     try {
-      const { name, blob } = await buildBundle({ store: this.store, editors: this.editors });
+      const { name, blob } = await buildBundle({ store: this.store, editors: this.editors, packetId: this.pack?.packet?.packet_id });
       const ok = await writeToFolder(name, blob);
       if (ok) {
         this.store.dirtySince = 0;
@@ -2476,7 +2476,7 @@ export class BoardScreen {
   }
 
   private async saveBundleNow() {
-    const { name, blob } = await buildBundle({ store: this.store, editors: this.editors });
+    const { name, blob } = await buildBundle({ store: this.store, editors: this.editors, packetId: this.pack?.packet?.packet_id });
     let ok = false;
     if (canPickFolder() && !EMBEDDED) {
       ok = await writeToFolder(name, blob, true);
@@ -2643,9 +2643,28 @@ export class BoardScreen {
     this.panel = null;
   }
 
-  private startTimer(seconds: number) {
-    this.store.setSetting('timer', { endsAt: this.store.now() + seconds * 1000, seconds });
-    this.store.log({ kind: 'timer', data: { seconds } });
+  private startTimer(seconds: number, label = '') {
+    this.store.setSetting('timer', { endsAt: this.store.now() + seconds * 1000, seconds, label });
+    this.store.log({ kind: 'timer', data: { seconds, label } });
+  }
+
+  // 오늘 시간 배분: 판에서 고친 분 → 수업 묶음(time_split) → 브리핑(prep.plan). 할 일 줄은 묶음·브리핑에서 (판에 저장 안 함)
+  private todaySplit(): SplitSeg[] {
+    const pk = this.pack?.packet?.time_split?.segments;
+    const src: SplitSeg[] = pk?.length
+      ? pk.map((g) => ({ key: g.key, label: g.label_ko, min: g.minutes, what: g.plan }))
+      : (this.pack?.brief?.prep?.plan || []).map((p) => ({ key: p.part, label: p.part, min: p.min, what: p.what ? [p.what] : [] }));
+    const saved = this.store.getSetting<Array<{ key: string; label: string; min: number }> | null>('split', null);
+    if (!saved?.length) return src;
+    return saved.map((g) => ({ ...g, what: src.find((x) => x.key === g.key)?.what }));
+  }
+
+  // 대화 재료 카드를 판 위에 놓고 학생 화면도 거기로
+  private async placeTalkKit(md: string) {
+    const c = this.canvasId();
+    const id = await this.importDoc(md, '대화 재료');
+    this.store.log({ kind: 'material', page: c, id, data: { op: 'talk_kit', packet_id: this.pack?.packet?.packet_id || null } });
+    window.setTimeout(() => this.gotoObj(c, id, true), 450); // 글이 다 들어가 상자 높이가 정해진 뒤
   }
 
   private renderTimer() {
@@ -2661,7 +2680,8 @@ export class BoardScreen {
       return;
     }
     this.timerEl.hidden = false;
-    this.timerEl.textContent = left > 0 ? fmtClock(left) : '끝!';
+    const label = (t as { label?: string }).label || '';
+    this.timerEl.textContent = (label ? label + ' ' : '') + (left > 0 ? fmtClock(left) : '끝');
     this.timerEl.classList.toggle('done', left <= 0);
     this.timerEl.onclick = () => this.role === 'teacher' && this.store.setSetting('timer', null);
   }
@@ -2783,7 +2803,7 @@ export class BoardScreen {
     const missed = review.filter((w) => !allText.includes(probe(w)));
     if (known.length) {
       box.append(h('h4', {}, `배운 단어가 다시 나옴 ${seen.length}`), h('p', { class: 'sum-words' }, seen.slice(0, 40).join(', ') || '아직 없어요'));
-      if (review.length) box.append(h('h4', {}, `오늘 복습 단어 중 아직 안 나온 것 ${missed.length}/${review.length}`), h('p', { class: 'sum-words' }, missed.join(', ') || '다 나왔어요 👍'));
+      if (review.length) box.append(h('h4', {}, `오늘 복습 단어 중 아직 안 나온 것 ${missed.length}/${review.length}`), h('p', { class: 'sum-words' }, missed.join(', ') || '다 나왔어요'));
     }
     // 자료
     const mats: string[] = [];

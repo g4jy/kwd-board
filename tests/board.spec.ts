@@ -366,7 +366,8 @@ test.describe('학생 메모리', () => {
     await expect(t.locator('.mem-panel .mp-search')).toBeHidden(); // 8개 이하는 찾기 칸 없음
     await expect(t.locator('.mem-panel .mp-row').first()).toContainText('송편');
     await t.click('.mem-panel .mp-ins >> nth=0');
-    await expect(firstDoc(t)).toContainText('송편 : rice cake');
+    // 노트 줄로 끼우지 않고 판 위 글상자로 (10/18)
+    await expect(t.locator('.obj-box-text').filter({ hasText: '송편 : rice cake' })).toHaveCount(1);
     const memEv = await kwd(t, (k) => k.store.events.toArray().filter((e: any) => e.src === 'memory').length);
     expect(memEv).toBeGreaterThanOrEqual(2);
     // 학생 기기: 머리말은 보이되 메모리·힌트·오류는 없다
@@ -434,12 +435,20 @@ test.describe('두 기기', () => {
     await s.touchscreen.tap(sb.x + 10, sb.y + sb.height - 10).catch(() => undefined);
     await s.evaluate(() => { const st = document.querySelector('.stage')!; st.dispatchEvent(new WheelEvent('wheel', { deltaY: 400, bubbles: true, cancelable: true })); });
     await expect(s.locator('.follow-btn')).toBeVisible();
+    // 선생님이 목록에서 고르면 학생도 그것으로 (조용히, 10/18)
     await t.click('.rail-item[data-key="note"]');
-    await t.waitForTimeout(500);
-    const free = await kwd(s, (k) => k.vp.center());
-    expect(free[0]).toBeGreaterThan(slides[0].x); // 선생님이 노트로 가도 학생은 그대로
-    await s.click('.follow-btn');
     await expect.poll(async () => (await kwd(s, (k) => k.vp.center()))[0], { timeout: 10000 }).toBeLessThan(900);
+    await expect(s.locator('.look-flash')).toHaveCount(0, { timeout: 5000 });
+    // 학생이 다시 움직이면 자유: 선생님이 손으로 판을 밀어도 학생은 그대로, '선생님 화면으로'를 누르면 따라감
+    await s.evaluate(() => { const st = document.querySelector('.stage')!; st.dispatchEvent(new WheelEvent('wheel', { deltaY: 300, bubbles: true, cancelable: true })); });
+    await expect(s.locator('.follow-btn')).toBeVisible();
+    const free = await kwd(s, (k) => k.vp.center());
+    await t.evaluate(() => { const st = document.querySelector('.stage')!; for (let i = 0; i < 4; i++) st.dispatchEvent(new WheelEvent('wheel', { deltaX: 400, bubbles: true, cancelable: true })); });
+    await t.waitForTimeout(500);
+    expect(await kwd(s, (k) => k.vp.center())).toEqual(free);
+    const tc = await kwd(t, (k) => k.vp.center());
+    await s.click('.follow-btn');
+    await expect.poll(async () => Math.abs((await kwd(s, (k) => k.vp.center()))[0] - tc[0]), { timeout: 10000 }).toBeLessThan(150);
     // 권한: 학생 글 쓰기
     await t.click('.toolbar [data-tool="more"]');
     await t.click('.menu button:has-text("글 쓰기")');
@@ -655,7 +664,7 @@ test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
     expect(r.chip).toBe('Mina K');
     expect(r.tabs).toEqual(['오늘', '수업안·자료', '과제', '학생 정보', '지난 수업', '단어']);
     expect(r.today).toContain('주말에 부산에 갔어요');
-    expect(r.boardText).toContain('송편 : rice cake');
+    expect(r.boardText).toContain('송편');
     expect(r.plan).toContain('맛 형용사');
     expect(r.htmlObj).toBe('#3_수업페이지');
     expect(r.lessonDoc).toContain('수업 2');
@@ -753,5 +762,36 @@ test.describe('v6: 무한 판 · 같은 좌표 · 여기 보세요 · 학습지 
     expect(r.hwThumbs).toBeGreaterThanOrEqual(3);
     expect(r.plan).toHaveLength(4);
     expect(r.timer).toBe(true);
+  });
+});
+
+test.describe('v7: 수업 묶음 · 배분 고치기 · 대화 재료 · 로드맵 · 도구 바꿔도 화면 그대로 · 나란히 따라오기', () => {
+  test.describe.configure({ timeout: 240_000 });
+  test('묶음(lesson_packet/v1)을 읽어 보여 주고, 판 문서에는 넣지 않는다', () => {
+    const out = execFileSync('node', ['scripts/v7-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/v7t' } });
+    const r = JSON.parse(out.slice(out.indexOf('{\n')));
+    expect(r.errs).toEqual([]);
+    expect(r.splitStudentSeesWs).toBe(true);
+    expect(r.splitFlash).toBe(0);
+    expect(r.demoCardsEmoji).toBe(false);
+    expect(r.lessonEmoji).toBe(false);
+    expect(r.lessonIll).toBeGreaterThanOrEqual(15);
+    expect(r.homeSplit).toBe('대화 5 · 과제 피드백 10 · 본 수업 30 · 마무리 5');
+    expect(r.toolJump).toBe(0);
+    expect(r.why).toContain('추석에 한 일');
+    expect(r.plan).toEqual(['대화 5분', '과제 피드백 10분', '본 수업 30분', '마무리 5분']);
+    expect(r.noteInsertButtons).toBe(0);
+    expect(r.planEdited).toEqual(['대화 7분', '과제 피드백 10분', '본 수업 27분', '마무리 5분']);
+    expect(r.timer).toMatch(/^대화 [67]:\d\d$/);
+    expect(r.kitWords).toBe(10);
+    expect(r.kitExamples).toBe(7);
+    expect(r.kitPlaced).toEqual(['box:대화 재료']);
+    expect(r.look).toBe(true);
+    expect(r.rm.steps).toEqual(['m1:done', 'm2:done', 'm3:done', 'm4:now', 'm5:next', 'm6:later']);
+    expect(r.rm.pace).toBe('조금 빠름');
+    expect(r.rm.todo).toBe(2);
+    expect(r.packetInDoc).toEqual([]);
+    expect(r.manifestPacket).toMatch(/^pk_demo_mina_\d{4}-\d{2}-\d{2}$/);
+    expect(r.segEvents.at(-1)).toBe('segment:talk');
   });
 });

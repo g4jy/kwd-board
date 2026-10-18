@@ -32,9 +32,10 @@ await p.waitForSelector('.mem-panel .mp-tab');
 res.tabs = await p.locator('.mem-panel .mp-tab').allInnerTexts();
 res.today = (await p.locator('.mp-body').innerText()).slice(0, 400);
 await p.screenshot({ path: `${OUT}/2-today.png` });
-// 복습 단어 칩 → 판에 넣기
-await p.click('.mp-chip:has-text("송편")');
-res.boardText = await p.evaluate(() => window.__kwd.editor().getText());
+// 묶음이 없으면 브리핑의 복습 단어로 대화 재료 → 학생 화면에 깔기 (판 위 글상자)
+await p.click('.tk-put');
+await p.waitForTimeout(600);
+res.boardText = await p.locator('.obj-box-text').last().innerText();
 // 수업안
 await p.click('.mp-tab[data-tab="plan"]');
 res.plan = (await p.locator('.mp-body').innerText()).slice(0, 200);

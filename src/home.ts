@@ -2,7 +2,7 @@
 // 학생을 누르면 그 학생의 오늘 판이 열리고, 브리핑·수업안·로드맵·지난 수업이 선생님 화면에만 붙는다.
 import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl } from './store';
 import { h, fmtDateTime, toast } from './ui';
-import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, rememberBoardFolder, folderForBoard, forgetFolder, ymd, isDemo, type StudentEntry, type BriefLesson } from './kwdfolder';
+import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, type StudentEntry, type BriefLesson } from './kwdfolder';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -142,6 +142,11 @@ export class HomeScreen {
     const goal = (l.prep?.summary || [])[0]?.replace(/^오늘 목표:\s*/, '').replace(/`|\*\*/g, '') || l.next_focus || '';
     const r = h('button', { type: 'button', class: 'lesson-row' + (done ? ' done' : '') + (isNext ? ' next' : '') }, h('span', { class: 'lr-time' }, l.time), h('span', { class: 'lr-body' }, h('span', { class: 'lr-name' }, l.name), h('span', { class: 'lr-meta' }, meta), goal ? h('span', { class: 'lr-goal' }, goal) : ''), h('span', { class: 'lr-go' }, isNext ? '시작' : '열기'));
     r.addEventListener('click', () => this.openStudent(l.folder, s?.id || (/\(([^)]+)\)/.exec(l.folder) || [])[1] || ''));
+    // 오늘 묶음이 있으면 배분 한 줄 (대화 5 · 과제 10 · 본 30 · 마무리 5)
+    void packetFor(l.folder).then((pk) => {
+      const segs = pk?.time_split?.segments;
+      if (segs?.length) r.querySelector('.lr-body')?.append(h('span', { class: 'lr-split' }, segs.map((g) => `${g.label_ko} ${g.minutes}`).join(' · ')));
+    });
     return r;
   }
 

@@ -10,6 +10,7 @@ import { boxPlainText } from './objects';
 export const APP_VERSION = '0.3.0';
 
 export interface RecordInput {
+  packetId?: string | null; // 오늘 수업 묶음 id (lesson_packet/v1, 수업 뒤 자동화가 이어 붙임)
   store: BoardStore;
   editors: Map<string, Editor>;
 }
@@ -134,6 +135,7 @@ export async function buildBundle(input: RecordInput): Promise<{ name: string; b
     pages: pages.map((p, i) => ({ no: i + 1, id: p.id, kind: p.kind, material: p.mid, materialPage: p.n })),
     materials: Array.from(store.materials.values()).map((m) => ({ id: m.id, name: m.name, type: m.type, pages: m.pages })),
     counts: { events: store.events.length, ink: pages.reduce((a, p) => a + store.ink(p.id).length, 0) },
+    packet_id: input.packetId || null,
     exportedAt: new Date().toISOString(),
   };
   const md = boardMarkdown(input);

@@ -6,6 +6,7 @@ import { h, fmtDate } from './ui';
 import { vocabNote, type StudentMemory } from './memory';
 import type { StudentPack, PackFile, BoardData } from './kwdfolder';
 import { type HwHistory, type HwMedia, type HwDay, type HwItem } from './homework';
+import { talkKitMarkdown, PACE_KO, type TalkKit, type PacketRoadmap } from './packet';
 
 export interface PanelActions {
   insertLine(line: string): void; // 판의 지금 줄 아래에
@@ -21,11 +22,22 @@ export interface PanelActions {
   loadHistory(): Promise<HwHistory | null>; // KWD 숙제 앱에서 날마다 과제·피드백
   mediaUrl(m: HwMedia): Promise<{ url: string; mime: string }>;
   startTimer(seconds: number, label: string): void;
+  split(): SplitSeg[]; // 오늘 시간 배분 (판에서 고친 값 → 묶음 → 브리핑 순)
+  setSplit(segs: SplitSeg[]): void;
+  startSegment(seg: SplitSeg): void;
+  placeTalkKit(md: string): void; // 대화 재료를 판 위 카드로, 학생 화면도 거기로
   placeMedia(m: HwMedia, label: string): Promise<void>;
 }
 
 // 숙제 앱에서 불러온 것 (패널이 다시 그려져도 남게, 이 창에서만)
 const hwCache = new Map<string, HwHistory | null>();
+
+export interface SplitSeg {
+  key: string;
+  label: string;
+  min: number;
+  what?: string[];
+}
 
 export type PanelTab = 'today' | 'plan' | 'hw' | 'student' | 'lessons' | 'vocab';
 
@@ -50,10 +62,10 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
   root.append(h('div', { class: 'mp-head' }, h('strong', {}, pack.name), h('span', { class: 'mp-sub' }, sub), close));
 
   const has: Record<PanelTab, boolean> = {
-    today: !!(b || pack.trialPrep || pack.lessons.length),
+    today: !!(b || pack.packet || pack.trialPrep || pack.lessons.length),
     plan: !!(pack.plan || pack.trialPrep || pack.files.length),
     hw: true,
-    student: !!(pack.profile || pack.roadmap || pack.status),
+    student: !!(pack.profile || pack.roadmap || pack.status || pack.packet?.roadmap),
     lessons: pack.lessons.length > 0,
     vocab: !!(mem?.vocab.length || pack.db?.vocab.length),
   };
@@ -69,8 +81,8 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
   const body = h('div', { class: 'mp-body' });
   root.append(tabs, body);
 
-  const insBtn = (line: string, label = '판에 넣기') => {
-    const x = h('button', { type: 'button', class: 'mp-ins', title: '판의 지금 줄 아래에 넣기' }, label);
+  const insBtn = (line: string, label = '판에 놓기') => {
+    const x = h('button', { type: 'button', class: 'mp-ins', title: '지금 보는 곳에 글상자로 놓기' }, label);
     x.addEventListener('mousedown', (e) => e.preventDefault());
     x.addEventListener('click', () => act.insertLine(line));
     return x;
@@ -84,66 +96,7 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
   };
 
   if (tab === 'today') {
-    // 오늘 수업 시간 나누기 (대화 · 과제 피드백 · 수업 · 마무리) — 누르면 그 시간만큼 타이머
-    const plan = b?.prep?.plan || [];
-    if (plan.length) {
-      const total = plan.reduce((a, p) => a + (p.min || 0), 0) || 1;
-      const bar = h('div', { class: 'plan-bar' });
-      plan.forEach((p, i) => {
-        const seg = h('button', { type: 'button', class: 'plan-seg c' + (i % 5), style: `flex:${p.min}`, title: `${p.part} ${p.min}분${p.what ? ' — ' + p.what : ''} · 누르면 타이머` }, h('b', {}, p.part), h('span', {}, `${p.min}분`));
-        seg.addEventListener('click', () => act.startTimer(p.min * 60, p.part));
-        bar.append(seg);
-      });
-      const rows = plan.filter((p) => p.what).map((p) => h('div', { class: 'plan-row' }, h('b', {}, p.part), ' ', p.what!));
-      body.append(section(`오늘 ${total}분`, bar, ...rows));
-    }
-    if (b) {
-      const goals = (b.prep?.summary || []).filter(Boolean);
-      if (goals.length) body.append(section('오늘 수업', ...goals.map((g) => h('p', { class: 'mp-p' }, g.replace(/`|\*\*/g, '')))));
-      const words = b.warmup_recent || [];
-      if (words.length) {
-        const chips = h('div', { class: 'mp-chips' });
-        for (const w of words) {
-          const c = h('button', { type: 'button', class: 'mp-chip', title: w.en || '' }, w.kr);
-          c.addEventListener('mousedown', (e) => e.preventDefault());
-          c.addEventListener('click', () => act.insertLine(`${w.kr}${w.en ? ' : ' + w.en : ''}`));
-          chips.append(c);
-        }
-        const all = insBtn('복습: ' + words.map((w) => w.kr).join(', '), '모두 한 줄로 판에 넣기');
-        body.append(section('복습 단어', chips, all));
-      }
-      const ask = (b.rapport || []).filter((r) => !r.sensitive).slice(0, 4);
-      if (ask.length) body.append(section('물어볼 것 (지난 이야기)', ...ask.map((r) => row(r.text, [r.date ? r.date.slice(5).replace('-', '/') : '', r.lesson ? `#${r.lesson}` : '', r.follow_up || ''].filter(Boolean).join(' · ')))));
-      const pr = b.promises;
-      const promiseRows: HTMLElement[] = [];
-      for (const t of pr?.tutor || []) promiseRows.push(row('선생님: ' + t.text, t.status === 'open' ? '아직 안 함' : t.status === 'done' ? '했음' : t.status || ''));
-      for (const hw of pr?.homework || []) {
-        const txt = typeof hw === 'string' ? hw : hw.text || '';
-        if (txt) promiseRows.push(row('숙제: ' + txt, '', '숙제 확인: ' + txt));
-      }
-      if (pr?.submissions) promiseRows.push(row('숙제 제출', [pr.homework_status, pr.submissions, pr.assignment_link].filter(Boolean).join(' · ')));
-      if (promiseRows.length) body.append(section('약속·숙제', ...promiseRows));
-      const core = b.last_core;
-      if (core) {
-        const kids: Node[] = [];
-        if (core.taught?.length) kids.push(row('배운 말', core.taught.join(', '), '지난 시간: ' + core.taught.slice(0, 8).join(', ')));
-        if (core.patterns?.length) kids.push(row('문형', core.patterns.join(' · '), '문형: ' + core.patterns.join(' · ')));
-        for (const c of core.corrections || []) kids.push(row('교정', c, c));
-        if (core.overview) kids.push(h('p', { class: 'mp-p muted' }, core.overview.slice(0, 280) + (core.overview.length > 280 ? '…' : '')));
-        if (kids.length) body.append(section(`지난 수업 #${b.last_lesson ?? ''} 핵심`, ...kids));
-      }
-      if (b.next_focus) body.append(section('다음 할 것', h('p', { class: 'mp-p' }, b.next_focus)));
-      if (pack.trialPrep) body.append(section('체험 수업 준비', mdToEl(pack.trialPrep.text)));
-    } else if (pack.trialPrep) {
-      body.append(h('p', { class: 'mp-p muted' }, '체험 수업 준비 문서'), mdToEl(pack.trialPrep.text));
-    } else {
-      const last = pack.lessons[0];
-      body.append(h('p', { class: 'mp-p muted' }, '오늘 브리핑에는 이 학생이 없어요.' + (last ? ` 지난 수업 #${last.n} (${last.date.slice(5).replace('-', '/')})` : '')));
-      const ml = mem?.lessons[0];
-      if (ml?.summary) body.append(section('지난 수업', h('p', { class: 'mp-p' }, ml.summary)));
-      const rev = mem?.vocab.filter((v) => v.status === 'review').slice(0, 10) || [];
-      if (rev.length) body.append(section('복습할 단어', h('p', { class: 'mp-p' }, rev.map((v) => v.kr).join(', ')), insBtn('복습: ' + rev.map((v) => v.kr).join(', '), '모두 한 줄로 판에 넣기')));
-    }
+    renderToday(body, pack, mem, act, section, row);
   } else if (tab === 'plan') {
     if (pack.files.length) {
       const KIND: Record<string, string> = { html: '웹 학습지', pdf: 'PDF', img: '사진', md: '문서', audio: '소리', video: '영상', text: '글' };
@@ -174,8 +127,10 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
     if (doc) body.append(section(pack.plan ? `수업안 #${pack.plan.n}` : '체험 수업 준비', mdToEl(doc.text)));
     if (pack.homework) body.append(details('과제 초안', mdToEl(pack.homework.text), false));
   } else if (tab === 'student') {
-    if (pack.profile) body.append(details('학생 정보', mdToEl(pack.profile), true));
-    if (pack.roadmap) body.append(details('로드맵', mdToEl(pack.roadmap), !pack.profile));
+    const rm = pack.packet?.roadmap;
+    if (rm?.path?.length || rm?.goal_start) renderRoadmap(body, rm);
+    if (pack.profile) body.append(details('학생 정보', mdToEl(pack.profile), !rm?.path?.length));
+    if (pack.roadmap) body.append(details(rm?.path?.length ? '로드맵 문서' : '로드맵', mdToEl(pack.roadmap), !pack.profile && !rm?.path?.length));
     if (pack.status) body.append(details('지금 배우는 상태', mdToEl(pack.status), false));
     if (mem?.errors.length) body.append(details(`자주 틀린 것 ${mem.errors.length}`, h('div', {}, ...mem.errors.slice(0, 30).map((e) => row(`${e.wrong ? '✗ ' + e.wrong : e.type}`, [e.right ? '✓ ' + e.right : '', e.count && e.count > 1 ? `${e.count}번` : '', e.last || ''].filter(Boolean).join(' · ')))), false));
     if (mem?.grammar.length) body.append(details(`배운 문형 ${mem.grammar.length}`, h('div', {}, ...mem.grammar.slice(-40).reverse().map((g) => row(g.pattern, [g.name, g.first ? `${g.first} 처음` : '', (g.examples || [])[0]].filter(Boolean).join(' · '), `${g.pattern}${g.examples?.[0] ? ' — ' + g.examples[0] : ''}`))), false));
@@ -470,4 +425,153 @@ function itemRow(it: HwItem, act: PanelActions, where = ''): HTMLElement {
     r.append(put);
   }
   return r;
+}
+
+// 오늘 탭: 왜 지금 · 시간 배분(판에서 고침, 누르면 타이머) · 대화 재료(학생 화면에 깔기) · 과제에서 짚을 것 · 물어볼 것
+// 모두 수업 후 자동화·과제 플랫폼·단어 앱이 만든 것을 그대로 보여 준다 (판은 만들지 않는다)
+type Sec = (title: string, ...kids: Node[]) => HTMLElement;
+type Row = (main: string, subText?: string, line?: string) => HTMLElement;
+let splitEdit = false;
+function renderToday(body: HTMLElement, pack: StudentPack, mem: StudentMemory | null, act: PanelActions, section: Sec, row: Row) {
+  const b = pack.brief;
+  const pk = pack.packet;
+  const rm = pk?.roadmap;
+  if (rm?.why_now) body.append(h('p', { class: 'mp-why' }, rm.why_now));
+  const now = rm?.path?.find((s) => s.status === 'now');
+  if (now) body.append(h('p', { class: 'mp-p muted mp-nowline' }, `지금 단계: ${now.title}${now.total ? ` (${now.done || 0}/${now.total})` : ''}${rm?.pace?.label ? ' · ' + (rm.pace.label_ko || PACE_KO[rm.pace.label]) : ''}`));
+
+  // 시간 배분
+  const segs = act.split();
+  if (segs.length) {
+    const total = segs.reduce((a, g) => a + g.min, 0);
+    const bar = h('div', { class: 'plan-bar' });
+    segs.forEach((g, i) => {
+      const seg = h('button', { type: 'button', class: 'plan-seg c' + (i % 5), style: `flex:${Math.max(1, g.min)}`, 'data-seg': g.key, title: `${g.label} ${g.min}분 · 누르면 타이머` }, h('b', {}, g.label), h('span', {}, `${g.min}분`));
+      seg.addEventListener('click', () => act.startSegment(g));
+      bar.append(seg);
+    });
+    const edit = h('button', { type: 'button', class: 'linkish plan-edit' }, splitEdit ? '다 고쳤어요' : '분 고치기');
+    edit.addEventListener('click', () => {
+      splitEdit = !splitEdit;
+      body.innerHTML = '';
+      renderToday(body, pack, mem, act, section, row);
+    });
+    const kids: Node[] = [bar];
+    if (splitEdit) {
+      const ed = h('div', { class: 'plan-editrow' });
+      segs.forEach((g, i) => {
+        const step = (d: number) => {
+          const next = segs.map((x) => ({ ...x }));
+          next[i].min = Math.max(0, next[i].min + d);
+          // 다른 칸을 늘리고 줄이면 본 수업이 받아서 수업 길이는 그대로 (본 수업을 고치면 길이가 바뀜)
+          const main = next.findIndex((x) => x.key === 'main' || /본|수업$/.test(x.label));
+          if (main >= 0 && main !== i && next[i].min !== segs[i].min) next[main].min = Math.max(0, next[main].min - (next[i].min - segs[i].min));
+          act.setSplit(next);
+          body.innerHTML = '';
+          renderToday(body, pack, mem, act, section, row);
+        };
+        const minus = h('button', { type: 'button', class: 'pe-b', 'aria-label': g.label + ' 1분 줄이기' }, '−');
+        const plus = h('button', { type: 'button', class: 'pe-b', 'aria-label': g.label + ' 1분 늘리기' }, '+');
+        minus.addEventListener('click', () => step(-1));
+        plus.addEventListener('click', () => step(1));
+        ed.append(h('div', { class: 'pe-cell', 'data-seg': g.key }, h('span', {}, g.label), minus, h('b', {}, String(g.min)), plus));
+      });
+      kids.push(ed);
+    }
+    for (const g of segs) if (g.what?.length) kids.push(h('div', { class: 'plan-row' }, h('b', {}, g.label), ' ', g.what.join(' · ')));
+    const title = h('span', {}, `오늘 ${total}분`);
+    const sec = section('', ...kids);
+    sec.querySelector('h4')!.append(title, edit);
+    body.append(sec);
+  }
+
+  // 대화 재료: 묶음의 talk_kit (없으면 브리핑의 복습 단어만)
+  const kit: TalkKit | null = pk?.talk_kit || (b?.warmup_recent?.length ? { share_ok: true, words: b.warmup_recent.map((w) => ({ w: w.kr, en: w.en })), expressions: [] } : null);
+  if (kit && (kit.words.length || kit.expressions.length)) {
+    const kids: Node[] = [];
+    if (kit.topic) kids.push(h('p', { class: 'mp-p' }, kit.topic));
+    if (kit.words.length) {
+      const chips = h('div', { class: 'mp-chips' });
+      for (const w of kit.words) chips.append(h('span', { class: 'mp-chip static' + (w.srs === 'due' || w.srs === 'lapsing' ? ' due' : ''), title: [w.en, w.from, w.srs === 'due' ? '카드 복습 때' : w.srs === 'lapsing' ? '자꾸 잊음' : ''].filter(Boolean).join(' · ') }, w.w));
+      kids.push(h('div', { class: 'mp-relk' }, '전에 배운 말'), chips);
+    }
+    for (const e of kit.expressions) {
+      kids.push(h('div', { class: 'tk-exp' }, h('b', {}, e.pattern), e.meaning ? h('span', { class: 'muted' }, ' ' + e.meaning) : '', h('ul', {}, ...e.examples.slice(0, 4).map((x) => h('li', { title: x.en || '' }, x.ko)))));
+    }
+    if (kit.share_ok !== false) {
+      const put = h('button', { type: 'button', class: 'mp-ins tk-put' }, '학생 화면에 깔기');
+      put.addEventListener('click', () => act.placeTalkKit(talkKitMarkdown(kit)));
+      kids.push(put);
+    }
+    body.append(section('대화 재료', ...kids));
+  }
+
+  // 과제에서 짚을 것 (과제 플랫폼 digest 에서 고른 것)
+  const pick = pk?.homework?.feedback_pick || [];
+  if (pick.length) body.append(section('과제에서 짚을 것', ...pick.map((p) => row(p.item, p.why || ''))));
+
+  if (b) {
+    const ask = (b.rapport || []).filter((r) => !r.sensitive).slice(0, 4);
+    const asks = [...ask.map((r) => row(r.text, [r.date ? r.date.slice(5).replace('-', '/') : '', r.lesson ? `#${r.lesson}` : '', r.follow_up || ''].filter(Boolean).join(' · '))), ...(pk?.teacher_notes?.ask || []).map((t) => row(t))];
+    if (asks.length) body.append(section('물어볼 것', ...asks));
+    const pr = b.promises;
+    const promiseRows: HTMLElement[] = [];
+    for (const t of pr?.tutor || []) promiseRows.push(row('선생님: ' + t.text, t.status === 'open' ? '아직 안 함' : t.status === 'done' ? '했음' : t.status || ''));
+    for (const hw of pr?.homework || []) {
+      const txt = typeof hw === 'string' ? hw : hw.text || '';
+      if (txt) promiseRows.push(row('숙제: ' + txt));
+    }
+    if (pr?.submissions) promiseRows.push(row('숙제 제출', [pr.homework_status, pr.submissions].filter(Boolean).join(' · ')));
+    if (promiseRows.length) body.append(details('약속·숙제', h('div', {}, ...promiseRows), false));
+    const core = b.last_core;
+    if (core) {
+      const kids: Node[] = [];
+      if (core.taught?.length) kids.push(row('배운 말', core.taught.join(', ')));
+      if (core.patterns?.length) kids.push(row('문형', core.patterns.join(' · ')));
+      for (const c of core.corrections || []) kids.push(row('교정', c));
+      if (core.overview) kids.push(h('p', { class: 'mp-p muted' }, core.overview.slice(0, 280) + (core.overview.length > 280 ? '…' : '')));
+      if (kids.length) body.append(details(`지난 수업 #${b.last_lesson ?? ''}`, h('div', {}, ...kids), false));
+    }
+    const watch = pk?.teacher_notes?.watch_out || [];
+    if (watch.length) body.append(section('조심할 것', ...watch.map((w) => row(w))));
+    if (pack.trialPrep) body.append(section('체험 수업 준비', mdToEl(pack.trialPrep.text)));
+  } else if (pack.trialPrep) {
+    body.append(h('p', { class: 'mp-p muted' }, '체험 수업 준비 문서'), mdToEl(pack.trialPrep.text));
+  } else if (!pk) {
+    const last = pack.lessons[0];
+    body.append(h('p', { class: 'mp-p muted' }, '오늘 브리핑에는 이 학생이 없어요.' + (last ? ` 지난 수업 #${last.n} (${last.date.slice(5).replace('-', '/')})` : '')));
+    const ml = mem?.lessons[0];
+    if (ml?.summary) body.append(section('지난 수업', h('p', { class: 'mp-p' }, ml.summary)));
+  }
+}
+
+// 로드맵 한눈에: 처음 목표 → 단계별 목표(지금 단계 강조) · 속도 · 오늘 · 이번 주
+function renderRoadmap(body: HTMLElement, rm: PacketRoadmap) {
+  const box = h('section', { class: 'rm' });
+  if (rm.goal_start) {
+    const g = rm.goal_start;
+    box.append(h('div', { class: 'rm-goal' }, h('span', { class: 'rm-k' }, '처음 목표'), h('b', {}, g.text), h('span', { class: 'rm-sub' }, [g.set_on ? g.set_on.slice(2).replace(/-/g, '.') + ' 시작' : '', g.horizon || '', g.why || ''].filter(Boolean).join(' · '))));
+  }
+  const pc = rm.pace;
+  if (pc?.label) {
+    const facts = [pc.lessons_expected ? `수업 ${pc.lessons_done ?? '?'}/${pc.lessons_expected}` : '', pc.units_expected ? `단원 ${pc.units_done ?? '?'}/${pc.units_expected}` : '', pc.hw_days_ratio != null ? `숙제 ${Math.round(pc.hw_days_ratio * 100)}%` : ''].filter(Boolean).join(' · ');
+    box.append(h('div', { class: 'rm-pace ' + pc.label }, h('b', {}, pc.label_ko || PACE_KO[pc.label] || pc.label), h('span', {}, facts), pc.note_ko ? h('span', { class: 'rm-sub' }, pc.note_ko) : ''));
+  }
+  if (rm.path?.length) {
+    const list = h('ol', { class: 'rm-path' });
+    for (const st of rm.path) {
+      const pct = st.total ? Math.round(((st.done || 0) / st.total) * 100) : st.status === 'done' ? 100 : 0;
+      const date = st.status === 'done' ? (st.done_date ? st.done_date.slice(5).replace('-', '/') + ' 마침' : '마침') : st.target_date ? st.target_date.slice(5).replace('-', '/') + '까지' : '';
+      const li = h('li', { class: 'rm-step ' + st.status, 'data-step': st.id }, h('span', { class: 'rm-dot' }), h('div', { class: 'rm-body' }, h('div', { class: 'rm-title' }, h('b', {}, st.title), h('span', { class: 'rm-date' }, date)), st.can_do ? h('div', { class: 'rm-sub' }, st.can_do) : '', st.total ? h('div', { class: 'rm-prog' }, h('span', { class: 'rm-track' }, h('i', { style: `width:${pct}%` })), h('span', {}, `${st.done || 0}/${st.total}`)) : ''));
+      if (st.status === 'now' && rm.nearest) {
+        const n = rm.nearest;
+        li.append(h('div', { class: 'rm-near' }, '가장 가까운 목표' + [n.left_units != null ? ` · 단원 ${n.left_units}개 남음` : '', n.left_lessons != null ? ` · 수업 ${n.left_lessons}번` : ''].join('')));
+      }
+      list.append(li);
+    }
+    box.append(list);
+  }
+  const lists: Array<[string, string[] | undefined]> = [['오늘', rm.today], ['이번 주 (다음 수업까지)', rm.this_week]];
+  for (const [k, xs] of lists) if (xs?.length) box.append(h('div', { class: 'rm-todo' }, h('span', { class: 'rm-k' }, k), h('ul', {}, ...xs.map((x) => h('li', {}, x)))));
+  body.append(box);
 }

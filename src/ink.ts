@@ -117,7 +117,17 @@ export class InkLayer {
     if (typeof ResizeObserver !== 'undefined') new ResizeObserver(() => this.resize()).observe(canvas.parentElement!);
     vp.onChange(() => this.invalidate());
     store.awareness.on('change', () => this.invalidate());
-    canvas.addEventListener('pointerdown', (e) => this.onDown(e));
+    canvas.addEventListener('pointerdown', (e) => {
+      // 펜을 든 채로도 물건 막대의 단추(학습지 T·저장·크게 등)는 눌린다
+      const under = document.elementsFromPoint(e.clientX, e.clientY).find((el) => el !== canvas && el.closest('.obj-bar button, .obj-bt'));
+      const btn = under?.closest<HTMLElement>('.obj-bar button, .obj-bt');
+      if (btn) {
+        e.preventDefault();
+        btn.click();
+        return;
+      }
+      this.onDown(e);
+    });
     canvas.addEventListener('pointermove', (e) => this.onMove(e));
     canvas.addEventListener('pointerup', (e) => this.onUp(e));
     canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // S펜 옆 버튼

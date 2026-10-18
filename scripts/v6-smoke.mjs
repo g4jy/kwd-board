@@ -69,7 +69,7 @@ const line = async (x0, y0, x1, y1) => { await t.mouse.move(x0, y0); await t.mou
 await line(fb.x + fb.width * 0.08, fb.y + fb.height * 0.25, fb.x + fb.width * 0.5, fb.y + fb.height * 0.27);
 res.ink1 = await t.evaluate((id) => window.__kwd.store.ink(`ws:${id}:1`).length, ws.id);
 // 글상자 (T 단추)
-await t.click('.obj-html .ws-t');
+await t.click('.obj-html .ws-t', { force: true }); // 펜을 든 채로 (잉크 판이 위에 있어도 단추는 눌림)
 await t.waitForTimeout(200);
 await t.keyboard.type('1단계 메모');
 await t.click('.toolbar [data-tool="text"]');

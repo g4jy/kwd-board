@@ -2526,7 +2526,7 @@ body.in-demo { background: var(--bg); overflow: auto; }
 .demo-card:hover { border-color: var(--accent); }
 .demo-card.main { grid-column: 1 / -1; background: #1f3b57; color: #fff; border-color: transparent; }
 .demo-card.main .dc-desc { color: #cfe3f5; }
-.dc-icon { font-size: 28px; }
+.dc-icon { display: inline-flex; color: #1f2a44; }
 .dc-title { font-weight: 700; font-size: 17px; }
 .dc-desc { font-size: 13px; color: var(--muted); line-height: 1.45; }
 .demo-foot { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 24px; }
@@ -2723,3 +2723,50 @@ body.in-demo { background: var(--bg); overflow: auto; }
 .plan-seg:hover { filter: brightness(0.96); }
 .plan-row { font-size: 13px; line-height: 1.45; margin: 3px 0; }
 .hw-item > .mp-ins { justify-self: start; }
+
+.lr-split { display: block; font-size: 12px; color: #6b7380; margin-top: 2px; }
+
+/* v7: 오늘 탭 — 왜 지금 · 배분 고치기 · 대화 재료 */
+.mp-why { margin: 2px 0 4px; font-size: 14.5px; line-height: 1.5; font-weight: 600; }
+.mp-nowline { margin: 0 0 8px; }
+.mp-sec h4 .plan-edit { float: right; font-size: 12px; font-weight: 500; }
+.plan-editrow { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin: 2px 0 8px; }
+.pe-cell { display: flex; align-items: center; gap: 4px; font-size: 12.5px; background: #f6f4ef; border-radius: 8px; padding: 4px 6px; }
+.pe-cell span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pe-cell b { min-width: 20px; text-align: center; }
+.pe-b { width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: #fff; font: inherit; font-size: 16px; cursor: pointer; }
+.mp-chip.static { cursor: default; }
+.mp-chip.due { border-color: #e8a87c; background: #fff6ef; }
+.tk-exp { margin: 8px 0 4px; font-size: 14px; }
+.tk-exp ul { margin: 3px 0 0; padding-left: 18px; }
+.tk-exp li { margin: 2px 0; line-height: 1.45; }
+.tk-exp .muted { color: var(--muted); font-size: 12.5px; }
+.tk-put { margin-top: 8px; }
+
+/* v7: 학생 탭 — 로드맵 한눈에 */
+.rm { margin: 6px 0 14px; display: flex; flex-direction: column; gap: 10px; }
+.rm-k { display: block; font-size: 11.5px; color: var(--muted); font-weight: 700; margin-bottom: 2px; }
+.rm-goal b { font-size: 15px; }
+.rm-sub { display: block; font-size: 12.5px; color: var(--muted); line-height: 1.4; }
+.rm-pace { border-radius: 10px; padding: 8px 10px; display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; font-size: 13px; background: #eef6f0; }
+.rm-pace b { font-size: 14px; }
+.rm-pace.behind { background: #fff3e8; }
+.rm-pace.ahead { background: #e9f1ff; }
+.rm-pace .rm-sub { flex-basis: 100%; }
+.rm-path { list-style: none; margin: 0; padding: 0; position: relative; }
+.rm-path::before { content: ''; position: absolute; left: 6px; top: 8px; bottom: 8px; width: 2px; background: #e4e0d6; }
+.rm-step { position: relative; display: flex; gap: 10px; padding: 4px 0 8px; flex-wrap: wrap; }
+.rm-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #c9c3b6; background: #fff; flex: none; margin-top: 3px; position: relative; z-index: 1; }
+.rm-step.done .rm-dot { background: #8fbf9f; border-color: #8fbf9f; }
+.rm-step.now .rm-dot { background: #f2b8a0; border-color: #1f2a44; }
+.rm-step.later, .rm-step.next { opacity: .75; }
+.rm-body { flex: 1; min-width: 0; }
+.rm-title { display: flex; justify-content: space-between; gap: 8px; font-size: 14px; }
+.rm-date { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.rm-step.now .rm-title b { color: #1f2a44; }
+.rm-step.now .rm-body { background: #fff7f2; border-radius: 8px; padding: 4px 8px; margin: -4px 0 0 -4px; }
+.rm-prog { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 11.5px; color: var(--muted); }
+.rm-track { flex: 1; max-width: 160px; height: 6px; border-radius: 3px; background: #ece8df; overflow: hidden; }
+.rm-track i { display: block; height: 100%; background: #9cc5b0; }
+.rm-near { flex-basis: 100%; margin-left: 24px; font-size: 12px; font-weight: 700; color: #b0562a; }
+.rm-todo ul { margin: 2px 0 0; padding-left: 18px; font-size: 13.5px; line-height: 1.5; }

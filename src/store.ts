@@ -95,6 +95,8 @@ export interface BoardEvent {
     | 'timer'
     | 'setting'
     | 'presence'
+    | 'segment'
+    | 'segment_edit'
     | 'object';
   page?: string;
   block?: string;

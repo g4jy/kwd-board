@@ -4,6 +4,16 @@ import { h, toast } from './ui';
 import { setDemo, useDemoFolder, boardIdFor, rememberBoardFolder, demoRun, nextDemoRun } from './kwdfolder';
 import { loadIndex, saveIndex } from './store';
 
+// 단순한 선 아이콘 (이모지 대신, 10/18)
+const SVG = (d: string) => `<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const ICONS: Record<string, string> = {
+  laptop: SVG('<rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/>'),
+  phone: SVG('<rect x="7" y="2.5" width="10" height="19" rx="2"/><path d="M11 18.5h2"/>'),
+  tablet: SVG('<rect x="4.5" y="2.5" width="15" height="19" rx="2"/><path d="M11 18.5h2"/>'),
+  pen: SVG('<path d="M4 20l4-1 10.5-10.5a2.1 2.1 0 0 0-3-3L5 16l-1 4z"/><path d="M14 7l3 3"/>'),
+  split: SVG('<rect x="2.5" y="5" width="13" height="10" rx="1.2"/><rect x="17" y="7" width="4.5" height="10" rx="1"/><path d="M6 19h6"/>'),
+};
+
 export const DEMO_FOLDER = 'Mina K (9000001)';
 
 export type DemoView = 'phone' | 'tablet' | 'pen' | 'split';
@@ -39,22 +49,24 @@ export class DemoScreen {
     void bid;
     this.root.append(
       h('div', { class: 'demo-head' }, h('h1', {}, 'KWD 수업 판 · 체험'), h('a', { class: 'linkish', href: '#/' }, '← 시작 화면')),
-      h('p', { class: 'demo-lead' }, '지어낸 학생 Mina K 의 오늘 수업(#12 추석)으로 모든 기능을 눌러 보세요. 슬라이드·PDF·사진·웹 학습지·마크다운·소리·영상·유튜브·학생 과제가 페이지마다 깔려 있어요. 진짜 KWD 폴더와 판은 건드리지 않아요.'),
+      h('p', { class: 'demo-lead' }, '지어낸 학생 Mina K 의 오늘 수업(#12 추석)으로 모든 기능을 눌러 보세요. 웹 학습지·사진·유튜브·소리·영상·학생 과제가 판 위에 깔려 있고, 오늘 수업 묶음(로드맵·대화 재료·시간 배분)을 읽어 와요. 진짜 KWD 폴더와 판은 건드리지 않아요.'),
     );
     const grid = h('div', { class: 'demo-grid' });
     const card = (icon: string, title: string, desc: string, go: () => void, cls = '') => {
-      const b = h('button', { type: 'button', class: 'demo-card ' + cls }, h('span', { class: 'dc-icon' }, icon), h('span', { class: 'dc-title' }, title), h('span', { class: 'dc-desc' }, desc));
+      const ic = h('span', { class: 'dc-icon' });
+      ic.innerHTML = ICONS[icon] || '';
+      const b = h('button', { type: 'button', class: 'demo-card ' + cls }, ic, h('span', { class: 'dc-title' }, title), h('span', { class: 'dc-desc' }, desc));
       b.addEventListener('click', go);
       grid.append(b);
     };
-    card('🧑‍🏫', '선생님 (노트북)', 'KWD 폴더가 연결된 모습. 오늘 수업 → 학생 → 판, 이 학생 패널까지', async () => {
+    card('laptop', '선생님 (노트북)', 'KWD 폴더가 연결된 모습. 오늘 수업 → 학생 → 판, 이 학생 패널까지', async () => {
       await enterDemo();
       location.hash = '#/';
     }, 'main');
-    card('📱', '학생 · 폰', '학생이 폰으로 볼 때. 옆 작은 선생님 화면에서 쓰면 바로 보여요', () => (location.hash = '#/demo/phone'));
-    card('📲', '학생 · 태블릿', '학생이 태블릿으로 볼 때 (펜으로 쓰기 허락하면 같이 써요)', () => (location.hash = '#/demo/tablet'));
-    card('✍️', '선생님 · 태블릿', '선생님이 태블릿+펜으로 수업할 때 (손가락=이동, 펜=쓰기)', () => (location.hash = '#/demo/pen'));
-    card('🖥️📱', '나란히 보기', '선생님 화면과 학생 폰을 한 화면에', () => (location.hash = '#/demo/split'));
+    card('phone', '학생 · 폰', '학생이 폰으로 볼 때. 옆 작은 선생님 화면에서 쓰면 바로 보여요', () => (location.hash = '#/demo/phone'));
+    card('tablet', '학생 · 태블릿', '학생이 태블릿으로 볼 때 (펜으로 쓰기 허락하면 같이 써요)', () => (location.hash = '#/demo/tablet'));
+    card('pen', '선생님 · 태블릿', '선생님이 태블릿+펜으로 수업할 때 (손가락=이동, 펜=쓰기)', () => (location.hash = '#/demo/pen'));
+    card('split', '나란히 보기', '선생님 화면과 학생 폰을 한 화면에', () => (location.hash = '#/demo/split'));
     this.root.append(grid);
     const foot = h('div', { class: 'demo-foot' });
     const reset = h('button', { type: 'button', class: 'linkish' }, '체험 판 처음부터 다시');
