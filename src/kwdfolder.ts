@@ -324,6 +324,42 @@ export function studentKey(folder: string): string {
   return 'h' + hsh.toString(36);
 }
 
+// ---- 학생 표 (kwd-roster/v1): Student_Lessons/_roster.json — 수업 후 자동화가 만든다 ----
+// 가로 = 수업 듣는 목적(과제 플랫폼과 같은 분류), 세로 = 우리 단계(씨앗~나무). 판은 읽기만 한다.
+export const STAGE_ROWS = ['씨앗', '새싹', '잎새', '꽃', '열매', '나무'];
+export interface RosterStudent {
+  folder: string;
+  name: string;
+  country?: string; // ISO 2자 (GB, US, CN…)
+  purpose?: string; // purposes[].key
+  stage?: string; // 씨앗~나무
+  step?: string; // '새싹 2' 같은 작은 단계
+  know?: string[]; // 선생님이 꼭 알아야 할 것 1~2줄
+  active?: boolean;
+  last_lesson?: string; // YYYY-MM-DD
+  trial?: boolean;
+}
+export interface Roster {
+  schema: 'kwd-roster/v1';
+  generated_at?: string;
+  purposes: Array<{ key: string; label: string }>;
+  students: RosterStudent[];
+}
+export async function loadRoster(): Promise<Roster | null> {
+  const work = await storedWork();
+  if (!work) return null;
+  try {
+    const sl = await work.getDirectoryHandle('Student_Lessons');
+    const f = await (await sl.getFileHandle('_roster.json')).getFile();
+    const j = JSON.parse(await f.text()) as Roster;
+    if (j?.schema !== 'kwd-roster/v1' || !Array.isArray(j.students)) return null;
+    j.purposes = Array.isArray(j.purposes) ? j.purposes : [];
+    return j;
+  } catch {
+    return null;
+  }
+}
+
 // 판 id: 학생 + 날짜 (같은 날 다시 누르면 같은 판)
 export function demoRun(): number {
   try {

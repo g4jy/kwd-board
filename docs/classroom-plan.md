@@ -212,3 +212,8 @@ interface Call {
 - 유튜브는 다른 사이트라 소리만 뺄 수 없음 → _rec.json(kwd-lesson-rec/v2) `media` 에 재생 구간 {kind, name, ref(영상 id), from_s, to_s}. 판 사건 기록에도 media:play/stop.
 - 저장: 수업마다 새 폴더 `Student_Lessons/<학생>/녹화/<YYYY-MM-DD HH-mm>/` (겹치면 ' (2)'). 녹화 4줄 + _rec.json + 판 기록 .kwd.zip 을 묻지 않고. 학생 폴더 없이 연 판은 `Student_Lessons/_수업녹화/<판>/…`. KWD 폴더 연결이 없을 때만 내려받기.
 - 밤 루틴(24-A12): 녹화/<수업>/ 폴더 단위로 읽고, _Teacher·_Student 를 전사, media 구간은 '[자료/유튜브 재생]'으로 표시.
+
+## 13. v8.3 (10/19) — 학생 표
+- 시작 화면 학생 목록 → 표: 가로 = 수업 목적(과제 플랫폼 분류), 세로 = 단계(씨앗~나무). 카드 = 이름 · 나라(2자) · 꼭 알아야 할 것 1~2줄. '지금 학생'(기본) / '모두', 이름·나라 찾기.
+- 입력: `Student_Lessons/_roster.json` (kwd-roster/v1) — 수업 후 자동화가 만든다. 판은 읽기만. 없으면 예전 찾기 목록.
+- 형식: { schema, generated_at, purposes:[{key,label}] (가로 순서), students:[{folder, name, country, purpose, stage, step, know[≤2], active, last_lesson, trial}] }

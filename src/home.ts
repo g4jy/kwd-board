@@ -2,7 +2,7 @@
 // 학생을 누르면 그 학생의 오늘 판이 열리고, 브리핑·수업안·로드맵·지난 수업이 선생님 화면에만 붙는다.
 import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl } from './store';
 import { h, fmtDateTime, toast } from './ui';
-import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, type StudentEntry, type BriefLesson } from './kwdfolder';
+import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, loadRoster, STAGE_ROWS, type StudentEntry, type BriefLesson, type Roster, type RosterStudent } from './kwdfolder';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -106,7 +106,14 @@ export class HomeScreen {
     }
     main.append(sec);
 
-    // 학생 전체
+    // 학생 전체: 학생 표(_roster.json)가 있으면 목적 × 단계 표, 없으면 찾기 목록
+    const roster = await loadRoster();
+    if (!this.alive) return;
+    if (roster && roster.students.length) main.append(this.rosterGrid(roster, students));
+    else main.append(this.studentList(students));
+  }
+
+  private studentList(students: StudentEntry[]): HTMLElement {
     const all = h('section', { class: 'home-sec' });
     const search = h('input', { type: 'search', class: 'home-search', placeholder: `학생 ${students.length}명 중 찾기`, 'aria-label': '학생 찾기', lang: 'ko' }) as HTMLInputElement;
     const list = h('div', { class: 'student-list' });
@@ -120,12 +127,77 @@ export class HomeScreen {
         list.append(r);
       }
       if (!rows.length) list.append(h('p', { class: 'empty' }, '찾는 학생이 없어요.'));
-      if (!q && students.length > 12) list.append(h('p', { class: 'home-note' }, '최근 수업 순 12명 · 이름으로 찾으면 전부'));
+      if (!q && students.length > 12) list.append(h('p', { class: 'home-note' }, '최근 수업 순 12명 · 이름으로 찾으면 전부 · 학생 표(_roster.json)가 생기면 목적 × 단계 표로 보여요'));
     };
     search.addEventListener('input', draw);
     all.append(h('h2', {}, '학생'), search, list);
     draw();
-    main.append(all);
+    return all;
+  }
+
+  // 가로 = 수업 목적, 세로 = 단계(씨앗~나무). 칸마다 학생 카드: 이름 · 나라 · 꼭 알아야 할 것 1~2줄
+  private rosterGrid(roster: Roster, students: StudentEntry[]): HTMLElement {
+    const sec = h('section', { class: 'home-sec roster' });
+    const byFolder = new Map(students.map((s) => [s.folder, s]));
+    const cutoff = ymd(new Date(Date.now() - 60 * 86400000));
+    const isActive = (r: RosterStudent) => (r.active !== undefined ? r.active : !!r.last_lesson && r.last_lesson >= cutoff);
+    const activeN = roster.students.filter(isActive).length;
+    let showAll = activeN === 0;
+    const search = h('input', { type: 'search', class: 'home-search roster-search', placeholder: '이름·나라로 찾기', 'aria-label': '학생 찾기', lang: 'ko' }) as HTMLInputElement;
+    const chipNow = h('button', { type: 'button', class: 'rs-chip' }, `지금 학생 ${activeN}`);
+    const chipAll = h('button', { type: 'button', class: 'rs-chip' }, `모두 ${roster.students.length}`);
+    const head = h('div', { class: 'roster-head' }, h('h2', {}, '학생'), h('div', { class: 'rs-chips' }, chipNow, chipAll), search);
+    const grid = h('div', { class: 'roster-wrap' });
+    const purposes = [...roster.purposes];
+    const known = new Set(purposes.map((p) => p.key));
+    if (roster.students.some((r) => !r.purpose || !known.has(r.purpose))) purposes.push({ key: '', label: '목적 미정' });
+    const rows = [...STAGE_ROWS, ''];
+    const draw = () => {
+      chipNow.classList.toggle('on', !showAll);
+      chipAll.classList.toggle('on', showAll);
+      const q = search.value.trim().toLowerCase();
+      const list = roster.students.filter((r) => (q ? `${r.name} ${r.country || ''} ${r.folder}`.toLowerCase().includes(q) : showAll || isActive(r)));
+      const cell = (r: RosterStudent) => [STAGE_ROWS.includes(r.stage || '') ? r.stage! : '', r.purpose && known.has(r.purpose) ? r.purpose : ''];
+      const cols = purposes.filter((p) => list.some((r) => cell(r)[1] === p.key));
+      const rws = rows.filter((st) => list.some((r) => cell(r)[0] === st));
+      grid.innerHTML = '';
+      if (!list.length) {
+        grid.append(h('p', { class: 'empty' }, '찾는 학생이 없어요.'));
+        return;
+      }
+      const t = h('div', { class: 'roster-grid' });
+      t.style.gridTemplateColumns = `76px repeat(${cols.length}, minmax(188px, 1fr))`;
+      t.append(h('div', { class: 'rg-corner' }));
+      for (const c of cols) t.append(h('div', { class: 'rg-col' }, h('span', {}, c.label), h('b', {}, String(list.filter((r) => cell(r)[1] === c.key).length))));
+      for (const st of rws) {
+        t.append(h('div', { class: 'rg-row' }, h('span', {}, st || '단계 미정'), h('b', {}, String(list.filter((r) => cell(r)[0] === st).length))));
+        for (const c of cols) {
+          const box = h('div', { class: 'rg-cell' });
+          const here = list.filter((r) => cell(r)[0] === st && cell(r)[1] === c.key).sort((a, b) => (b.last_lesson || '').localeCompare(a.last_lesson || ''));
+          for (const r of here) box.append(this.rosterCard(r, byFolder.get(r.folder), isActive(r)));
+          t.append(box);
+        }
+      }
+      grid.append(t);
+    };
+    chipNow.addEventListener('click', () => ((showAll = false), draw()));
+    chipAll.addEventListener('click', () => ((showAll = true), draw()));
+    search.addEventListener('input', draw);
+    sec.append(head, grid);
+    draw();
+    return sec;
+  }
+
+  private rosterCard(r: RosterStudent, s: StudentEntry | undefined, active: boolean): HTMLElement {
+    const know = (r.know || []).filter(Boolean).slice(0, 2);
+    const card = h(
+      'button',
+      { type: 'button', class: 'rs-card' + (active ? '' : ' past') + (r.trial ? ' trial' : ''), title: [r.step, r.last_lesson ? `마지막 수업 ${r.last_lesson}` : ''].filter(Boolean).join(' · ') },
+      h('span', { class: 'rs-top' }, h('span', { class: 'rs-name' }, r.name), r.country ? h('span', { class: 'rs-cc' }, r.country.toUpperCase()) : '', r.trial ? h('span', { class: 'rs-tag' }, '체험') : ''),
+      ...know.map((k, i) => h('span', { class: i ? 'rs-know sub' : 'rs-know' }, k)),
+    );
+    card.addEventListener('click', () => this.openStudent(r.folder, s?.id || (/\(([^)]+)\)/.exec(r.folder) || [])[1] || ''));
+    return card;
   }
 
   private isPast(time: string, now: string): boolean {

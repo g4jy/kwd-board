@@ -893,4 +893,16 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
     }
     expect(r.toast1).toContain('녹화 + 판 기록');
   });
+  test('학생 표: 목적 × 단계, 지금/모두, 찾기, 카드 → 그 학생 판', () => {
+    const r = JSON.parse(execFileSync('node', ['scripts/roster-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/roster' } }));
+    expect(r.errs).toEqual([]);
+    expect(r.cols).toEqual(['일상·여행', '한국 생활', '일·비즈니스', 'TOPIK·시험', 'K-문화·취미', '가족·뿌리']);
+    expect(r.rows).toEqual(['씨앗', '새싹', '잎새', '꽃', '열매']); // 학생 없는 단계(나무)는 숨김
+    expect(r.cards).toBe(18); // 지금 학생만
+    expect([r.allCards, r.past]).toEqual([20, 2]);
+    expect(r.first).toContain('GB');
+    expect(r.search).toEqual(['Mina K', 'Kenji T']); // 나라로 찾기
+    expect(r.opened).toMatch(/^#\/b\/demo/);
+  });
 });
+

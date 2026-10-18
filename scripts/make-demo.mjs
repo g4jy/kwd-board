@@ -298,6 +298,43 @@ const PACKET = {
   checks: { schema_ok: true, split_sum_ok: true, display_form_ok: true, sources_missing: [], warnings: [] },
 };
 put('lesson_packets/TODAY/S01.json', JSON.stringify(PACKET));
+// 학생 표 (kwd-roster/v1): 가로 = 목적, 세로 = 단계. 전부 지어낸 학생 (Mina·Tom 만 폴더가 있다)
+const R = (name, country, purpose, stage, step, know, d, extra = {}) => ({ folder: `${name} (${9100000 + Math.abs([...name].reduce((a, c) => a * 31 + c.charCodeAt(0), 7) % 99999)})`, name, country, purpose, stage, step, know, last_lesson: `@D-${d}@`, ...extra });
+put('Student_Lessons/_roster.json', JSON.stringify({
+  schema: 'kwd-roster/v1',
+  generated_at: 'TODAYT06:00:00+09:00',
+  purposes: [
+    { key: 'daily', label: '일상·여행' },
+    { key: 'life', label: '한국 생활' },
+    { key: 'work', label: '일·비즈니스' },
+    { key: 'exam', label: 'TOPIK·시험' },
+    { key: 'culture', label: 'K-문화·취미' },
+    { key: 'heritage', label: '가족·뿌리' },
+  ],
+  students: [
+    { ...R('Mina K', 'JP', 'daily', '새싹', '새싹 2', ['맛 형용사 4개 연습 중', '말하기 전에 오래 생각함 — 기다려 주기'], 6), folder: 'Mina K (9000001)' },
+    { ...R('Tom', 'GB', 'daily', '씨앗', '씨앗 1', ['오늘 첫 체험 수업', '여행(5월 서울) 준비'], 0, { trial: true }), folder: 'Tom (pending-student-demo)' },
+    R('Ava R', 'US', 'daily', '씨앗', '씨앗 3', ['받침 읽기 아직 느림', '숙제는 주말에 몰아서'], 3),
+    R('Lucas P', 'BR', 'daily', '잎새', '잎새 1', ['과거형 -았/었어요 자주 섞임'], 9),
+    R('Hana S', 'DE', 'life', '새싹', '새싹 3', ['서울 이사 2주 전 — 집·은행 표현', '존댓말 질문 많음'], 2),
+    R('Omar F', 'EG', 'life', '잎새', '잎새 2', ['병원·약국 상황 원함', '빠른 말 알아듣기 어려워함'], 5),
+    R('Chloe M', 'FR', 'life', '꽃', '꽃 1', ['회사 동료와 회식 대화 연습'], 12),
+    R('Daniel W', 'AU', 'work', '잎새', '잎새 3', ['이메일 격식체 -습니다 연습', '화요일 저녁만 가능'], 4),
+    R('Priya N', 'IN', 'work', '꽃', '꽃 2', ['발표 대본 다듬기 중', '높임말 과하게 씀'], 1),
+    R('Kenji T', 'JP', 'work', '열매', '열매 1', ['한자어 강함, 고유어 약함'], 20),
+    R('Sofia L', 'IT', 'exam', '꽃', '꽃 3', ['TOPIK II 4급 목표 (12월)', '쓰기 53번 연습'], 3),
+    R('Wei C', 'CN', 'exam', '열매', '열매 2', ['TOPIK 5급 목표', '듣기 속도 OK, 어휘 다듬기'], 7),
+    R('Noah B', 'CA', 'exam', '잎새', '잎새 2', ['TOPIK I 2급 → II 도전', '시험 불안 — 짧은 모의고사'], 30),
+    R('Isabel G', 'ES', 'culture', '새싹', '새싹 1', ['드라마 대사로 배우기 좋아함'], 2),
+    R('Mai L', 'VN', 'culture', '잎새', '잎새 1', ['K-팝 가사 해석 원함', '반말·존댓말 구분 연습'], 8),
+    R('Erik J', 'SE', 'culture', '씨앗', '씨앗 2', ['웹툰 읽기 목표', '숙제 매일 함'], 1),
+    R('Grace K', 'US', 'heritage', '꽃', '꽃 1', ['한국계 — 듣기 강함, 쓰기 약함', '할머니와 통화하고 싶어 함'], 4),
+    R('Jun P', 'NZ', 'heritage', '잎새', '잎새 3', ['반말에 익숙 — 존댓말 바꾸기', '가족 행사(추석) 이야기'], 11),
+    R('Leah D', 'GB', 'daily', '새싹', '새싹 1', ['소그룹 수업 같이 들음'], 95, { active: false }),
+    R('Marco V', 'IT', 'work', '잎새', '잎새 2', ['3월에 쉬기 시작'], 140, { active: false }),
+  ],
+}));
+
 put('lesson_packets/TODAY/_index.json', JSON.stringify({ date: 'TODAY', packets: [{ student_no: 'S01', folder: 'Mina K (9000001)', file: 'S01.json', split: '대화 5 · 과제 피드백 10 · 본 수업 30 · 마무리 5' }] }));
 await b.close();
 

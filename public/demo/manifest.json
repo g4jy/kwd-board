@@ -1,5 +1,5 @@
 {
- "made": "2026-10-18T10:42:32.542Z",
+ "made": "2026-10-18T21:50:41.939Z",
  "files": [
   {
    "p": "Student_Lessons/Mina K (9000001)/수업준비/#12_슬라이드.pdf",
@@ -102,8 +102,12 @@
    "f": "f24.json"
   },
   {
-   "p": "lesson_packets/TODAY/_index.json",
+   "p": "Student_Lessons/_roster.json",
    "f": "f25.json"
+  },
+  {
+   "p": "lesson_packets/TODAY/_index.json",
+   "f": "f26.json"
   }
  ]
 }
