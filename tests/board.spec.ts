@@ -829,3 +829,34 @@ test.describe('v7.1: 수업안 노트 없음 · 학생 정보 탭 · 단어 단�
     expect(r.v.lapsingSaessak).toBeGreaterThan(0);
   });
 });
+
+test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
+  test.describe.configure({ timeout: 240_000 });
+  test('선생님 카메라 → 학생 입장 → 서로 영상·소리 → 얼굴 크게(학생도) → 수업 시작(판만 녹화) → 끝내기 → 파일 4개 + 기록', () => {
+    const out = execFileSync('node', ['scripts/v8-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/v8t' } });
+    const r = JSON.parse(out.slice(out.indexOf('{\n')));
+    expect(r.errs).toEqual([]);
+    expect([r.joinBefore, r.dockBefore]).toEqual([0, 'off']); // 선생님이 카메라를 켜기 전에는 학생에게 아무것도 없다
+    expect(r.joinText).toContain('녹화');
+    expect(r.connected).toBe(true);
+    expect(r.statusT).toContain('연결');
+    expect(r.audioTracks).toBe(1);
+    expect(r.peerMicOff).toBe(true);
+    expect(r.bigBoth).toBe(2);
+    expect(r.recLabel).toContain('녹화');
+    expect(r.crop).toBe('element'); // 판만 (카메라 칸·패널 빠짐)
+    expect(r.confirm).toContain('한 번 더');
+    const names = r.files.map((f: { name: string }) => f.name);
+    expect(names.filter((n: string) => /\.webm$/.test(n))).toHaveLength(3);
+    expect(names.some((n: string) => /_Teacher\.webm$/.test(n))).toBe(true);
+    expect(names.some((n: string) => /_Student\.webm$/.test(n))).toBe(true);
+    expect(names.some((n: string) => /\.kwd\.zip$/.test(n))).toBe(true);
+    for (const f of r.files) expect(f.bytes).toBeGreaterThan(400);
+    expect(r.meta.faces).toEqual({ student: false, teacher: false });
+    expect(r.meta.crop).toBe('element');
+    expect(r.events).toContain('lesson:start');
+    expect(r.events).toContain('lesson:end');
+    expect(r.events).toContain('call:connected');
+    expect(r.afterLeave).toBe('wait');
+  });
+});

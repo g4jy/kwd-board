@@ -136,6 +136,7 @@ export async function buildBundle(input: RecordInput): Promise<{ name: string; b
     materials: Array.from(store.materials.values()).map((m) => ({ id: m.id, name: m.name, type: m.type, pages: m.pages })),
     counts: { events: store.events.length, ink: pages.reduce((a, p) => a + store.ink(p.id).length, 0) },
     packet_id: input.packetId || null,
+    recording: store.meta.get('recording') || null,
     exportedAt: new Date().toISOString(),
   };
   const md = boardMarkdown(input);

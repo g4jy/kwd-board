@@ -625,6 +625,24 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
 }
 
 // 학생 폴더에 파일 쓰기 (수업 필기 넣은 학습지 등). 쓰기 허락을 한 번 더 묻는다. 체험·파일 목록 폴더는 못 쓴다 → false
+// 학생 폴더 안 파일에 이어 쓰기 (수업 녹화). 체험·파일 목록 폴더는 null
+export async function openStudentWriter(folder: string, sub: string, name: string): Promise<FileSystemWritableFileStream | null> {
+  const work = await storedWork();
+  if (!work || (work as unknown as VDir) instanceof VDir || !folder) return null;
+  try {
+    const p = (await work.requestPermission?.({ mode: 'readwrite' })) || 'granted';
+    if (p !== 'granted') return null;
+    const sl = await work.getDirectoryHandle('Student_Lessons');
+    const sd = await sl.getDirectoryHandle(folder);
+    const dir = await sd.getDirectoryHandle(sub, { create: true });
+    const fh = await dir.getFileHandle(name, { create: true });
+    return await (fh as FileSystemFileHandle & { createWritable(): Promise<FileSystemWritableFileStream> }).createWritable();
+  } catch (e) {
+    console.warn('writer', e);
+    return null;
+  }
+}
+
 export async function saveToStudentFolder(folder: string, sub: string, name: string, text: string): Promise<string | null> {
   const work = await storedWork();
   if (!work || (work as unknown as VDir) instanceof VDir) return null;

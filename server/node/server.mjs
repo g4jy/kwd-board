@@ -174,6 +174,12 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url || '/', 'http://x');
   if (req.method === 'OPTIONS') return reply(res, 204, '');
   if (url.pathname === '/time') return reply(res, 200, { t: Date.now() });
+  // 교실 통화: 로컬 서버는 STUN 만 (TURN_URLS·TURN_USER·TURN_PASS 를 주면 그것도)
+  if (url.pathname === '/turn') {
+    const ice = [{ urls: ['stun:stun.cloudflare.com:3478'] }];
+    if (process.env.TURN_URLS) ice.push({ urls: process.env.TURN_URLS.split(','), username: process.env.TURN_USER || '', credential: process.env.TURN_PASS || '' });
+    return reply(res, 200, { iceServers: ice, turn: !!process.env.TURN_URLS });
+  }
   let m = /^\/rooms\/([\w-]+)\/export$/.exec(url.pathname);
   if (m) {
     if (!authed(req)) return reply(res, 401, { error: 'teacher token required' });

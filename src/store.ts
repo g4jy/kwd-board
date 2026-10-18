@@ -97,6 +97,8 @@ export interface BoardEvent {
     | 'presence'
     | 'segment'
     | 'segment_edit'
+    | 'call'
+    | 'lesson'
     | 'object';
   page?: string;
   block?: string;

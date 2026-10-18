@@ -13,8 +13,9 @@ import { buildBundle, bundleName, boardMarkdown, canPickFolder, pickFolder, fold
 import { importPdf, importHtml, htmlWithBridge, joinText } from './importer';
 import { loadPrefs, savePrefs, penSlot, renderSlot, buildPenPopover, type PenPrefs } from './palette';
 import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY, type StudentMemory } from './memory';
-import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, type StudentPack, type PackFile } from './kwdfolder';
+import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, openStudentWriter, type StudentPack, type PackFile } from './kwdfolder';
 import { annotatedWorksheet } from './wsexport';
+import { Classroom } from './classroom';
 import { renderStudentPanel, type SplitSeg, type PanelTab } from './studentpanel';
 import { hwConfig, setHwConfig, hwMedia, historyFromApp } from './homework';
 import { h, download, downloadBlob, fmtDate, fmtClock, toast, EMBEDDED } from './ui';
@@ -78,6 +79,7 @@ export class BoardScreen {
   private popover: HTMLElement | null = null;
   private panel: HTMLElement | null = null;
   private memPanel: HTMLElement | null = null;
+  private classroom: Classroom | null = null;
   private memBtn!: HTMLElement;
   private singleNav!: HTMLElement;
   private saveDot!: HTMLElement;
@@ -179,7 +181,27 @@ export class BoardScreen {
     });
     const lookBtn = h('button', { type: 'button', class: 'look-btn', title: '학생 화면을 지금 내 화면(또는 고른 것)으로' }, '여기 보세요');
     lookBtn.addEventListener('click', () => this.lookHere());
-    const topRight = h('div', { class: 'top-right' }, this.timerEl, ...(this.role === 'teacher' ? [lookBtn] : []), this.memBtn);
+    // 교실 (v8): 카메라 칸 · 학생 입장 · 수업 시작/끝내기(녹화)
+    if (this.role !== 'assist') {
+      this.classroom = new Classroom({
+        root: this.root,
+        stage: this.stage,
+        store: this.store,
+        role: this.role,
+        demo: isDemo(),
+        serverUrl: () => this.store.serverUrl || '',
+        openWriter: (name) => openStudentWriter(this.packFolder, '녹화', name),
+        stem: () => {
+          const d = new Date(this.store.now());
+          const p2 = (n: number) => String(n).padStart(2, '0');
+          const n = this.pack?.brief?.next_lesson || (this.pack?.lessons[0] ? this.pack.lessons[0].n + 1 : 0);
+          return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}-${p2(d.getMinutes())}${n ? `_#${n}` : ''}`;
+        },
+        saveBundle: () => this.saveBundleNow(),
+        meta: () => ({ student_folder: this.packFolder ? 'PC_ONLY' : null, lesson_no: this.pack?.brief?.next_lesson || null, packet_id: this.pack?.packet?.packet_id || null }),
+      });
+    }
+    const topRight = h('div', { class: 'top-right' }, this.timerEl, ...(this.role === 'teacher' && this.classroom?.lessonBtn ? [this.classroom.lessonBtn] : []), ...(this.role === 'teacher' ? [lookBtn] : []), this.memBtn);
     this.followBtn = h('button', { type: 'button', class: 'follow-btn', hidden: '' }, '선생님 화면으로');
     this.followBtn.addEventListener('click', () => {
       this.following = true;
@@ -563,7 +585,10 @@ export class BoardScreen {
   // 세상 좌표 네모가 화면에 꽉 차게 (여백 pad)
   fitRect(x0: number, y0: number, x1: number, y1: number, pad = 40, maxS = 2) {
     const [W, H] = this.vp.size();
-    const side = this.panelSide() || (this.rail && !this.rail.hidden && W > 700 ? 56 : 0);
+    let side = this.panelSide() || (this.rail && !this.rail.hidden && W > 700 ? 56 : 0);
+    // 카메라 칸이 켜져 있으면 그 오른쪽 자리를 비켜 준다 (넓은 화면)
+    const dock = this.classroom?.dock;
+    if (dock && W > 900 && dock.dataset.state !== 'off' && !dock.classList.contains('big') && getComputedStyle(dock).display !== 'none') side = Math.max(side, window.innerWidth - dock.getBoundingClientRect().left + 8);
     const top = 64, bottom = this.role === 'student' && this.toolbar.hidden ? 24 : 96;
     const aw = Math.max(80, W - side - pad * 2), ah = Math.max(80, H - top - bottom - pad);
     const s = Math.min(maxS, Math.max(this.vp.min, Math.min(aw / Math.max(1, x1 - x0), ah / Math.max(1, y1 - y0))));
@@ -2845,6 +2870,7 @@ export class BoardScreen {
   }
 
   destroy() {
+    this.classroom?.destroy();
     window.clearInterval(this.clockTimer);
     window.clearInterval(this.autosaveTimer);
     this.disposers.forEach((d) => d());

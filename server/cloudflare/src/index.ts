@@ -6,6 +6,7 @@
 //   GET /rooms/<room>/export             판 내보내기 (선생님 열쇠)
 //   PUT·GET /rooms/<room>/blobs/<key>    자료 그림 (판 id = 권한)
 //   PUT·GET /students/<번호>/<memory|next>.json  학생 메모리 (선생님 열쇠)
+//   GET /turn?room=<room>                교실 통화 중계(TURN) 임시 열쇠 — Cloudflare Realtime TURN, 비밀은 워커에만
 import * as Y from 'yjs';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
@@ -16,6 +17,8 @@ import { DurableObject } from 'cloudflare:workers';
 export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
   TEACHER_TOKEN?: string;
+  TURN_KEY_ID?: string; // Cloudflare 대시보드 → Realtime → TURN 키 (wrangler secret put)
+  TURN_KEY_API_TOKEN?: string;
 }
 
 const MSG_SYNC = 0;
@@ -31,6 +34,22 @@ export default {
     const url = new URL(req.url);
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     if (url.pathname === '/time') return json({ t: Date.now() });
+    if (url.pathname === '/turn') {
+      // 판 id(방)를 아는 기기만 쓸 수 있게 방 이름 꼴만 확인. 열쇠는 1시간짜리
+      const room = url.searchParams.get('room') || '';
+      if (!/^[\w-]{4,64}$/.test(room)) return json({ error: 'room required' }, 400);
+      if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) return json({ iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }], turn: false });
+      const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ ttl: 4 * 3600 }), // 수업 하나보다 넉넉히
+      });
+      if (!r.ok) return json({ iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }], turn: false, status: r.status });
+      const j = (await r.json()) as { iceServers?: Array<{ urls: string | string[]; username?: string; credential?: string }> };
+      // 후보를 한 번에 모아 보내므로(trickle 없음) 53번 포트 주소는 빼서 기다림을 줄인다
+      const ice = (j.iceServers || []).map((s) => ({ ...s, urls: (Array.isArray(s.urls) ? s.urls : [s.urls]).filter((u) => !/:53(\?|$)/.test(u)) }));
+      return json({ iceServers: ice, turn: true });
+    }
     const authed = !!env.TEACHER_TOKEN && req.headers.get('authorization') === 'Bearer ' + env.TEACHER_TOKEN;
     let m = /^\/rooms\/([\w-]{4,64})\/(export|blobs\/[\w.-]{1,80})$/.exec(url.pathname);
     if (m) {
