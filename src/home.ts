@@ -2,7 +2,7 @@
 // 학생을 누르면 그 학생의 오늘 판이 열리고, 브리핑·수업안·로드맵·지난 수업이 선생님 화면에만 붙는다.
 import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl } from './store';
 import { h, fmtDateTime, toast } from './ui';
-import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, loadRoster, saveRosterEdit, STAGE_ROWS, type StudentEntry, type BriefLesson, type Roster, type RosterStudent } from './kwdfolder';
+import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, loadRoster, saveRosterEdit, loadRosterTeacher, STAGE_ROWS, type StudentEntry, type BriefLesson, type Roster, type RosterStudent } from './kwdfolder';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -90,6 +90,7 @@ export class HomeScreen {
     const [brief, students] = await Promise.all([briefFor(today).catch(() => null), listStudents().catch(() => [] as StudentEntry[])]);
     if (!this.alive) return;
     const byFolder = new Map(students.map((s) => [s.folder, s]));
+    const edits = await loadRosterTeacher();
     // 오늘 수업
     const sec = h('section', { class: 'home-sec' });
     const lessons = brief?.lessons || [];
@@ -102,7 +103,7 @@ export class HomeScreen {
       const done = this.isPast(l.time, now);
       const isNext = !done && !nextMarked;
       if (isNext) nextMarked = true;
-      sec.append(this.lessonRow(l, s, done, isNext));
+      sec.append(this.lessonRow(l, s, done, isNext, edits[l.folder]?.trial));
     }
     main.append(sec);
 
@@ -191,7 +192,7 @@ export class HomeScreen {
           });
           const here = list.filter((r) => cell(r)[0] === st && cell(r)[1] === c.key).sort((a, b) => (b.last_lesson || '').localeCompare(a.last_lesson || ''));
           for (const r of here) {
-            const cd = this.rosterCard(r, byFolder.get(r.folder), isActive(r), (stage, purpose) => void move(r, stage, purpose), purposes, rows);
+            const cd = this.rosterCard(r, byFolder.get(r.folder), isActive(r), (stage, purpose, trial) => void move(r, stage, purpose, trial), purposes, rows);
             cd.draggable = true;
             cd.addEventListener('dragstart', (e) => {
               dragFolder = r.folder;
@@ -215,15 +216,16 @@ export class HomeScreen {
       grid.append(t);
     };
     // 단계·목적 고치기: 카드를 다른 칸에 끌어 놓거나 카드의 ⋯ → 저장은 Student_Lessons/_roster_teacher.json (자동화보다 우선)
-    const move = async (r: RosterStudent, stage: string, purpose: string) => {
-      const edit: { stage?: string; purpose?: string } = {};
+    const move = async (r: RosterStudent, stage: string, purpose: string, trial?: boolean) => {
+      const edit: { stage?: string; purpose?: string; trial?: boolean } = {};
       if ((r.stage || '') !== stage) edit.stage = stage;
       if ((r.purpose || '') !== purpose) edit.purpose = purpose;
+      if (trial !== undefined && !!r.trial !== trial) edit.trial = trial;
       if (!Object.keys(edit).length) return draw();
       Object.assign(r, edit);
       draw();
       const ok = await saveRosterEdit(r.folder, edit);
-      toast(ok ? `${r.name}: ${stage || '단계 미정'} · ${purposes.find((p) => p.key === purpose)?.label || '목적 미정'}` : '저장하지 못했어요 (폴더 쓰기 허용 필요)');
+      toast(ok ? `${r.name}: ${stage || '단계 미정'} · ${purposes.find((p) => p.key === purpose)?.label || '목적 미정'}${r.trial ? ' · 체험' : ''}` : '저장하지 못했어요 (폴더 쓰기 허용 필요)');
     };
     chipNow.addEventListener('click', () => ((showAll = false), draw()));
     chipAll.addEventListener('click', () => ((showAll = true), draw()));
@@ -233,7 +235,7 @@ export class HomeScreen {
     return sec;
   }
 
-  private rosterCard(r: RosterStudent, s: StudentEntry | undefined, active: boolean, onMove: (stage: string, purpose: string) => void, purposes: Array<{ key: string; label: string }>, stages: string[]): HTMLElement {
+  private rosterCard(r: RosterStudent, s: StudentEntry | undefined, active: boolean, onMove: (stage: string, purpose: string, trial: boolean) => void, purposes: Array<{ key: string; label: string }>, stages: string[]): HTMLElement {
     const know = (r.know || []).filter(Boolean).slice(0, 2);
     const more = h('span', { class: 'rs-more', role: 'button', tabindex: '0', title: '단계·목적 바꾸기' }, '⋯');
     const card = h(
@@ -268,11 +270,13 @@ export class HomeScreen {
         }
         return line;
       };
+      let trial = !!r.trial;
       const done = h('button', { type: 'button', class: 'rs-opt save' }, '저장');
-      done.addEventListener('click', () => onMove(stage, purpose));
+      done.addEventListener('click', () => onMove(stage, purpose, trial));
       box.append(
         row('단계', [...STAGE_ROWS.map((x) => [x, x] as [string, string]), ['', '미정']], () => stage, (v) => (stage = v)),
         row('목적', [...purposes.filter((p) => p.key).map((p) => [p.key, p.label] as [string, string]), ['', '미정']], () => purpose, (v) => (purpose = v)),
+        row('체험', [['n', '아니요'], ['y', '체험 학생']], () => (trial ? 'y' : 'n'), (v) => (trial = v === 'y')),
         done,
       );
       card.append(box);
@@ -293,8 +297,8 @@ export class HomeScreen {
     return nh * 60 + nm > end;
   }
 
-  private lessonRow(l: BriefLesson, s: StudentEntry | undefined, done: boolean, isNext: boolean): HTMLElement {
-    const trial = s?.trial || (!l.last_lesson && /pending/.test(l.folder));
+  private lessonRow(l: BriefLesson, s: StudentEntry | undefined, done: boolean, isNext: boolean, trialEdit?: boolean): HTMLElement {
+    const trial = trialEdit ?? (s?.trial || (!l.last_lesson && /pending/.test(l.folder)));
     const meta = [l.next_lesson ? `오늘 #${l.next_lesson}` : '', l.level_hint ? l.level_hint.replace(/\s*\(.*\)/, '') : '', trial ? '체험' : ''].filter(Boolean).join(' · ');
     const goal = (l.prep?.summary || [])[0]?.replace(/^오늘 목표:\s*/, '').replace(/`|\*\*/g, '') || l.next_focus || '';
     const r = h('button', { type: 'button', class: 'lesson-row' + (done ? ' done' : '') + (isNext ? ' next' : '') }, h('span', { class: 'lr-time' }, l.time), h('span', { class: 'lr-body' }, h('span', { class: 'lr-name' }, l.name), h('span', { class: 'lr-meta' }, meta), goal ? h('span', { class: 'lr-goal' }, goal) : ''), h('span', { class: 'lr-go' }, isNext ? '시작' : '열기'));

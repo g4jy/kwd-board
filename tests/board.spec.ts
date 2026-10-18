@@ -905,6 +905,8 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
     expect(r.unsetAfter).not.toContain('단계 미정');
     expect(r.colsAfter).not.toContain('목적 미정');
     expect(r.inesReload).toBe('새싹'); // 다시 읽어도 선생님 수정이 이긴다
+    expect([r.tomTag, r.tomTagReload]).toEqual([0, 0]); // 체험 아님으로 고치기
+    expect(r.tomLesson).not.toMatch(/· 체험/); // 오늘 수업 줄의 체험 꼬리표도 사라짐
     expect(r.first).toContain('GB');
     expect(r.search).toEqual(['Mina K', 'Kenji T']); // 나라로 찾기
     expect(r.opened).toMatch(/^#\/b\/demo/);

@@ -49,6 +49,18 @@ await p.evaluate(() => window.__kwdFolder.rerender());
 await p.waitForSelector('.roster-grid');
 res.inesReload = await p.locator('.rs-card:has-text("Ines O")').evaluate((c) => c.closest('.rg-cell').dataset.stage);
 await p.screenshot({ path: `${OUT}/3-edited.png`, fullPage: true });
+// 체험 표시 끄기 (체험이 아닌 학생)
+const tom = p.locator('.rs-card:has-text("Tom")').first();
+await tom.hover();
+await tom.locator('.rs-more').click();
+await tom.locator('.rs-opt:has-text("아니요")').click();
+await tom.locator('.rs-opt.save').click();
+await p.waitForTimeout(300);
+res.tomTag = await p.locator('.rs-card:has-text("Tom") .rs-tag').count();
+await p.evaluate(() => window.__kwdFolder.rerender());
+await p.waitForSelector('.roster-grid');
+res.tomTagReload = await p.locator('.rs-card:has-text("Tom") .rs-tag').count();
+res.tomLesson = await p.locator('.lesson-row:has-text("Tom")').innerText();
 await p.click('.rs-card:has-text("Mina K")');
 await p.waitForFunction(() => location.hash.startsWith('#/b/'));
 res.opened = await p.evaluate(() => location.hash);

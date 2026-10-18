@@ -360,6 +360,7 @@ export async function loadRoster(): Promise<Roster | null> {
       const o = ov[st.folder];
       if (o?.stage !== undefined) st.stage = o.stage;
       if (o?.purpose !== undefined) st.purpose = o.purpose;
+      if (o?.trial !== undefined) st.trial = o.trial;
     }
     return j;
   } catch {
@@ -369,8 +370,8 @@ export async function loadRoster(): Promise<Roster | null> {
 
 // 선생님 수정: Student_Lessons/_roster_teacher.json — 자동화는 이 파일을 읽어 존중하고, 고쳐 쓰지 않는다
 const TEACHER_FILE = '_roster_teacher.json';
-type RosterEdit = { stage?: string; purpose?: string; at?: string };
-async function loadRosterTeacher(): Promise<Record<string, RosterEdit>> {
+export type RosterEdit = { stage?: string; purpose?: string; trial?: boolean; at?: string };
+export async function loadRosterTeacher(): Promise<Record<string, RosterEdit>> {
   try {
     const work = await storedWork();
     const sl = await work!.getDirectoryHandle('Student_Lessons');
@@ -386,7 +387,7 @@ export async function saveRosterEdit(folder: string, edit: RosterEdit): Promise<
   if (!work) return false;
   const all = await loadRosterTeacher();
   all[folder] = { ...all[folder], ...edit, at: new Date().toISOString() };
-  const text = JSON.stringify({ schema: 'kwd-roster-teacher/v1', note: '선생님이 판에서 직접 정한 단계·목적. 자동화보다 우선.', students: all }, null, 1);
+  const text = JSON.stringify({ schema: 'kwd-roster-teacher/v1', note: '선생님이 판에서 직접 정한 단계·목적·체험 여부. 자동화보다 우선.', students: all }, null, 1);
   try {
     if ((work as unknown as VDir) instanceof VDir) {
       const sl = (work as unknown as VDir).dirs.get('Student_Lessons');
