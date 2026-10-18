@@ -332,7 +332,8 @@ export interface RosterStudent {
   name: string;
   country?: string; // ISO 2자 (GB, US, CN…)
   purpose?: string; // purposes[].key
-  stage?: string; // 씨앗~나무
+  stage?: string; // 씨앗~나무 (단계 이름)
+  level?: string; // levels[].key (예: L4) — stage 가 없으면 이것으로
   step?: string; // '새싹 2' 같은 작은 단계
   know?: string[]; // 선생님이 꼭 알아야 할 것 1~2줄
   active?: boolean;
@@ -346,6 +347,7 @@ export interface Roster {
   schema: 'kwd-roster/v1';
   generated_at?: string;
   purposes: Array<{ key: string; label: string }>;
+  levels?: Array<{ key: string; label: string }>; // 세로축 (과제 플랫폼과 같게, 예: L0 씨앗 … L6 나무). 없으면 STAGE_ROWS
   students: RosterStudent[];
 }
 export async function loadRoster(): Promise<Roster | null> {
@@ -357,6 +359,10 @@ export async function loadRoster(): Promise<Roster | null> {
     const j = JSON.parse(await f.text()) as Roster;
     if (j?.schema !== 'kwd-roster/v1' || !Array.isArray(j.students)) return null;
     j.purposes = Array.isArray(j.purposes) ? j.purposes : [];
+    // 세로축: levels 가 있으면 그 이름들, level 키(L4)는 이름(꽃)으로
+    const lv = Array.isArray(j.levels) ? j.levels.filter((l) => l && l.label) : [];
+    j.levels = lv.length ? lv : STAGE_ROWS.map((x) => ({ key: x, label: x }));
+    for (const st of j.students) if (!st.stage && st.level) st.stage = j.levels.find((l) => l.key === st.level || l.label === st.level)?.label || '';
     // 선생님이 판에서 직접 고친 단계·목적이 자동화 값보다 우선
     const ov = await loadRosterTeacher();
     for (const st of j.students) {

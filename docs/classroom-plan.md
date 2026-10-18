@@ -219,3 +219,4 @@ interface Call {
 - 형식: { schema, generated_at, purposes:[{key,label}] (가로 순서), students:[{folder, name, country, purpose, stage, step, know[≤2], active, last_lesson, trial}] }
 - 단계·목적 고치기: 카드를 다른 칸으로 끌어 놓기 또는 카드 ⋯ → 단계·목적 → 저장. `Student_Lessons/_roster_teacher.json` (kwd-roster-teacher/v1, {students:{folder:{stage,purpose,at}}}) 에 저장, 자동화 값보다 우선. 자동화는 읽기만.
 - 상태 (10/19): 수업 중 / 쉬는 중(60일 수업 없음, 자동) / 보관(선생님이 ⋯ → 상태 → 보관 + 이유). 필터: 수업 중 · 쉬는 학생까지 · 보관함. 보관 카드 = 단계 · 수업 횟수 · 마지막 수업 · 이유. `_roster_teacher.json` 에 status·reason.
+- 세로축 (10/19): _roster.json 에 levels:[{key,label}] (과제 플랫폼과 같은 L0~L6) 와 학생 level 키를 넣으면 그대로 줄이 된다. 없으면 씨앗~나무 6줄. 줄은 비어도 늘 보인다.

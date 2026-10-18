@@ -913,6 +913,7 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
     expect(r.archCards[0]).toContain('이사로 잠시 중단');
     expect(r.archReload).toBe('보관함 1');
     expect(r.first).toContain('GB');
+    expect(r.kenji).toBe('열매'); // level 키(L5) → 단계 이름
     expect(r.search).toEqual(['Mina K', 'Kenji T']); // 나라로 찾기
     expect(r.opened).toMatch(/^#\/b\/demo/);
   });

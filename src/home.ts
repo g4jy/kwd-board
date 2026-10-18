@@ -2,7 +2,7 @@
 // 학생을 누르면 그 학생의 오늘 판이 열리고, 브리핑·수업안·로드맵·지난 수업이 선생님 화면에만 붙는다.
 import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl } from './store';
 import { h, fmtDateTime, toast } from './ui';
-import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, loadRoster, saveRosterEdit, loadRosterTeacher, STAGE_ROWS, type StudentEntry, type BriefLesson, type Roster, type RosterStudent, type RosterEdit, type RosterStatus } from './kwdfolder';
+import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, loadRoster, saveRosterEdit, loadRosterTeacher, type StudentEntry, type BriefLesson, type Roster, type RosterStudent, type RosterEdit, type RosterStatus } from './kwdfolder';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -159,7 +159,8 @@ export class HomeScreen {
     const purposes = [...roster.purposes];
     const known = new Set(purposes.map((p) => p.key));
     if (roster.students.some((r) => !r.purpose || !known.has(r.purpose))) purposes.push({ key: '', label: '목적 미정' });
-    const rows = [...STAGE_ROWS, ''];
+    const stageNames = (roster.levels || []).map((l) => l.label);
+    const rows = [...stageNames, ''];
     const draw = () => {
       const n = (st: RosterStatus) => roster.students.filter((r) => statusOf(r) === st).length;
       chips.now.textContent = `수업 중 ${n('active')}`;
@@ -170,7 +171,7 @@ export class HomeScreen {
       const q = search.value.trim().toLowerCase();
       const inView = (r: RosterStudent) => (view === 'arch' ? statusOf(r) === 'archived' : view === 'all' ? statusOf(r) !== 'archived' : isActive(r));
       const list = roster.students.filter((r) => (q ? `${r.name} ${r.country || ''} ${r.folder}`.toLowerCase().includes(q) : inView(r)));
-      const cell = (r: RosterStudent) => [STAGE_ROWS.includes(r.stage || '') ? r.stage! : '', r.purpose && known.has(r.purpose) ? r.purpose : ''];
+      const cell = (r: RosterStudent) => [stageNames.includes(r.stage || '') ? r.stage! : '', r.purpose && known.has(r.purpose) ? r.purpose : ''];
       // 끄는 중에는 빈 줄·칸도 다 보여서 어디로든 옮길 수 있게
       const cols = dragging ? purposes : purposes.filter((p) => list.some((r) => cell(r)[1] === p.key));
       // 단계 6줄(씨앗~나무)은 늘 보인다 — 비어 있어도 거기로 옮길 수 있게. '단계 미정'만 있을 때 보인다
@@ -296,7 +297,7 @@ export class HomeScreen {
       const done = h('button', { type: 'button', class: 'rs-opt save' }, '저장');
       done.addEventListener('click', () => onSave({ stage, purpose, trial, status: st, reason: st === 'archived' ? reason.value.trim() : r.reason || '' }));
       box.append(
-        row('단계', [...STAGE_ROWS.map((x) => [x, x] as [string, string]), ['', '미정']], () => stage, (v) => (stage = v)),
+        row('단계', [...stages.filter(Boolean).map((x) => [x, x] as [string, string]), ['', '미정']], () => stage, (v) => (stage = v)),
         row('목적', [...purposes.filter((p) => p.key).map((p) => [p.key, p.label] as [string, string]), ['', '미정']], () => purpose, (v) => (purpose = v)),
         row('체험', [['n', '아니요'], ['y', '체험 학생']], () => (trial ? 'y' : 'n'), (v) => (trial = v === 'y')),
         row('상태', [['active', '수업 중'], ['paused', '쉬는 중'], ['archived', '보관']], () => st, (v) => {

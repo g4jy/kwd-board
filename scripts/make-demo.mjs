@@ -311,6 +311,7 @@ put('Student_Lessons/_roster.json', JSON.stringify({
     { key: 'culture', label: 'K-문화·취미' },
     { key: 'heritage', label: '가족·뿌리' },
   ],
+  levels: ['씨앗', '새싹', '잎새', '꽃', '열매', '나무'].map((label, i) => ({ key: `L${i + 1}`, label })),
   students: [
     { ...R('Mina K', 'JP', 'daily', '새싹', '새싹 2', ['맛 형용사 4개 연습 중', '말하기 전에 오래 생각함 — 기다려 주기'], 6), folder: 'Mina K (9000001)' },
     { ...R('Tom', 'GB', 'daily', '씨앗', '씨앗 1', ['오늘 첫 체험 수업', '여행(5월 서울) 준비'], 0, { trial: true }), folder: 'Tom (pending-student-demo)' },
@@ -321,7 +322,7 @@ put('Student_Lessons/_roster.json', JSON.stringify({
     R('Chloe M', 'FR', 'life', '꽃', '꽃 1', ['회사 동료와 회식 대화 연습'], 12),
     R('Daniel W', 'AU', 'work', '잎새', '잎새 3', ['이메일 격식체 -습니다 연습', '화요일 저녁만 가능'], 4),
     R('Priya N', 'IN', 'work', '꽃', '꽃 2', ['발표 대본 다듬기 중', '높임말 과하게 씀'], 1),
-    R('Kenji T', 'JP', 'work', '열매', '열매 1', ['한자어 강함, 고유어 약함'], 20),
+    { ...R('Kenji T', 'JP', 'work', '', '열매 1', ['한자어 강함, 고유어 약함'], 20), level: 'L5' }, // level 키만 → 열매
     R('Sofia L', 'IT', 'exam', '꽃', '꽃 3', ['TOPIK II 4급 목표 (12월)', '쓰기 53번 연습'], 3),
     R('Wei C', 'CN', 'exam', '열매', '열매 2', ['TOPIK 5급 목표', '듣기 속도 OK, 어휘 다듬기'], 7),
     R('Noah B', 'CA', 'exam', '잎새', '잎새 2', ['TOPIK I 2급 → II 도전', '시험 불안 — 짧은 모의고사'], 30),
