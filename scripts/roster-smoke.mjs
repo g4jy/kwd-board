@@ -28,6 +28,27 @@ await p.click('.rs-chip:nth-child(1)');
 await p.fill('.roster-search', 'jp');
 res.search = await p.locator('.rs-card .rs-name').allInnerTexts();
 await p.fill('.roster-search', '');
+// 단계 미정 → ⋯ 로 '새싹' 저장
+res.unsetBefore = await p.locator('.rg-row span').allInnerTexts();
+const ines = p.locator('.rs-card:has-text("Ines O")');
+await ines.hover();
+await ines.locator('.rs-more').click();
+await ines.locator('.rs-pick-row:first-child .rs-opt:has-text("새싹")').click();
+await ines.locator('.rs-opt.save').click();
+await p.waitForTimeout(300);
+res.inesCell = await p.locator('.rs-card:has-text("Ines O")').evaluate((c) => [c.closest('.rg-cell').dataset.stage, c.closest('.rg-cell').dataset.purpose]);
+// 목적 미정 → 끌어서 '일·비즈니스 × 잎새' 칸으로
+const src = p.locator('.rs-card:has-text("Ravi S")');
+await src.dragTo(p.locator('.rg-cell[data-stage="잎새"][data-purpose="work"]'));
+await p.waitForTimeout(300);
+res.raviCell = await p.locator('.rs-card:has-text("Ravi S")').evaluate((c) => [c.closest('.rg-cell').dataset.stage, c.closest('.rg-cell').dataset.purpose]);
+res.unsetAfter = await p.locator('.rg-row span').allInnerTexts();
+res.colsAfter = await p.locator('.rg-col span').allInnerTexts();
+// 다시 그려도(파일에서 다시 읽어도) 그대로
+await p.evaluate(() => window.__kwdFolder.rerender());
+await p.waitForSelector('.roster-grid');
+res.inesReload = await p.locator('.rs-card:has-text("Ines O")').evaluate((c) => c.closest('.rg-cell').dataset.stage);
+await p.screenshot({ path: `${OUT}/3-edited.png`, fullPage: true });
 await p.click('.rs-card:has-text("Mina K")');
 await p.waitForFunction(() => location.hash.startsWith('#/b/'));
 res.opened = await p.evaluate(() => location.hash);

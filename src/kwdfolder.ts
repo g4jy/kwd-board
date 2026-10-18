@@ -354,9 +354,56 @@ export async function loadRoster(): Promise<Roster | null> {
     const j = JSON.parse(await f.text()) as Roster;
     if (j?.schema !== 'kwd-roster/v1' || !Array.isArray(j.students)) return null;
     j.purposes = Array.isArray(j.purposes) ? j.purposes : [];
+    // 선생님이 판에서 직접 고친 단계·목적이 자동화 값보다 우선
+    const ov = await loadRosterTeacher();
+    for (const st of j.students) {
+      const o = ov[st.folder];
+      if (o?.stage !== undefined) st.stage = o.stage;
+      if (o?.purpose !== undefined) st.purpose = o.purpose;
+    }
     return j;
   } catch {
     return null;
+  }
+}
+
+// 선생님 수정: Student_Lessons/_roster_teacher.json — 자동화는 이 파일을 읽어 존중하고, 고쳐 쓰지 않는다
+const TEACHER_FILE = '_roster_teacher.json';
+type RosterEdit = { stage?: string; purpose?: string; at?: string };
+async function loadRosterTeacher(): Promise<Record<string, RosterEdit>> {
+  try {
+    const work = await storedWork();
+    const sl = await work!.getDirectoryHandle('Student_Lessons');
+    const f = await (await sl.getFileHandle(TEACHER_FILE)).getFile();
+    const j = JSON.parse(await f.text()) as { students?: Record<string, RosterEdit> };
+    return j.students || {};
+  } catch {
+    return {};
+  }
+}
+export async function saveRosterEdit(folder: string, edit: RosterEdit): Promise<boolean> {
+  const work = await storedWork();
+  if (!work) return false;
+  const all = await loadRosterTeacher();
+  all[folder] = { ...all[folder], ...edit, at: new Date().toISOString() };
+  const text = JSON.stringify({ schema: 'kwd-roster-teacher/v1', note: '선생님이 판에서 직접 정한 단계·목적. 자동화보다 우선.', students: all }, null, 1);
+  try {
+    if ((work as unknown as VDir) instanceof VDir) {
+      const sl = (work as unknown as VDir).dirs.get('Student_Lessons');
+      sl?.files.set(TEACHER_FILE, new VFile(TEACHER_FILE, new File([text], TEACHER_FILE, { type: 'application/json' })));
+      return !!sl;
+    }
+    const p = (await work.requestPermission?.({ mode: 'readwrite' })) || 'granted';
+    if (p !== 'granted') return false;
+    const sl = await work.getDirectoryHandle('Student_Lessons');
+    const fh = await sl.getFileHandle(TEACHER_FILE, { create: true });
+    const w = await (fh as FileSystemFileHandle & { createWritable(): Promise<FileSystemWritableFileStream> }).createWritable();
+    await w.write(text);
+    await w.close();
+    return true;
+  } catch (e) {
+    console.warn('roster edit', e);
+    return false;
   }
 }
 

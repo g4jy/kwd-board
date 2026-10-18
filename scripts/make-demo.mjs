@@ -330,6 +330,8 @@ put('Student_Lessons/_roster.json', JSON.stringify({
     R('Erik J', 'SE', 'culture', '씨앗', '씨앗 2', ['웹툰 읽기 목표', '숙제 매일 함'], 1),
     R('Grace K', 'US', 'heritage', '꽃', '꽃 1', ['한국계 — 듣기 강함, 쓰기 약함', '할머니와 통화하고 싶어 함'], 4),
     R('Jun P', 'NZ', 'heritage', '잎새', '잎새 3', ['반말에 익숙 — 존댓말 바꾸기', '가족 행사(추석) 이야기'], 11),
+    R('Ines O', 'PT', 'life', '', '', ['새 학생 — 단계 진단 전'], 1),
+    R('Ravi S', 'IN', '', '', '', ['목적 아직 안 물어봄'], 2),
     R('Leah D', 'GB', 'daily', '새싹', '새싹 1', ['소그룹 수업 같이 들음'], 95, { active: false }),
     R('Marco V', 'IT', 'work', '잎새', '잎새 2', ['3월에 쉬기 시작'], 140, { active: false }),
   ],

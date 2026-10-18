@@ -217,3 +217,4 @@ interface Call {
 - 시작 화면 학생 목록 → 표: 가로 = 수업 목적(과제 플랫폼 분류), 세로 = 단계(씨앗~나무). 카드 = 이름 · 나라(2자) · 꼭 알아야 할 것 1~2줄. '지금 학생'(기본) / '모두', 이름·나라 찾기.
 - 입력: `Student_Lessons/_roster.json` (kwd-roster/v1) — 수업 후 자동화가 만든다. 판은 읽기만. 없으면 예전 찾기 목록.
 - 형식: { schema, generated_at, purposes:[{key,label}] (가로 순서), students:[{folder, name, country, purpose, stage, step, know[≤2], active, last_lesson, trial}] }
+- 단계·목적 고치기: 카드를 다른 칸으로 끌어 놓기 또는 카드 ⋯ → 단계·목적 → 저장. `Student_Lessons/_roster_teacher.json` (kwd-roster-teacher/v1, {students:{folder:{stage,purpose,at}}}) 에 저장, 자동화 값보다 우선. 자동화는 읽기만.

@@ -896,10 +896,15 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
   test('학생 표: 목적 × 단계, 지금/모두, 찾기, 카드 → 그 학생 판', () => {
     const r = JSON.parse(execFileSync('node', ['scripts/roster-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/roster' } }));
     expect(r.errs).toEqual([]);
-    expect(r.cols).toEqual(['일상·여행', '한국 생활', '일·비즈니스', 'TOPIK·시험', 'K-문화·취미', '가족·뿌리']);
-    expect(r.rows).toEqual(['씨앗', '새싹', '잎새', '꽃', '열매']); // 학생 없는 단계(나무)는 숨김
-    expect(r.cards).toBe(18); // 지금 학생만
-    expect([r.allCards, r.past]).toEqual([20, 2]);
+    expect(r.cols).toEqual(['일상·여행', '한국 생활', '일·비즈니스', 'TOPIK·시험', 'K-문화·취미', '가족·뿌리', '목적 미정']);
+    expect(r.rows).toEqual(['씨앗', '새싹', '잎새', '꽃', '열매', '단계 미정']); // 학생 없는 단계(나무)는 숨김
+    expect(r.cards).toBe(20); // 지금 학생만
+    expect([r.allCards, r.past]).toEqual([22, 2]);
+    expect(r.inesCell).toEqual(['새싹', 'life']); // ⋯ 로 단계 정하기
+    expect(r.raviCell).toEqual(['잎새', 'work']); // 끌어 놓기로 단계·목적
+    expect(r.unsetAfter).not.toContain('단계 미정');
+    expect(r.colsAfter).not.toContain('목적 미정');
+    expect(r.inesReload).toBe('새싹'); // 다시 읽어도 선생님 수정이 이긴다
     expect(r.first).toContain('GB');
     expect(r.search).toEqual(['Mina K', 'Kenji T']); // 나라로 찾기
     expect(r.opened).toMatch(/^#\/b\/demo/);

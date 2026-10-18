@@ -2,7 +2,7 @@
 // 학생을 누르면 그 학생의 오늘 판이 열리고, 브리핑·수업안·로드맵·지난 수업이 선생님 화면에만 붙는다.
 import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl } from './store';
 import { h, fmtDateTime, toast } from './ui';
-import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, loadRoster, STAGE_ROWS, type StudentEntry, type BriefLesson, type Roster, type RosterStudent } from './kwdfolder';
+import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, loadRoster, saveRosterEdit, STAGE_ROWS, type StudentEntry, type BriefLesson, type Roster, type RosterStudent } from './kwdfolder';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -143,6 +143,8 @@ export class HomeScreen {
     const isActive = (r: RosterStudent) => (r.active !== undefined ? r.active : !!r.last_lesson && r.last_lesson >= cutoff);
     const activeN = roster.students.filter(isActive).length;
     let showAll = activeN === 0;
+    let dragging = false;
+    let dragFolder = '';
     const search = h('input', { type: 'search', class: 'home-search roster-search', placeholder: '이름·나라로 찾기', 'aria-label': '학생 찾기', lang: 'ko' }) as HTMLInputElement;
     const chipNow = h('button', { type: 'button', class: 'rs-chip' }, `지금 학생 ${activeN}`);
     const chipAll = h('button', { type: 'button', class: 'rs-chip' }, `모두 ${roster.students.length}`);
@@ -158,8 +160,9 @@ export class HomeScreen {
       const q = search.value.trim().toLowerCase();
       const list = roster.students.filter((r) => (q ? `${r.name} ${r.country || ''} ${r.folder}`.toLowerCase().includes(q) : showAll || isActive(r)));
       const cell = (r: RosterStudent) => [STAGE_ROWS.includes(r.stage || '') ? r.stage! : '', r.purpose && known.has(r.purpose) ? r.purpose : ''];
-      const cols = purposes.filter((p) => list.some((r) => cell(r)[1] === p.key));
-      const rws = rows.filter((st) => list.some((r) => cell(r)[0] === st));
+      // 끄는 중에는 빈 줄·칸도 다 보여서 어디로든 옮길 수 있게
+      const cols = dragging ? purposes : purposes.filter((p) => list.some((r) => cell(r)[1] === p.key));
+      const rws = dragging ? rows : rows.filter((st) => list.some((r) => cell(r)[0] === st));
       grid.innerHTML = '';
       if (!list.length) {
         grid.append(h('p', { class: 'empty' }, '찾는 학생이 없어요.'));
@@ -172,31 +175,112 @@ export class HomeScreen {
       for (const st of rws) {
         t.append(h('div', { class: 'rg-row' }, h('span', {}, st || '단계 미정'), h('b', {}, String(list.filter((r) => cell(r)[0] === st).length))));
         for (const c of cols) {
-          const box = h('div', { class: 'rg-cell' });
+          const box = h('div', { class: 'rg-cell', 'data-stage': st, 'data-purpose': c.key });
+          box.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            box.classList.add('drop');
+          });
+          box.addEventListener('dragleave', () => box.classList.remove('drop'));
+          box.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const f = e.dataTransfer?.getData('text/kwd-folder') || dragFolder;
+            const r = roster.students.find((x) => x.folder === f);
+            dragging = false;
+            if (r) void move(r, st, c.key);
+            else draw();
+          });
           const here = list.filter((r) => cell(r)[0] === st && cell(r)[1] === c.key).sort((a, b) => (b.last_lesson || '').localeCompare(a.last_lesson || ''));
-          for (const r of here) box.append(this.rosterCard(r, byFolder.get(r.folder), isActive(r)));
+          for (const r of here) {
+            const cd = this.rosterCard(r, byFolder.get(r.folder), isActive(r), (stage, purpose) => void move(r, stage, purpose), purposes, rows);
+            cd.draggable = true;
+            cd.addEventListener('dragstart', (e) => {
+              dragFolder = r.folder;
+              e.dataTransfer?.setData('text/kwd-folder', r.folder);
+              if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+              window.setTimeout(() => {
+                dragging = true;
+                draw();
+              }, 0);
+            });
+            cd.addEventListener('dragend', () => {
+              if (!dragging) return;
+              dragging = false;
+              draw();
+            });
+            box.append(cd);
+          }
           t.append(box);
         }
       }
       grid.append(t);
     };
+    // 단계·목적 고치기: 카드를 다른 칸에 끌어 놓거나 카드의 ⋯ → 저장은 Student_Lessons/_roster_teacher.json (자동화보다 우선)
+    const move = async (r: RosterStudent, stage: string, purpose: string) => {
+      const edit: { stage?: string; purpose?: string } = {};
+      if ((r.stage || '') !== stage) edit.stage = stage;
+      if ((r.purpose || '') !== purpose) edit.purpose = purpose;
+      if (!Object.keys(edit).length) return draw();
+      Object.assign(r, edit);
+      draw();
+      const ok = await saveRosterEdit(r.folder, edit);
+      toast(ok ? `${r.name}: ${stage || '단계 미정'} · ${purposes.find((p) => p.key === purpose)?.label || '목적 미정'}` : '저장하지 못했어요 (폴더 쓰기 허용 필요)');
+    };
     chipNow.addEventListener('click', () => ((showAll = false), draw()));
     chipAll.addEventListener('click', () => ((showAll = true), draw()));
     search.addEventListener('input', draw);
-    sec.append(head, grid);
+    sec.append(head, grid, h('p', { class: 'home-note roster-tip' }, '카드를 다른 칸으로 끌어 놓거나 카드의 ⋯ 를 누르면 단계·목적을 바꿀 수 있어요. 고친 값은 다음 자동 갱신 때도 그대로 남아요.'));
     draw();
     return sec;
   }
 
-  private rosterCard(r: RosterStudent, s: StudentEntry | undefined, active: boolean): HTMLElement {
+  private rosterCard(r: RosterStudent, s: StudentEntry | undefined, active: boolean, onMove: (stage: string, purpose: string) => void, purposes: Array<{ key: string; label: string }>, stages: string[]): HTMLElement {
     const know = (r.know || []).filter(Boolean).slice(0, 2);
+    const more = h('span', { class: 'rs-more', role: 'button', tabindex: '0', title: '단계·목적 바꾸기' }, '⋯');
     const card = h(
-      'button',
-      { type: 'button', class: 'rs-card' + (active ? '' : ' past') + (r.trial ? ' trial' : ''), title: [r.step, r.last_lesson ? `마지막 수업 ${r.last_lesson}` : ''].filter(Boolean).join(' · ') },
-      h('span', { class: 'rs-top' }, h('span', { class: 'rs-name' }, r.name), r.country ? h('span', { class: 'rs-cc' }, r.country.toUpperCase()) : '', r.trial ? h('span', { class: 'rs-tag' }, '체험') : ''),
+      'div',
+      { class: 'rs-card' + (active ? '' : ' past') + (r.trial ? ' trial' : ''), role: 'button', tabindex: '0', title: [r.step, r.last_lesson ? `마지막 수업 ${r.last_lesson}` : ''].filter(Boolean).join(' · ') },
+      h('span', { class: 'rs-top' }, h('span', { class: 'rs-name' }, r.name), r.country ? h('span', { class: 'rs-cc' }, r.country.toUpperCase()) : '', r.trial ? h('span', { class: 'rs-tag' }, '체험') : '', more),
       ...know.map((k, i) => h('span', { class: i ? 'rs-know sub' : 'rs-know' }, k)),
     );
-    card.addEventListener('click', () => this.openStudent(r.folder, s?.id || (/\(([^)]+)\)/.exec(r.folder) || [])[1] || ''));
+    const open = () => this.openStudent(r.folder, s?.id || (/\(([^)]+)\)/.exec(r.folder) || [])[1] || '');
+    card.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.rs-more, .rs-pick')) return;
+      open();
+    });
+    card.addEventListener('keydown', (e) => e.key === 'Enter' && e.target === card && open());
+    const pick = () => {
+      const old = card.querySelector('.rs-pick');
+      if (old) return old.remove();
+      document.querySelectorAll('.rs-pick').forEach((x) => x.remove());
+      const box = h('div', { class: 'rs-pick' });
+      let stage = r.stage && stages.includes(r.stage) ? r.stage : '';
+      let purpose = r.purpose && purposes.some((p) => p.key === r.purpose) ? r.purpose : '';
+      const row = (label: string, opts: Array<[string, string]>, cur: () => string, set: (v: string) => void) => {
+        const line = h('div', { class: 'rs-pick-row' }, h('span', { class: 'rs-pick-l' }, label));
+        for (const [v, t] of opts) {
+          const b = h('button', { type: 'button', class: 'rs-opt' + (cur() === v ? ' on' : '') }, t);
+          b.addEventListener('click', () => {
+            set(v);
+            line.querySelectorAll('.rs-opt').forEach((x) => x.classList.remove('on'));
+            b.classList.add('on');
+          });
+          line.append(b);
+        }
+        return line;
+      };
+      const done = h('button', { type: 'button', class: 'rs-opt save' }, '저장');
+      done.addEventListener('click', () => onMove(stage, purpose));
+      box.append(
+        row('단계', [...STAGE_ROWS.map((x) => [x, x] as [string, string]), ['', '미정']], () => stage, (v) => (stage = v)),
+        row('목적', [...purposes.filter((p) => p.key).map((p) => [p.key, p.label] as [string, string]), ['', '미정']], () => purpose, (v) => (purpose = v)),
+        done,
+      );
+      card.append(box);
+    };
+    more.addEventListener('click', (e) => {
+      e.stopPropagation();
+      pick();
+    });
     return card;
   }
 
