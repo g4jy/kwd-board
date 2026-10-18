@@ -39,12 +39,19 @@ export default {
       const room = url.searchParams.get('room') || '';
       if (!/^[\w-]{4,64}$/.test(room)) return json({ error: 'room required' }, 400);
       if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) return json({ iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }], turn: false });
-      const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`, {
+      // 붙여 넣을 때 딸려 온 공백·줄바꿈·따옴표를 걷어 낸다
+      const clean = (s: string) => s.trim().replace(/^["']|["']$/g, '').trim();
+      const keyId = clean(env.TURN_KEY_ID), token = clean(env.TURN_KEY_API_TOKEN);
+      const r = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${encodeURIComponent(keyId)}/credentials/generate-ice-servers`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`, 'content-type': 'application/json' },
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         body: JSON.stringify({ ttl: 4 * 3600 }), // 수업 하나보다 넉넉히
       });
-      if (!r.ok) return json({ iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }], turn: false, status: r.status });
+      if (!r.ok) {
+        // 진단용: 값 자체는 내보내지 않고 길이와 Cloudflare 오류 문구만
+        const why = (await r.text()).slice(0, 200);
+        return json({ iceServers: [{ urls: ['stun:stun.cloudflare.com:3478'] }], turn: false, status: r.status, why, id_len: keyId.length, token_len: token.length });
+      }
       const j = (await r.json()) as { iceServers?: Array<{ urls: string | string[]; username?: string; credential?: string }> };
       // 후보를 한 번에 모아 보내므로(trickle 없음) 53번 포트 주소는 빼서 기다림을 줄인다
       const ice = (j.iceServers || []).map((s) => ({ ...s, urls: (Array.isArray(s.urls) ? s.urls : [s.urls]).filter((u) => !/:53(\?|$)/.test(u)) }));
