@@ -112,7 +112,7 @@ await p.goto(`${BASE}/#/demo`);
 await p.evaluate(() => localStorage.setItem('kwd.hw', JSON.stringify({ url: 'https://hw.test/exec', key: 'secret-k' })));
 await p.click('.demo-card.main');
 await p.waitForSelector('.lesson-row');
-await p.click('.lesson-row.next');
+await p.click('.lesson-row:has-text("Mina")');
 await p.waitForFunction(() => window.__kwd?.store?.meta?.get('demoReady'), null, { timeout: 30000 });
 await p.click('.mem-btn');
 await p.click('.mp-tab[data-tab="hw"]');

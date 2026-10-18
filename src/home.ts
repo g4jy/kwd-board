@@ -2,7 +2,7 @@
 // 학생을 누르면 그 학생의 오늘 판이 열리고, 브리핑·수업안·로드맵·지난 수업이 선생님 화면에만 붙는다.
 import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl } from './store';
 import { h, fmtDateTime, toast } from './ui';
-import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, type StudentEntry, type BriefLesson } from './kwdfolder';
+import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, type StudentEntry, type BriefLesson } from './kwdfolder';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -15,7 +15,8 @@ export class HomeScreen {
     void this.render();
   }
 
-  private openStudent(folder: string, id: string) {
+  private async openStudent(folder: string, id: string) {
+    await ensureClassCode(folder);
     const bid = boardIdFor(folder);
     rememberBoardFolder(bid, folder);
     location.hash = `#/b/${bid}?r=t&st=${encodeURIComponent(id || folder)}`;
@@ -24,7 +25,7 @@ export class HomeScreen {
   private async render() {
     this.root.innerHTML = '';
     const d = new Date();
-    const head = h('div', { class: 'home-head' }, h('h1', {}, 'KWD 수업 판'), h('span', { class: 'home-date' }, `${d.getMonth() + 1}월 ${d.getDate()}일 ${WEEK[d.getDay()]}`));
+    const head = h('div', { class: 'home-head' }, h('h1', {}, 'KWD 클래스룸'), h('span', { class: 'home-date' }, `${d.getMonth() + 1}월 ${d.getDate()}일 ${WEEK[d.getDay()]}`));
     this.root.append(head);
     const main = h('div', { class: 'home-main' });
     this.root.append(main);

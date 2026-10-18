@@ -19,6 +19,15 @@ export interface ClassroomHost {
 }
 
 type CamView = 'board' | 'cams';
+async function camAllowed(): Promise<boolean> {
+  try {
+    const q = (n: string) => navigator.permissions.query({ name: n as PermissionName });
+    const [c, m] = await Promise.all([q('camera'), q('microphone')]);
+    return c.state === 'granted' && m.state === 'granted';
+  } catch {
+    return false;
+  }
+}
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 export class Classroom {
@@ -66,12 +75,28 @@ export class Classroom {
     void this.loadIce();
     if (host.demo) void this.start(fakeMedia(role === 'teacher' ? '선생님' : '학생', role === 'teacher' ? '#f3d98b' : '#9cc5b0'));
     else if (role === 'student') {
-      // 선생님이 카메라를 켜면 그때 입장 화면 (Zoom 등 다른 도구로 수업할 때는 판만)
+      // v8.1: 링크로 들어오면 바로 입장 화면 (선생님보다 먼저 와도 된다). '판만 볼게요'면 카메라 칸의 '카메라 켜기'로 나중에
+      this.showJoin();
+    } else if (role === 'teacher') {
+      // 학생이 카메라를 켜고 들어오면 선생님 카메라도 저절로 (이 PC에서 한 번 허용해 둔 뒤부터)
       const aw = host.store.awareness;
+      let asked = false;
       const check = () => {
-        if (this.call?.local || this.join) return;
-        const teacherOn = Array.from(aw.getStates().values()).some((s) => (s as { role?: string; media?: { on?: boolean } }).role === 'teacher' && (s as { media?: { on?: boolean } }).media?.on);
-        if (teacherOn) this.showJoin();
+        if (this.call?.local || asked) return;
+        const studentOn = Array.from(aw.getStates().values()).some((s) => (s as { role?: string }).role === 'student' && (s as { media?: { on?: boolean } }).media?.on);
+        if (!studentOn) return;
+        asked = true;
+        void camAllowed().then(async (ok) => {
+          if (this.call?.local) return;
+          const st = ok ? await this.getMedia(true) : null;
+          if (st) {
+            await this.start(st);
+            toast('학생이 들어와서 카메라를 켰어요');
+          } else {
+            toast('학생이 들어왔어요 · 오른쪽 위 카메라 켜기를 눌러 주세요', 6000);
+            this.dock.classList.add('nudge');
+          }
+        });
       };
       aw.on('change', check);
       this.offs.push(() => aw.off('change', check));
@@ -113,6 +138,7 @@ export class Classroom {
 
   async start(stream: MediaStream | null) {
     if (!this.call) return;
+    this.dock.classList.remove('nudge');
     this.localV.srcObject = stream;
     await this.call.start(stream);
     this.host.store.log({ kind: 'call', data: { op: 'join', cam: !!stream?.getVideoTracks().length, mic: !!stream?.getAudioTracks().length } });
@@ -127,7 +153,8 @@ export class Classroom {
     const go = h('button', { type: 'button', class: 'join-go' }, '들어가기') as HTMLButtonElement;
     const noCam = h('button', { type: 'button', class: 'linkish join-nocam' }, '카메라 없이 들어가기');
     const msg = h('p', { class: 'join-msg' }, '카메라와 마이크를 켜는 중…');
-    const card = h('div', { class: 'join-card' }, h('h2', {}, '한국어 수업'), h('div', { class: 'join-pv' }, pv), meter, msg, go, noCam, h('p', { class: 'join-note' }, '이 수업은 복습 자료를 위해 녹화돼요. 녹화에는 판과 목소리만 들어가고 내 얼굴은 들어가지 않아요. 들어가기를 누르면 동의한 것으로 봐요.'));
+    const boardOnly = h('button', { type: 'button', class: 'linkish join-board' }, '판만 볼게요');
+    const card = h('div', { class: 'join-card' }, h('h2', {}, '한국어 수업'), h('div', { class: 'join-pv' }, pv), meter, msg, go, noCam, boardOnly, h('p', { class: 'join-note' }, '이 수업은 복습 자료를 위해 녹화돼요. 녹화에는 판과 목소리만 들어가고 내 얼굴은 들어가지 않아요. 들어가기를 누르면 동의한 것으로 봐요.'));
     this.join = h('div', { class: 'join' }, card);
     this.host.root.append(this.join);
     let stream: MediaStream | null = null;
@@ -165,6 +192,13 @@ export class Classroom {
       void this.start(s);
     };
     go.addEventListener('click', () => enter(stream));
+    boardOnly.addEventListener('click', () => {
+      cancelAnimationFrame(raf);
+      stream?.getTracks().forEach((t) => t.stop());
+      this.join?.remove();
+      this.join = null;
+      this.render();
+    });
     noCam.addEventListener('click', () => {
       stream?.getVideoTracks().forEach((t) => {
         t.stop();
@@ -201,7 +235,7 @@ export class Classroom {
     };
     if (!c.local) {
       if (this.host.role === 'teacher') btn('카메라 켜기', '카메라와 마이크를 켜고 학생을 기다려요', () => void this.getMedia(true).then((s) => (s ? this.start(s) : toast('카메라·마이크를 쓸 수 없어요. 주소창 자물쇠에서 허용해 주세요'))), 'primary');
-      else if (!this.join) btn('들어가기', '카메라·마이크 켜기', () => this.showJoin(), 'primary');
+      else if (!this.join) btn('카메라 켜기', '카메라·마이크 켜기', () => this.showJoin(), 'primary');
       return;
     }
     btn(c.micOn() ? '마이크 끄기' : '마이크 켜기', '', () => (c.setMic(!c.micOn()), this.render()), c.micOn() ? '' : 'off');

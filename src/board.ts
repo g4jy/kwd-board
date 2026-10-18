@@ -3,7 +3,7 @@ import type { Editor } from '@tiptap/core';
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import * as Y from 'yjs';
 import { ySyncPluginKey } from '@tiptap/y-tiptap';
-import { BoardStore, randomId, getServerUrl, setServerUrl, getToken, setToken, upsertIndex, loadIndex, LOCAL, TEXT_W, TEXT_H, type Role, type PageInfo, type InkTarget } from './store';
+import { BoardStore, randomId, DEFAULT_SERVER, getServerUrl, setServerUrl, getToken, setToken, upsertIndex, loadIndex, LOCAL, TEXT_W, TEXT_H, type Role, type PageInfo, type InkTarget } from './store';
 import { Viewport } from './viewport';
 import { InkLayer, CURSOR_ARROW, CURSOR_TEXT, type Tool, type PageBox } from './ink';
 import { PageObjects, BOX_W, youtubeId, type ObjectHost } from './objects';
@@ -2730,7 +2730,11 @@ export class BoardScreen {
   private openLinks() {
     const srv = getServerUrl();
     const base = location.href.split('#')[0];
-    const mk = (r: Role) => `${base}#/b/${this.params.id}?r=${r[0]}${srv ? `&srv=${encodeURIComponent(srv)}` : ''}`;
+    const srvQ = srv && srv !== DEFAULT_SERVER ? `srv=${encodeURIComponent(srv)}` : '';
+    const mk = (r: Role) => `${base}#/b/${this.params.id}?r=${r[0]}${srvQ ? '&' + srvQ : ''}`;
+    // 고정 교실 판이면 학생 링크는 매번 같은 #/c/<코드>
+    const cm = /^(k[a-z0-9]{8})d\d{6}$/.exec(this.params.id);
+    const studentUrl = cm ? `${base}#/c/${cm[1]}${srvQ ? '?' + srvQ : ''}` : mk('student');
     const row = (label: string, url: string) => {
       const input = h('input', { type: 'text', readonly: '', value: url, class: 'link-input' }) as HTMLInputElement;
       const copy = h('button', { type: 'button', class: 'mi small' }, '복사');
@@ -2749,7 +2753,7 @@ export class BoardScreen {
     const box = h('div', { class: 'menu wide' });
     box.append(
       h('div', { class: 'mh' }, `방 코드 ${this.params.id}`),
-      row('학생', mk('student')),
+      row(cm ? '학생 (늘 같은 링크)' : '학생', studentUrl),
       row('태블릿 펜', mk('assist')),
       row('다른 랩탑', mk('teacher')),
       h('p', { class: 'mnote' }, EMBEDDED ? '시험용 창이라 다른 기기와 연결할 수 없어요. 설치본에서 서버 주소를 넣으면 링크 하나로 같이 봅니다.' : srv ? `서버 ${srv}` : '서버 주소가 없어 이 기기 안에서만 동작해요. ⋯ → 서버·선생님 열쇠.'),

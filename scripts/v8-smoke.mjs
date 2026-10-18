@@ -23,15 +23,21 @@ await t.waitForSelector('.board-doc');
 await s.goto(`${BASE}/#/b/${id}?r=s&srv=${encodeURIComponent(WS)}`);
 await s.waitForSelector('.board-doc');
 await t.waitForTimeout(800);
-// 선생님이 카메라를 켜기 전에는 학생에게 아무것도 안 뜬다
+// v8.1: 학생은 링크로 들어오자마자 입장 화면 (선생님보다 먼저 와도 됨). 선생님 카메라는 아직 꺼짐
 res.joinBefore = await s.locator('.join').count();
 res.dockBefore = await t.locator('.cam-dock').getAttribute('data-state');
-await t.click('.cam-dock .cam-b.primary');
+// 판만 보기 → 카메라 칸에 '카메라 켜기' → 다시 입장 화면
+await s.click('.join-board');
+res.studentCamBtn = await s.locator('.cam-dock .cam-b.primary').innerText();
+await s.click('.cam-dock .cam-b.primary');
 await s.waitForSelector('.join .join-go', { timeout: 8000 });
 await s.waitForFunction(() => document.querySelector('.join-preview')?.srcObject, null, { timeout: 8000 });
 await s.screenshot({ path: `${OUT}/1-student-join.png` });
 res.joinText = (await s.locator('.join-note').innerText()).slice(0, 40);
 await s.click('.join .join-go');
+// 학생이 들어오면 선생님 카메라가 저절로 켜진다 (이 PC에서 허용해 둔 경우)
+await t.waitForFunction(() => document.querySelector('.cam-dock')?.dataset.state !== 'off', null, { timeout: 8000 });
+res.teacherAuto = true;
 // 연결
 const live = (p) => p.waitForFunction(() => { const v = document.querySelector('.cam-remote'); return document.querySelector('.cam-dock')?.dataset.state === 'live' && v && v.videoWidth > 0; }, null, { timeout: 20000 });
 await Promise.all([live(t), live(s)]);
@@ -82,6 +88,12 @@ res.events = await t.evaluate(() => window.__kwd.store.events.toArray().filter((
 await s.close();
 await t.waitForTimeout(3000);
 res.afterLeave = await t.locator('.cam-dock').getAttribute('data-state');
+// 학생 고정 링크 #/c/<코드> → 그날 판(<코드>d<수업일>)에 학생으로
+const s2 = await ctxS.newPage();
+await s2.goto(`${BASE}/#/c/kabcd2345`);
+await s2.waitForSelector('.join', { timeout: 10000 });
+res.fixedLink = await s2.evaluate(() => ({ id: window.__kwd.store.id, role: document.body.className, hash: location.hash, join: !!document.querySelector('.join') }));
+await s2.close();
 res.errs = errs;
 console.log(JSON.stringify(res, null, 1));
 await b.close();

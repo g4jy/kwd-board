@@ -3,7 +3,7 @@ import { clearToast } from './ui';
 import { HomeScreen } from './home';
 import { BoardScreen } from './board';
 import type { Role } from './store';
-import { setWorkHandleForTest, listStudents, isDemo, setDemo, useDemoFolder } from './kwdfolder';
+import { setWorkHandleForTest, listStudents, isDemo, setDemo, useDemoFolder, classBoardId, isClassCode } from './kwdfolder';
 import { DemoScreen, type DemoView } from './demo';
 import { h } from './ui';
 
@@ -16,6 +16,12 @@ function parseRoute(): { kind: 'home' } | { kind: 'demo'; view?: DemoView } | { 
   const hash = location.hash.replace(/^#/, '');
   const d = /^\/demo(?:\/(phone|tablet|pen|split))?\/?$/.exec(hash);
   if (d) return { kind: 'demo', view: d[1] as DemoView | undefined };
+  // 학생 고정 링크: #/c/<교실 코드> → 그날 판에 학생으로
+  const c = /^\/c\/([a-z0-9]{9})\/?(?:\?(.*))?$/i.exec(hash);
+  if (c && isClassCode(c[1].toLowerCase())) {
+    const q = new URLSearchParams(c[2] || '');
+    return { kind: 'board', id: classBoardId(c[1].toLowerCase()), role: 'student', server: q.get('srv') || undefined };
+  }
   const m = /^\/b\/([a-z0-9]{4,})(?:\?(.*))?$/i.exec(hash);
   if (!m) return { kind: 'home' };
   const q = new URLSearchParams(m[2] || '');

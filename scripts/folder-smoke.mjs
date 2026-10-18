@@ -23,7 +23,7 @@ await p.waitForSelector('.lesson-row');
 res.rows = await p.locator('.lesson-row').allInnerTexts();
 res.students = await p.locator('.student-row').allInnerTexts();
 await p.screenshot({ path: `${OUT}/1-home.png` });
-await p.click('.lesson-row.next');
+await p.click('.lesson-row:has-text("Mina")');
 await p.waitForFunction(() => window.__kwd && document.querySelector('.mem-btn') && !document.querySelector('.mem-btn').hidden);
 res.url = p.url().split('#')[1];
 res.chip = await p.locator('.chip-main').textContent();

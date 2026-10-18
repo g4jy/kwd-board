@@ -340,10 +340,64 @@ export function nextDemoRun() {
   }
 }
 export function boardIdFor(folder: string, d = new Date()): string {
-  const p = (n: number) => String(n).padStart(2, '0');
   // 체험 판은 판 모양이 바뀔 때마다 새로 (예전 모양으로 깔린 체험 판을 다시 쓰지 않게)
   if (isDemo()) return `demo71${demoRun()}${studentKey(folder)}`;
-  return `${studentKey(folder)}d${String(d.getFullYear()).slice(2)}${p(d.getMonth() + 1)}${p(d.getDate())}`;
+  const code = classCodeOf(folder);
+  return code ? classBoardId(code, d) : `${studentKey(folder)}d${lessonDay(d)}`;
+}
+
+// ---- 학생 고정 교실 링크 (v8.1) ----
+// 학생마다 바뀌지 않는 무작위 교실 코드(k + 8자). 학생 링크 #/c/<코드> 는 매번 같고,
+// 그날 판 = <코드>d<수업일>. 수업일은 서울 시간 새벽 4시에 바뀐다(밤 수업이 자정을 넘어도 같은 판).
+const CODE_KEY = 'kwd.classCodes';
+export function lessonDay(d = new Date()): string {
+  const t = new Date(d.getTime() - 4 * 3600_000);
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: '2-digit', month: '2-digit', day: '2-digit' }).formatToParts(t);
+  const g = (k: string) => parts.find((x) => x.type === k)?.value || '';
+  return `${g('year')}${g('month')}${g('day')}`;
+}
+export const classBoardId = (code: string, d = new Date()) => `${code}d${lessonDay(d)}`;
+export const isClassCode = (c: string) => /^k[a-z0-9]{8}$/.test(c);
+function codeMap(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(CODE_KEY) || '{}') as Record<string, string>;
+  } catch {
+    return {};
+  }
+}
+export function classCodeOf(folder: string): string {
+  return codeMap()[studentKey(folder)] || '';
+}
+// 이 PC에 없으면 학생 폴더의 kwd-board/classroom.json 에서, 그것도 없으면 새로 만든다
+export async function ensureClassCode(folder: string): Promise<string> {
+  if (isDemo()) return '';
+  const key = studentKey(folder);
+  let code = codeMap()[key] || '';
+  if (!code) {
+    try {
+      const f = await readPackFile(folder, ['kwd-board', 'classroom.json']);
+      const j = f ? (JSON.parse(await f.text()) as { code?: string }) : null;
+      if (j?.code && isClassCode(j.code)) code = j.code;
+    } catch {
+      /* 없음 */
+    }
+  }
+  const fresh = !code;
+  if (!code) {
+    const a = 'abcdefghjkmnpqrstuvwxyz23456789';
+    const buf = new Uint8Array(8);
+    crypto.getRandomValues(buf);
+    code = 'k' + Array.from(buf, (b) => a[b % a.length]).join('');
+  }
+  const m = codeMap();
+  m[key] = code;
+  try {
+    localStorage.setItem(CODE_KEY, JSON.stringify(m));
+  } catch {
+    /* ignore */
+  }
+  if (fresh) void saveToStudentFolder(folder, 'kwd-board', 'classroom.json', JSON.stringify({ code, note: '학생 고정 교실 링크 코드. 지우면 학생 링크가 바뀌어요.' }, null, 2));
+  return code;
 }
 
 const LESSON_RE = /^#(\d+)_.*?(\d{4}-\d{2}-\d{2})/;

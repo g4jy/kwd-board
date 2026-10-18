@@ -159,7 +159,9 @@ export function upsertIndex(entry: BoardIndexEntry) {
   list.unshift(entry);
   saveIndex(list);
 }
-export const getServerUrl = () => lsGet(SERVER_KEY);
+// 배포본(github.io)은 선생님 서버가 기본값: 어느 PC·학생 기기에서도 주소를 넣을 필요가 없다. 시험(localhost)에서는 없음
+export const DEFAULT_SERVER = typeof location !== 'undefined' && /\.github\.io$/.test(location.hostname) ? 'wss://kwd-board-sync.impressive261.workers.dev' : '';
+export const getServerUrl = () => lsGet(SERVER_KEY) || DEFAULT_SERVER;
 export const setServerUrl = (u: string) => lsSet(SERVER_KEY, u);
 export const getToken = () => lsGet(TOKEN_KEY);
 export const setToken = (t: string) => lsSet(TOKEN_KEY, t);

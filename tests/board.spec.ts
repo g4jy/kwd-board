@@ -77,7 +77,7 @@ test.describe('판 화면', () => {
     // 도구 줄: 선택 · 글 · 펜3 · 형광 · 지우개 · ↶ · ↷ · 가져오기 · ⋯
     await expect(page.locator('.toolbar button')).toHaveCount(11);
     await page.click('.back-btn');
-    await expect(page.locator('h1')).toHaveText('KWD 수업 판');
+    await expect(page.locator('h1')).toHaveText('KWD 클래스룸');
     await expect(page.locator('.board-row').first()).toContainText('학생 12');
   });
 
@@ -399,6 +399,7 @@ test.describe('두 기기', () => {
     const s = await ctxB.newPage();
     await openTeacher(t, id, '7', WS);
     await s.goto(`/#/b/${id}?r=s&srv=${encodeURIComponent(WS)}`);
+    await s.click('.join-board');
     await s.waitForSelector('.board-doc');
     await expect(s.locator('.chip .dot')).toHaveClass(/connected/, { timeout: 10000 });
     await expect(t.locator('.chip')).toContainText('학생 연결됨', { timeout: 10000 });
@@ -660,7 +661,7 @@ test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
     expect(r.noFolderCard).toBe('KWD 폴더 연결하기');
     expect(r.rows).toHaveLength(2);
     expect(r.rows[1]).toContain('시작');
-    expect(r.url).toMatch(/^\/b\/s1234567d\d{6}\?r=t$/);
+    expect(r.url).toMatch(/^\/b\/k[a-z0-9]{8}d\d{6}\?r=t$/);
     expect(r.chip).toBe('Mina K');
     expect(r.tabs).toEqual(['오늘', '수업안·자료', '과제', '학생 정보', '지난 수업', '단어']);
     expect(r.today).toContain('주말에 부산에 갔어요');
@@ -836,7 +837,13 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
     const out = execFileSync('node', ['scripts/v8-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/v8t' } });
     const r = JSON.parse(out.slice(out.indexOf('{\n')));
     expect(r.errs).toEqual([]);
-    expect([r.joinBefore, r.dockBefore]).toEqual([0, 'off']); // 선생님이 카메라를 켜기 전에는 학생에게 아무것도 없다
+    expect([r.joinBefore, r.dockBefore]).toEqual([1, 'off']); // 학생은 바로 입장 화면, 선생님 카메라는 아직
+    expect(r.studentCamBtn).toBe('카메라 켜기'); // 판만 보다가도 켤 수 있다
+    expect(r.teacherAuto).toBe(true); // 학생이 들어오면 선생님 카메라 저절로
+    expect(r.fixedLink.id).toMatch(/^kabcd2345d\d{6}$/);
+    expect(r.fixedLink.role).toContain('role-student');
+    expect(r.fixedLink.hash).toBe('#/c/kabcd2345'); // 즐겨찾기 주소가 그대로 남는다
+    expect(r.fixedLink.join).toBe(true);
     expect(r.joinText).toContain('녹화');
     expect(r.connected).toBe(true);
     expect(r.statusT).toContain('연결');
