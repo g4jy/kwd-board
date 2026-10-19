@@ -383,7 +383,7 @@ export async function loadRoster(): Promise<Roster | null> {
 // 선생님 수정: Student_Lessons/_roster_teacher.json — 자동화는 이 파일을 읽어 존중하고, 고쳐 쓰지 않는다
 const TEACHER_FILE = '_roster_teacher.json';
 export type RosterStatus = 'active' | 'paused' | 'archived';
-export type RosterEdit = { stage?: string; purpose?: string; trial?: boolean; status?: RosterStatus; reason?: string; at?: string };
+export type RosterEdit = { stage?: string; purpose?: string; trial?: boolean; status?: RosterStatus; reason?: string; at?: string; stage_from?: string; stage_changed_at?: string };
 export async function loadRosterTeacher(): Promise<Record<string, RosterEdit>> {
   try {
     const work = await storedWork();
@@ -399,7 +399,9 @@ export async function saveRosterEdit(folder: string, edit: RosterEdit): Promise<
   const work = await storedWork();
   if (!work) return false;
   const all = await loadRosterTeacher();
-  all[folder] = { ...all[folder], ...edit, at: new Date().toISOString() };
+  const now = new Date().toISOString();
+  // 단계가 바뀌면 이전 단계와 바뀐 때를 같이 남긴다 — 자동화가 과제 수준을 다시 판단할 신호 (칸을 더하기만 함)
+  all[folder] = { ...all[folder], ...edit, at: now, ...(edit.stage !== undefined ? { stage_changed_at: now } : {}) };
   const text = JSON.stringify({ schema: 'kwd-roster-teacher/v1', note: '선생님이 판에서 직접 정한 단계·목적·체험 여부. 자동화보다 우선.', students: all }, null, 1);
   try {
     if ((work as unknown as VDir) instanceof VDir) {

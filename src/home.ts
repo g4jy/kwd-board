@@ -230,7 +230,10 @@ export class HomeScreen {
     // 단계·목적 고치기: 카드를 다른 칸에 끌어 놓거나 카드의 ⋯ → 저장은 Student_Lessons/_roster_teacher.json (자동화보다 우선)
     const move = async (r: RosterStudent, e: RosterEdit) => {
       const edit: RosterEdit = {};
-      if (e.stage !== undefined && (r.stage || '') !== e.stage) edit.stage = e.stage;
+      if (e.stage !== undefined && (r.stage || '') !== e.stage) {
+        edit.stage = e.stage;
+        edit.stage_from = r.stage || '';
+      }
       if (e.purpose !== undefined && (r.purpose || '') !== e.purpose) edit.purpose = e.purpose;
       if (e.trial !== undefined && !!r.trial !== e.trial) edit.trial = e.trial;
       if (e.status !== undefined && statusOf(r) !== e.status) edit.status = e.status;

@@ -259,7 +259,7 @@ export class LessonRecorder {
   }
 
   // 끝: 파일을 닫고, 폴더가 없던 것은 Blob 으로 돌려준다
-  async stop(meta: Record<string, unknown>, open: OpenWriter): Promise<{ saved: string[]; blobs: Array<{ name: string; blob: Blob }> }> {
+  async stop(meta: Record<string, unknown>, open: OpenWriter): Promise<{ saved: string[]; blobs: Array<{ name: string; blob: Blob }>; empty: string[] }> {
     const saved: string[] = [];
     const blobs: Array<{ name: string; blob: Blob }> = [];
     for (const k of Array.from(this.open.keys())) this.end(k);
@@ -282,6 +282,10 @@ export class LessonRecorder {
         saved.push(t.name);
       } else blobs.push({ name: t.name, blob: new Blob(t.chunks, { type: t.rec.mimeType }) });
     }
+    // 0바이트 줄 점검 — 학생·자료 줄은 비는 수업도 있어 알림은 영상·선생님 줄만, 크기는 모두 기록
+    const sizes: Record<string, number> = {};
+    for (const t of this.tracks) sizes[t.name] = t.bytes;
+    const empty = this.tracks.filter((t) => !t.bytes && (t.name === this.files?.video || t.name === this.files?.teacher)).map((t) => t.name);
     const metaText = JSON.stringify(
       {
         schema: 'kwd-lesson-rec/v2',
@@ -299,6 +303,7 @@ export class LessonRecorder {
           video: this.tabAudio ? '선생님 마이크 + 탭 소리(학생·자료·유튜브)' : '선생님 + 학생 + 자료',
         },
         media: this.spans,
+        bytes: sizes,
         ...meta,
       },
       null,
@@ -317,6 +322,6 @@ export class LessonRecorder {
     void this.ac?.close();
     this.ac = null;
     this.tracks = [];
-    return { saved, blobs };
+    return { saved, blobs, empty };
   }
 }

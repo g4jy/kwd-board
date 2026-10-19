@@ -489,14 +489,15 @@ export class Classroom {
     this.confirmEnd = 0;
     const dur = Math.round((this.host.store.now() - this.rec.startedAt) / 1000);
     const open = this.recOpen;
-    const { saved, blobs } = await this.rec.stop({ board: this.host.store.id, ...this.host.meta(), call: this.call?.stats() }, open || (async () => null));
-    this.host.store.log({ kind: 'lesson', data: { op: 'end', seconds: dur, saved: saved.length } });
+    const { saved, blobs, empty } = await this.rec.stop({ board: this.host.store.id, ...this.host.meta(), call: this.call?.stats() }, open || (async () => null));
+    this.host.store.log({ kind: 'lesson', data: { op: 'end', seconds: dur, saved: saved.length, empty: empty.length ? empty : undefined } });
     this.renderLesson();
     for (const b of blobs) downloadBlob(b.name, b.blob);
     // 판 기록도 같은 수업 폴더에 (묻는 창 없이)
     const bundled = await this.host.saveBundle(open);
     toast(saved.length ? `수업 폴더에 저장했어요 · ${this.recPath}${bundled ? ' (녹화 + 판 기록)' : ''}` : '녹화 파일을 내려받았어요', 6000);
     this.recOpen = null;
+    if (empty.length && dur > 5) toast('주의: 녹화 파일이 비어 있어요 (' + empty.map((n) => n.replace(/^.*_/, '')).join(', ') + ') · 마이크 허용과 소리 줄을 확인해 주세요', 9000);
   }
 
   private renderLesson() {
