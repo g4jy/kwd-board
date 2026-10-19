@@ -334,6 +334,7 @@ put('Student_Lessons/_roster.json', JSON.stringify({
     R('Ines O', 'PT', 'life', '', '', ['새 학생 — 단계 진단 전'], 1),
     R('Ravi S', 'IN', '', '', '', ['목적 아직 안 물어봄'], 2),
     R('Leah D', 'GB', 'daily', '새싹', '새싹 1', ['소그룹 수업 같이 들음'], 95, { active: false }),
+    R('Yuki A', 'JP', 'daily', '새싹', '새싹 2', ['석 달 쉬고 복귀 — 지난 단원 복습부터'], 80, { status: 'paused', returning: true }), // 쉬는 학생인데 수업이 다시 잡힘 → 수업 중 + 복귀
     R('Marco V', 'IT', 'work', '잎새', '잎새 2', ['3월에 쉬기 시작'], 140, { active: false }),
   ],
 }));

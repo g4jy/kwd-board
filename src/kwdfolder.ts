@@ -342,6 +342,7 @@ export interface RosterStudent {
   status?: 'active' | 'paused' | 'archived'; // 선생님이 정한 상태 (없으면 최근 수업으로 판단)
   reason?: string; // 보관 이유 한 줄
   lessons?: number; // 수업 횟수
+  returning?: boolean; // 쉬는·보관 학생인데 14일 안 수업이 잡혀 이번에는 수업 중으로 본다 (자동화가 정함)
 }
 export interface Roster {
   schema: 'kwd-roster/v1';

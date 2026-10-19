@@ -20,6 +20,7 @@ res.cards = await p.locator('.rs-card').count();
 res.chips = await p.locator('.rs-chip:visible').allInnerTexts();
 res.kenji = await p.locator('.rs-card:has-text("Kenji T")').evaluate((c) => c.closest('.rg-cell').dataset.stage);
 res.first = await p.locator('.rs-card').first().innerText();
+res.returning = await p.locator('.rs-card:has-text("Yuki A")').evaluate((c) => [c.classList.contains('past'), c.querySelector('.rs-tag')?.textContent || '']);
 await p.locator('.home-sec.roster').scrollIntoViewIfNeeded();
 await p.screenshot({ path: `${OUT}/1-grid.png`, fullPage: true });
 await p.click('.rs-chip:nth-child(2)');

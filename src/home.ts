@@ -142,7 +142,7 @@ export class HomeScreen {
     const byFolder = new Map(students.map((s) => [s.folder, s]));
     const cutoff = ymd(new Date(Date.now() - 60 * 86400000));
     // 상태: 선생님이 정한 것 > 자동화의 active > 최근 60일 수업
-    const statusOf = (r: RosterStudent): RosterStatus => r.status || (r.active !== undefined ? (r.active ? 'active' : 'paused') : r.last_lesson && r.last_lesson >= cutoff ? 'active' : 'paused');
+    const statusOf = (r: RosterStudent): RosterStatus => (r.returning ? 'active' : r.status) || (r.active !== undefined ? (r.active ? 'active' : 'paused') : r.last_lesson && r.last_lesson >= cutoff ? 'active' : 'paused');
     const isActive = (r: RosterStudent) => statusOf(r) === 'active';
     type View = 'now' | 'all' | 'arch';
     let view: View = roster.students.some(isActive) ? 'now' : 'all';
@@ -256,7 +256,7 @@ export class HomeScreen {
     const card = h(
       'div',
       { class: 'rs-card' + (active || status === 'archived' ? '' : ' past') + (r.trial ? ' trial' : ''), role: 'button', tabindex: '0', title: [r.step, r.last_lesson ? `마지막 수업 ${r.last_lesson}` : ''].filter(Boolean).join(' · ') },
-      h('span', { class: 'rs-top' }, h('span', { class: 'rs-name' }, r.name), r.country ? h('span', { class: 'rs-cc' }, r.country.toUpperCase()) : '', r.trial ? h('span', { class: 'rs-tag' }, '체험') : '', more),
+      h('span', { class: 'rs-top' }, h('span', { class: 'rs-name' }, r.name), r.country ? h('span', { class: 'rs-cc' }, r.country.toUpperCase()) : '', r.trial ? h('span', { class: 'rs-tag' }, '체험') : '', r.returning ? h('span', { class: 'rs-tag', title: '쉬던 학생인데 수업이 다시 잡혔어요' }, '복귀') : '', more),
       ...(status === 'archived'
         ? [h('span', { class: 'rs-know' }, [r.stage || '단계 미정', s?.lessons || r.lessons ? `수업 ${s?.lessons || r.lessons}회` : '', r.last_lesson ? `마지막 ${r.last_lesson}` : ''].filter(Boolean).join(' · ')), r.reason ? h('span', { class: 'rs-know sub' }, r.reason) : '']
         : know.map((k, i) => h('span', { class: i ? 'rs-know sub' : 'rs-know' }, k))),
