@@ -1,5 +1,6 @@
 // 교실 (v8): 판 위에 카메라 칸 · 학생 입장 화면 · 수업 시작/끝내기(녹화) · 보기 모드
 // 통화는 call.ts(P2P), 녹화는 lessonrec.ts. 판 문서에는 영상·소리·시그널이 들어가지 않는다(카메라 보기 모드 설정만).
+import { icon } from './icons';
 import { h, toast, downloadBlob } from './ui';
 import { Call, fakeMedia, DEFAULT_ICE } from './call';
 import { LessonRecorder, type OpenWriter } from './lessonrec';
@@ -64,6 +65,8 @@ export class Classroom {
   private layKey = '';
   private lay: CamLayout = { mode: 'pip', w: 0 };
   private layOpen = false;
+  private extra!: HTMLElement;
+  private ctrlTimer = 0;
 
   constructor(private host: ClassroomHost) {
     const { role } = host;
@@ -73,11 +76,12 @@ export class Classroom {
     this.localV.muted = true;
     this.status = h('div', { class: 'cam-status' });
     this.ctrl = h('div', { class: 'cam-ctrl' });
+    this.extra = h('div', { class: 'cam-extra' });
     const remoteBox = h('div', { class: 'cam-tile remote' }, this.remoteV, h('span', { class: 'cam-name' }, role === 'teacher' ? '학생' : '선생님'), h('span', { class: 'cam-wait' }, role === 'teacher' ? '학생을 기다리는 중' : '선생님을 기다리는 중'));
     const localBox = h('div', { class: 'cam-tile local' }, this.localV, h('span', { class: 'cam-name' }, '나'));
     this.grip = h('span', { class: 'cam-grip', title: '끌어서 크기 바꾸기' });
     this.tiles = h('div', { class: 'cam-tiles', title: '끌어서 옮기기' }, remoteBox, localBox, this.grip);
-    this.dock.append(this.tiles, this.status, this.ctrl);
+    this.dock.append(this.tiles, this.status, this.ctrl, this.extra);
     this.layKey = 'kwd.camLayout.' + role;
     this.lay = this.loadLayout();
     this.bindLayout();
@@ -247,17 +251,28 @@ export class Classroom {
     this.dock.dataset.state = !on && !c.local ? 'off' : live ? 'live' : 'wait';
     this.dock.classList.toggle('peer-cam-off', !!pm?.camOff || (live && !remote?.getVideoTracks().length));
     this.dock.classList.toggle('my-cam-off', !c.camOn());
+    this.dock.classList.toggle('my-mic-off', !!c.local && !c.micOn());
     // 상태 한 줄
     const st = c.stats();
     const q = { good: '연결 좋음', ok: '조금 느림', bad: '연결 나쁨', none: '' }[st.quality];
     this.status.textContent = !c.local && !on ? '' : live ? `${q}${st.rtt ? ` · ${st.rtt}ms` : ''}${st.relayed ? ' · 중계' : ''}${pm?.micOff ? ' · 상대 마이크 꺼짐' : ''}` : this.host.role === 'teacher' ? '학생이 링크로 들어오면 바로 연결돼요' : '선생님을 기다리는 중';
     this.status.dataset.q = live ? st.quality : 'none';
-    // 단추
+    // 잘 연결돼 있을 때는 상태 줄을 숨긴다 (판을 덜 가리게). 문제가 있을 때만 보인다
+    this.status.classList.toggle('quiet', live && (st.quality === 'good' || st.quality === 'ok') && !pm?.micOff);
+    // 단추: 통화 중에는 칸 안 아래쪽에 아이콘으로, 마우스를 올리거나(태블릿은 한 번 누르면) 보인다 (10/19)
     this.ctrl.innerHTML = '';
-    const btn = (label: string, title: string, fn: () => void, cls = '') => {
-      const b = h('button', { type: 'button', class: 'cam-b ' + cls, title }, label);
-      b.addEventListener('click', fn);
-      this.ctrl.append(b);
+    this.extra.innerHTML = '';
+    const over = !!c.local;
+    this.ctrl.classList.toggle('over', over);
+    if (over && this.ctrl.parentElement !== this.tiles) this.tiles.append(this.ctrl);
+    if (!over && this.ctrl.parentElement !== this.dock) this.dock.insertBefore(this.ctrl, this.extra);
+    const btn = (label: string, title: string, fn: () => void, cls = '', ic = '', into: HTMLElement = this.ctrl) => {
+      const b = h('button', { type: 'button', class: 'cam-b ' + cls, title: title || label, 'aria-label': label }, ...(ic ? [icon(ic), h('span', { class: 'cam-lbl' }, label)] : [label]));
+      b.addEventListener('click', (e) => {
+        e.stopPropagation();
+        fn();
+      });
+      into.append(b);
       return b;
     };
     if (!c.local) {
@@ -265,16 +280,16 @@ export class Classroom {
       else if (!this.join) btn('카메라 켜기', '카메라·마이크 켜기', () => this.showJoin(), 'primary');
       return;
     }
-    btn(c.micOn() ? '마이크 끄기' : '마이크 켜기', '', () => (c.setMic(!c.micOn()), this.render()), c.micOn() ? '' : 'off');
-    btn(c.camOn() ? '카메라 끄기' : '카메라 켜기', '', () => (c.setCamera(!c.camOn()), this.render()), c.camOn() ? '' : 'off');
+    btn(c.micOn() ? '마이크 끄기' : '마이크 켜기', '', () => (c.setMic(!c.micOn()), this.render()), c.micOn() ? '' : 'off', c.micOn() ? 'mic' : 'micOff');
+    btn(c.camOn() ? '카메라 끄기' : '카메라 켜기', '', () => (c.setCamera(!c.camOn()), this.render()), c.camOn() ? '' : 'off', c.camOn() ? 'cam' : 'camOff');
     if (this.host.role === 'teacher') {
       const big = this.view() === 'cams';
-      btn(big ? '판 보기' : '얼굴 크게', '학생 화면도 같이 바뀌어요', () => this.setView(big ? 'board' : 'cams'));
+      btn(big ? '판 보기' : '얼굴 크게', big ? '판 보기 · 학생 화면도 같이 바뀌어요' : '얼굴 크게 · 학생 화면도 같이 바뀌어요', () => this.setView(big ? 'board' : 'cams'), big ? 'on' : '', 'face');
     }
-    if (!this.dock.classList.contains('big')) btn('배치', '카메라 칸 모양·자리', () => ((this.layOpen = !this.layOpen), this.render()), 'ghost lay-b' + (this.layOpen ? ' on' : ''));
-    if (this.layOpen && !this.dock.classList.contains('big')) this.ctrl.append(this.layoutMenu());
+    if (!this.dock.classList.contains('big')) btn('배치', '카메라 칸 모양·자리', () => ((this.layOpen = !this.layOpen), this.render()), 'lay-b' + (this.layOpen ? ' on' : ''), 'layout');
+    if (this.layOpen && !this.dock.classList.contains('big')) this.extra.append(this.layoutMenu());
     const st2 = c.stats();
-    if (st2.quality === 'bad' || ['failed', 'disconnected'].includes(st2.state)) btn('다시 연결', '연결이 나쁠 때', () => c.reconnect(), 'ghost');
+    if (st2.quality === 'bad' || ['failed', 'disconnected'].includes(st2.state)) btn('다시 연결', '연결이 나쁠 때', () => c.reconnect(), 'ghost', '', this.extra);
   }
 
   // ---- 카메라 칸 배치: 끌어서 옮기기 · 모서리로 크기 · 배치 고르기 (이 기기에만 저장) ----
@@ -354,15 +369,26 @@ export class Classroom {
         el.removeEventListener('pointerup', onUp);
         el.removeEventListener('pointercancel', onUp);
         d.classList.remove('dragging');
-        if (movedPx >= 5) this.saveLayout();
+        if (movedPx >= 5) {
+          this.saveLayout();
+          d.classList.add('was-dragged');
+          window.setTimeout(() => d.classList.remove('was-dragged'), 0);
+        }
       };
       el.addEventListener('pointermove', onMove);
       el.addEventListener('pointerup', onUp);
       el.addEventListener('pointercancel', onUp);
     };
     this.tiles.addEventListener('pointerdown', (e) => {
-      if (e.target === this.grip) return;
+      if (e.target === this.grip || (e.target as HTMLElement).closest('.cam-ctrl')) return;
       drag(e, 'move');
+    });
+    // 태블릿: 칸을 한 번 누르면 단추가 4초 보인다 (마우스는 올리면 보인다)
+    this.tiles.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.cam-ctrl') || d.classList.contains('was-dragged')) return;
+      d.classList.add('ctrl-on');
+      window.clearTimeout(this.ctrlTimer);
+      this.ctrlTimer = window.setTimeout(() => d.classList.remove('ctrl-on'), 4000);
     });
     this.grip.addEventListener('pointerdown', (e) => drag(e, 'size'));
     const onResize = () => this.applyLayout();

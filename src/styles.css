@@ -2953,3 +2953,402 @@ body.in-demo { background: var(--bg); overflow: auto; }
 .rs-card.arch { background: #f6f5f1; }
 .rs-card.arch .rs-name { color: #5b6478; }
 .rs-reason { font: inherit; font-size: 12px; border: 1px solid var(--line); border-radius: 8px; padding: 4px 8px; }
+
+/* ---------- 도구 줄: 아이콘 한 가지 모양 (10/19 UI/UX 분석) ---------- */
+.toolbar {
+  align-items: center;
+  gap: 2px;
+  padding: 5px;
+  border-radius: 16px;
+  max-width: calc(100vw - 16px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.toolbar .tb,
+.toolbar .tb[data-tool] {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border-radius: 11px;
+  font-size: 15px;
+  color: #4a463f;
+  flex: none;
+}
+.toolbar .tb .ic {
+  display: block;
+  line-height: 0;
+}
+.toolbar .tb-label {
+  display: none;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  color: #7a756b;
+}
+.toolbar.with-labels .tb,
+.toolbar.with-labels .tb[data-tool] {
+  width: 50px;
+  min-width: 50px;
+  height: 54px;
+}
+.toolbar.with-labels .tb-label {
+  display: block;
+}
+.toolbar .tb.on {
+  background: var(--ink);
+  color: #fff;
+}
+.toolbar .tb.on .tb-label {
+  color: #fff;
+}
+.toolbar .tb[data-tool='laser'].on {
+  background: #c62828;
+}
+.toolbar .tb-sep {
+  align-self: center;
+  height: 28px;
+  margin: 0 4px;
+}
+/* 펜 칸: 고른 펜은 배경을 진하게 하지 않고(색이 보이게) 테두리 + 펜이 살짝 들린다 */
+.toolbar .pen-slot.on {
+  background: #ebe8e1;
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+.toolbar .pen-slot.on .tb-label {
+  color: var(--ink);
+}
+.toolbar .pen-slot .ic {
+  transition: transform 0.12s;
+}
+.toolbar .pen-slot.on .ic {
+  transform: translate(1px, -3px);
+}
+.slot-w {
+  display: block;
+  width: 18px;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.9);
+}
+.toolbar.no-ink [data-tool='laser'] {
+  display: none;
+}
+/* 도구 줄을 위에 (⋯ → 도구 줄을 위에) */
+.board.tb-top .toolbar {
+  top: calc(60px + env(safe-area-inset-top, 0px));
+  bottom: auto;
+}
+
+/* ---------- 판 위 자료: 고르면 뜨는 막대 (10/19) ---------- */
+.obj-tools {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  z-index: 3;
+  display: none;
+  gap: 2px;
+  padding: 3px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14);
+  transform-origin: 50% 100%;
+  transform: translateX(-50%) scale(var(--inv, 1)) translateY(-8px);
+  white-space: nowrap;
+  touch-action: none;
+}
+/* 학습지·유튜브는 늘 보인다: 남의 페이지(iframe) 위에서는 마우스를 올려도 판이 모르고, 태블릿에서는 눌러 고를 수도 없다 */
+.obj.sel > .obj-tools,
+.board .obj-html > .obj-tools,
+.board .obj-youtube > .obj-tools {
+  display: flex;
+}
+@media (hover: hover) {
+  .obj:hover > .obj-tools {
+    display: flex;
+  }
+}
+.board[data-tool='pen'] .obj:not(.obj-html):not(.obj-youtube) > .obj-tools,
+.board[data-tool='hl'] .obj:not(.obj-html):not(.obj-youtube) > .obj-tools,
+.board[data-tool='eraser'] .obj:not(.obj-html):not(.obj-youtube) > .obj-tools,
+.board[data-tool='laser'] .obj > .obj-tools {
+  display: none;
+}
+.board .obj .obj-tools > .ot {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  box-shadow: none;
+  color: #4a463f;
+  opacity: 1;
+  cursor: pointer;
+  font-size: 0;
+}
+.board .obj .obj-tools > .ot:hover {
+  background: #f1efe9;
+}
+.board .obj .obj-tools > .obj-grip {
+  cursor: move;
+}
+.board .obj .obj-tools > .obj-del {
+  color: var(--no, #c62828);
+}
+.obj-tools .ic svg {
+  width: 20px;
+  height: 20px;
+}
+/* 학생·보조 기기에서 남는 단추가 없으면 막대를 숨긴다 */
+.role-student .obj:not(.obj-html):not(.obj-video):not(.obj-youtube) > .obj-tools,
+.role-assist .obj:not(.obj-html) > .obj-tools {
+  display: none;
+}
+/* 크기 손잡이: 화면에서 18px 점, 누르는 면 36px */
+.board .obj > .obj-size {
+  width: 18px;
+  height: 18px;
+  right: -9px;
+  bottom: -9px;
+  border-radius: 5px;
+  transform: scale(var(--inv, 1));
+}
+.board .obj > .obj-size::after {
+  content: '';
+  position: absolute;
+  inset: -9px;
+}
+
+/* ---------- 오른쪽 목록: 종류 아이콘 + 작은 그림 + 이름, 확대 막대 바로 위 (10/19) ---------- */
+.rail {
+  top: auto;
+  bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+  transform: none;
+  right: max(10px, env(safe-area-inset-right, 0px));
+  max-height: calc(100vh - 380px);
+  min-height: 0;
+  align-items: stretch;
+  padding: 4px;
+  gap: 2px;
+}
+.rail .rail-item {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0;
+  border-radius: 9px;
+  position: relative;
+}
+.rail .ri-vis {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  position: relative;
+}
+.rail .ri-vis .ic svg {
+  width: 20px;
+  height: 20px;
+}
+.rail .ri-vis .ri-n {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+}
+.rail .ri-thumb {
+  width: 44px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.1);
+  background: #fff;
+}
+.rail.wide {
+  width: 176px;
+}
+.rail.wide .rail-item {
+  width: 100%;
+  height: 44px;
+  justify-content: flex-start;
+  padding: 0 8px 0 4px;
+}
+.rail.wide .ri-vis {
+  width: 44px;
+}
+.rail .ri-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rail .rail-item.on .ri-thumb {
+  box-shadow: 0 0 0 2px #fff;
+}
+.rail-toggle {
+  align-self: flex-end;
+  /* 누르는 면 44px (손가락 기준). 모양은 작은 화살표 그대로 */
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.rail-toggle:hover {
+  background: #f1efe9;
+}
+.rail.wide:not([hidden]) + .zoom {
+  width: 176px;
+  justify-content: space-between;
+  box-sizing: border-box;
+}
+.board .zoom .zb {
+  min-width: 44px;
+  height: 44px;
+}
+
+/* ---------- 카메라 칸: 통화 중 단추는 칸 안 아래쪽 아이콘 (마우스를 올리거나 한 번 누르면) (10/19) ---------- */
+.cam-ctrl.over {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  z-index: 3;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 14px;
+  background: rgba(18, 20, 28, 0.62);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+.cam-dock:hover .cam-ctrl.over,
+.cam-dock.ctrl-on .cam-ctrl.over,
+.cam-ctrl.over:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
+.cam-ctrl.over .cam-b {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: #fff;
+}
+.cam-ctrl.over .cam-b:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+.cam-ctrl.over .cam-b.off {
+  background: #c62828;
+  color: #fff;
+}
+.cam-ctrl.over .cam-b.on {
+  background: rgba(255, 255, 255, 0.92);
+  color: #1f2a44;
+}
+.cam-ctrl.over .cam-b .ic svg {
+  width: 20px;
+  height: 20px;
+}
+.cam-lbl {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* 마이크를 끈 것은 단추가 숨어 있어도 칸 이름 옆에 보인다 */
+.cam-dock.my-mic-off .cam-tile.local .cam-name::after {
+  content: ' · 마이크 꺼짐';
+  color: #ffb4a8;
+}
+.cam-status.quiet {
+  display: none;
+}
+.cam-extra {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.cam-extra:empty {
+  display: none;
+}
+.cam-dock.moved:not(.big) .cam-extra {
+  justify-content: flex-start;
+}
+
+/* ---------- 위 줄: 타이머 단추 · 모든 단추 44px (10/19) ---------- */
+.timer-btn {
+  width: 44px;
+  height: 44px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: #4a463f;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+.timer-btn:hover {
+  background: #f7f5f0;
+}
+.top-left .timer {
+  font-size: 20px;
+  height: 44px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+}
+.top-left .back-btn,
+.top-left .chip,
+.top-right .lesson-btn,
+.top-right .look-btn,
+.top-right .mem-btn {
+  min-height: 44px;
+  box-sizing: border-box;
+}
+.timer-menu .mi-chips {
+  padding: 4px 10px 8px;
+}
+.timer-menu .chip-btn {
+  min-height: 40px;
+  padding: 0 14px;
+  font-size: 14px;
+}

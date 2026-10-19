@@ -39,6 +39,8 @@ await s.click('.join .join-go');
 await t.waitForFunction(() => document.querySelector('.cam-dock')?.dataset.state !== 'off', null, { timeout: 8000 });
 res.teacherAuto = true;
 // 연결
+// 통화 중 카메라 단추는 칸 안에 숨어 있다: 칸을 한 번 누르면(태블릿·폰) 4초 보인다
+const cam = async (p, sel) => { await p.locator('.cam-tiles').click({ position: { x: 24, y: 24 } }); await p.click(sel); };
 const live = (p) => p.waitForFunction(() => { const v = document.querySelector('.cam-remote'); return document.querySelector('.cam-dock')?.dataset.state === 'live' && v && v.videoWidth > 0; }, null, { timeout: 20000 });
 await Promise.all([live(t), live(s)]);
 res.connected = true;
@@ -48,20 +50,20 @@ res.audioTracks = await t.evaluate(() => document.querySelector('.cam-remote').s
 await t.screenshot({ path: `${OUT}/2-teacher-live.png` });
 await s.screenshot({ path: `${OUT}/3-student-live.png` });
 // 학생이 마이크 끄면 선생님에게 표시
-await s.click('.cam-b:has-text("마이크 끄기")');
+await cam(s, '.cam-b:has-text("마이크 끄기")');
 await t.waitForTimeout(800);
 res.peerMicOff = (await t.locator('.cam-status').innerText()).includes('상대 마이크 꺼짐');
-await s.click('.cam-b:has-text("마이크 켜기")');
+await cam(s, '.cam-b:has-text("마이크 켜기")');
 // 얼굴 크게 → 학생도
-await t.click('.cam-b:has-text("얼굴 크게")');
+await cam(t, '.cam-b:has-text("얼굴 크게")');
 await s.waitForSelector('.cam-dock.big', { timeout: 5000 });
 res.bigBoth = (await t.locator('.cam-dock.big').count()) + (await s.locator('.cam-dock.big').count());
 await t.screenshot({ path: `${OUT}/4-teacher-big.png` });
 await s.screenshot({ path: `${OUT}/5-student-big.png` });
-await t.click('.cam-b:has-text("판 보기")');
+await cam(t, '.cam-b:has-text("판 보기")');
 await s.waitForFunction(() => !document.querySelector('.cam-dock.big'), null, { timeout: 5000 });
 // 카메라 칸 배치: 나란히 → 끌어서 옮기기 → 모서리로 키우기 → 새로 열어도 그대로 (이 기기만)
-await t.click('.cam-b.lay-b');
+await cam(t, '.cam-b.lay-b');
 await t.click('.cam-lay .cam-b[data-mode="side"]');
 res.layMode = await t.locator('.cam-dock').getAttribute('data-layout');
 const tb = await t.locator('.cam-tiles').boundingBox();

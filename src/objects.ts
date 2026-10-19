@@ -6,6 +6,7 @@ import { createPageEditor } from './editor';
 import { htmlWithBridge } from './importer';
 import type { BoardStore, PageObject, Role } from './store';
 import { h } from './ui';
+import { icon } from './icons';
 
 export interface ObjectHost {
   store: BoardStore;
@@ -136,8 +137,22 @@ export class PageObjects {
   private create(o: PageObject) {
     const el = h('div', { class: `obj obj-${o.type}`, 'data-obj': o.id });
     const v: ObjView = { el, data: o };
-    const grip = h('button', { type: 'button', class: 'obj-grip', title: '끌어서 옮기기', 'aria-label': '옮기기' }, '⠿');
-    const del = h('button', { type: 'button', class: 'obj-del', title: '지우기', 'aria-label': '지우기' }, '×');
+    // 고르면 위에 뜨는 막대 (10/19): 판 배율과 상관없이 화면에서 36px. 옮기기 · 크게 · (학습지) 글상자·저장 · 지우기
+    const tools = h('div', { class: 'obj-tools', role: 'toolbar', 'aria-label': '이 자료' });
+    tools.addEventListener('pointerdown', (e) => e.stopPropagation());
+    const tool = (cls: string, ic: string, title: string, fn?: () => void) => {
+      const b = h('button', { type: 'button', class: 'ot ' + cls, title, 'aria-label': title.split(' (')[0] }, icon(ic));
+      if (fn) {
+        b.addEventListener('pointerdown', (e) => e.stopPropagation());
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          fn();
+        });
+      }
+      return b;
+    };
+    const grip = tool('obj-grip', 'move', '끌어서 옮기기');
+    const del = tool('obj-del', 'close', '지우기');
     const size = h('span', { class: 'obj-size', title: '끌어서 크기 바꾸기' });
     del.addEventListener('pointerdown', (e) => e.stopPropagation());
     del.addEventListener('click', (e) => {
@@ -177,20 +192,17 @@ export class PageObjects {
       v.editor = editor;
       this.editors.set(o.id, editor);
       this.ctx.undo.addToScope([this.ctx.store.boxFragment(o.id)]);
-      el.append(grip, del, size);
+      tools.append(grip, del);
+      el.append(tools, size);
       this.bindMove(v, grip);
       this.bindMove(v, el, true);
       this.bindResize(v, size, false);
     } else if (o.type === 'img') {
       const img = h('img', { class: 'obj-img-el', alt: o.name || '', draggable: 'false' }) as HTMLImageElement;
       img.src = this.ctx.store.resolveImg(o.src);
-      const big = h('button', { type: 'button', class: 'obj-big', title: '모두의 화면에 크게 보기' }, '⤢ 크게');
-      big.addEventListener('pointerdown', (e) => e.stopPropagation());
-      big.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.ctx.openPopup(this.pageId, o.id);
-      });
-      el.append(img, del, big, size);
+      const big = tool('obj-big', 'big', '모두의 화면에 크게 보기', () => this.ctx.openPopup(this.pageId, o.id));
+      tools.append(big, del);
+      el.append(img, tools, size);
       this.bindMove(v, el);
       this.bindResize(v, size, true);
     } else if (o.type === 'slide') {
@@ -207,13 +219,9 @@ export class PageObjects {
       }
       const mat = o.mid ? this.ctx.store.materials.get(o.mid) : null;
       const label = h('div', { class: 'slide-label' }, `${mat?.name || '슬라이드'} · ${o.n}${mat?.pages ? '/' + mat.pages : ''}`);
-      const big = h('button', { type: 'button', class: 'obj-big', title: this.ctx.role === 'teacher' ? '이 쪽을 크게 (학생 화면도)' : '이 쪽을 크게' }, '⤢ 크게');
-      big.addEventListener('pointerdown', (e) => e.stopPropagation());
-      big.addEventListener('click', (e) => {
-        e.stopPropagation();
-        this.ctx.focusObj(this.pageId, o.id);
-      });
-      el.append(label, img, big, del);
+      const big = tool('obj-big', 'big', this.ctx.role === 'teacher' ? '이 쪽을 크게 (학생 화면도)' : '이 쪽을 크게', () => this.ctx.focusObj(this.pageId, o.id));
+      tools.append(big, del);
+      el.append(label, img, tools);
       this.bindMove(v, el, true);
     } else if (o.type === 'audio' || o.type === 'video' || o.type === 'youtube') {
       const icon = o.type === 'audio' ? '♪' : '▶';
@@ -232,19 +240,12 @@ export class PageObjects {
         if (/^https?:/.test(u) && !u.startsWith(location.origin)) (media as HTMLMediaElement).crossOrigin = 'anonymous';
         (media as HTMLMediaElement).src = u;
       }
-      bar.prepend(grip);
-      if (o.type !== 'audio') {
-        const big = h('button', { type: 'button', class: 'obj-big inbar', title: '모두의 화면에 크게 보기' }, '⤢ 크게');
-        big.addEventListener('pointerdown', (e) => e.stopPropagation());
-        big.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.ctx.openPopup(this.pageId, o.id);
-        });
-        bar.append(big);
-      }
-      bar.append(del);
-      el.append(bar, media, size);
+      tools.append(grip);
+      if (o.type !== 'audio') tools.append(tool('obj-big inbar', 'big', '모두의 화면에 크게 보기', () => this.ctx.openPopup(this.pageId, o.id)));
+      tools.append(del);
+      el.append(bar, media, tools, size);
       this.bindMove(v, bar);
+      this.bindMove(v, grip);
       this.bindResize(v, size, o.type !== 'audio' && o.type !== 'youtube' ? false : false);
     } else {
       // 웹 학습지: 학생이 직접 누르고, 그 위에 필기·글상자. 학습지의 단계(쪽)마다 필기가 따로 남는다.
@@ -253,25 +254,17 @@ export class PageObjects {
       const frame = h('iframe', { class: 'mat-frame obj-frame', sandbox: 'allow-scripts allow-forms', title: o.name || '자료' }) as HTMLIFrameElement;
       const md = o.mid ? this.ctx.store.matdata.get(`${o.mid}/1`) : undefined;
       if (md?.html != null) frame.srcdoc = htmlWithBridge(md.html);
-      const btn = (label: string, title: string, fn: () => void, cls = '') => {
-        const b = h('button', { type: 'button', class: 'obj-bt ' + cls, title }, label);
-        b.addEventListener('pointerdown', (e) => e.stopPropagation());
-        b.addEventListener('click', (e) => {
-          e.stopPropagation();
-          fn();
-        });
-        return b;
-      };
       const layer = h('div', { class: 'ws-layer' });
-      bar.prepend(grip);
-      if (this.ctx.canType() && this.ctx.addWsBox) bar.append(btn('T', '이 단계 위에 글상자', () => this.ctx.addWsBox!(wsLayerId(o.id, v.data.step || 1), Math.max(16, v.data.w / 2 - 130), 40), 'ws-t'));
-      bar.append(btn('⤢', this.ctx.role === 'teacher' ? '학습지를 크게 (학생 화면도)' : '학습지를 크게', () => this.ctx.focusObj(this.pageId, o.id)));
-      if (this.ctx.role === 'teacher' && this.ctx.saveWs) bar.append(btn('저장', '필기 넣은 학습지 저장 (학생 폴더 또는 내려받기)', () => this.ctx.saveWs!(this.pageId, o.id)));
-      bar.append(del);
-      el.append(bar, frame, layer, size);
+      tools.append(grip);
+      if (this.ctx.canType() && this.ctx.addWsBox) tools.append(tool('obj-bt ws-t', 'textbox', '이 단계 위에 글상자', () => this.ctx.addWsBox!(wsLayerId(o.id, v.data.step || 1), Math.max(16, v.data.w / 2 - 130), 40)));
+      tools.append(tool('obj-bt', 'big', this.ctx.role === 'teacher' ? '학습지를 크게 (학생 화면도)' : '학습지를 크게', () => this.ctx.focusObj(this.pageId, o.id)));
+      if (this.ctx.role === 'teacher' && this.ctx.saveWs) tools.append(tool('obj-bt', 'save', '필기 넣은 학습지 저장 (학생 폴더 또는 내려받기)', () => this.ctx.saveWs!(this.pageId, o.id)));
+      tools.append(del);
+      el.append(bar, frame, layer, tools, size);
       v.frame = frame;
       v.ws = { layer, objs: null, step: 0, frameStep: 0, stepEl };
       this.bindMove(v, bar);
+      this.bindMove(v, grip);
       this.bindMove(v, el, true);
       this.bindResize(v, size, false);
       const states = this.ctx.store.doc.getMap<unknown>('wsstate:' + o.id);

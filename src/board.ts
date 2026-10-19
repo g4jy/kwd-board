@@ -12,6 +12,7 @@ import { summarize } from './exportmd';
 import { buildBundle, bundleName, boardMarkdown, canPickFolder, pickFolder, folderName, writeToFolder } from './record';
 import { importPdf, importHtml, htmlWithBridge, joinText } from './importer';
 import { loadPrefs, savePrefs, penSlot, renderSlot, buildPenPopover, type PenPrefs } from './palette';
+import { icon } from './icons';
 import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY, type StudentMemory } from './memory';
 import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, makeLessonDir, type StudentPack, type PackFile } from './kwdfolder';
 import { annotatedWorksheet } from './wsexport';
@@ -74,6 +75,7 @@ export class BoardScreen {
   private zoomEl!: HTMLElement;
   private chip!: HTMLElement;
   private timerEl!: HTMLElement;
+  private timerBtn: HTMLElement | null = null;
   private followBtn!: HTMLElement;
   private bubble!: HTMLElement;
   private popover: HTMLElement | null = null;
@@ -165,6 +167,8 @@ export class BoardScreen {
     this.ink.getPages = () => this.pageBoxes();
     this.ink.canDraw = () => this.role !== 'student' || this.store.getSetting('studentInk', false);
     this.ink.locate = (page, pts, screen) => this.locateInk(page, pts, screen);
+    // 레이저로 가리킨 곳: 판 기록에 한 줄 (전사 정리 때 '여기'가 어디였는지)
+    this.ink.onPoint = (p) => this.store.log({ kind: 'point', page: p.page, data: { x: p.x, y: p.y, target: p.target } });
     this.ink.straighten = this.prefs.straighten;
 
     const back = h('button', { type: 'button', class: 'back-btn', title: '판 목록으로 (저장은 자동)' }, '← 목록');
@@ -172,6 +176,12 @@ export class BoardScreen {
     this.chip = h('button', { type: 'button', class: 'chip', title: '판 정보·링크' });
     this.saveDot = h('span', { class: 'save-dot', title: '기록' });
     const topLeft = h('div', { class: 'top-left' }, back, this.chip);
+    // 타이머: 학생 칩 옆 (10/19: ⋯ 안에 숨어 있었다). 도는 동안은 남은 시간이 그 자리에
+    if (this.role === 'teacher') {
+      this.timerBtn = h('button', { type: 'button', class: 'timer-btn', title: '타이머 (30초 · 1분 · 3분 · 5분)', 'aria-label': '타이머' }, icon('timer'));
+      this.timerBtn.addEventListener('click', () => this.openTimerMenu(this.timerBtn!));
+      topLeft.append(this.timerBtn);
+    }
     if (this.role === 'student' || this.role === 'assist') back.hidden = true;
     this.timerEl = h('div', { class: 'timer', hidden: '' });
     this.memBtn = h('button', { type: 'button', class: 'mem-btn', hidden: '' }, '이 학생');
@@ -201,7 +211,8 @@ export class BoardScreen {
         meta: () => ({ student_folder: this.packFolder ? 'PC_ONLY' : null, lesson_no: this.pack?.brief?.next_lesson || null, packet_id: this.pack?.packet?.packet_id || null }),
       });
     }
-    const topRight = h('div', { class: 'top-right' }, this.timerEl, ...(this.role === 'teacher' && this.classroom?.lessonBtn ? [this.classroom.lessonBtn] : []), ...(this.role === 'teacher' ? [lookBtn] : []), this.memBtn);
+    topLeft.append(this.timerEl);
+    const topRight = h('div', { class: 'top-right' }, ...(this.role === 'teacher' && this.classroom?.lessonBtn ? [this.classroom.lessonBtn] : []), ...(this.role === 'teacher' ? [lookBtn] : []), this.memBtn);
     this.followBtn = h('button', { type: 'button', class: 'follow-btn', hidden: '' }, '선생님 화면으로');
     this.followBtn.addEventListener('click', () => {
       this.following = true;
@@ -210,6 +221,11 @@ export class BoardScreen {
     });
     this.bubble = h('div', { class: 'bubble', hidden: '' });
     this.toolbar = this.buildToolbar();
+    try {
+      this.root.classList.toggle('tb-top', this.role !== 'student' && localStorage.getItem('kwd.tbTop') === '1');
+    } catch {
+      /* 기본은 아래 */
+    }
     this.rail = h('nav', { class: 'rail', 'aria-label': '페이지' });
     this.zoomEl = this.buildZoom();
     this.singleNav = this.buildSingleNav();
@@ -591,7 +607,8 @@ export class BoardScreen {
     // 카메라 칸이 켜져 있으면 그 오른쪽 자리를 비켜 준다 (넓은 화면)
     const dock = this.classroom?.dock;
     if (dock && W > 900 && dock.dataset.state !== 'off' && !dock.classList.contains('big') && getComputedStyle(dock).display !== 'none' && dock.getBoundingClientRect().left > window.innerWidth / 2) side = Math.max(side, window.innerWidth - dock.getBoundingClientRect().left + 8);
-    const top = 64, bottom = this.role === 'student' && this.toolbar.hidden ? 24 : 96;
+    const tbTop = this.root.classList.contains('tb-top');
+    const top = tbTop ? 120 : 64, bottom = (this.role === 'student' && this.toolbar.hidden) || tbTop ? 24 : 96;
     const aw = Math.max(80, W - side - pad * 2), ah = Math.max(80, H - top - bottom - pad);
     const s = Math.min(maxS, Math.max(this.vp.min, Math.min(aw / Math.max(1, x1 - x0), ah / Math.max(1, y1 - y0))));
     this.vp.set({ s, x: pad + (aw - (x1 - x0) * s) / 2 - x0 * s, y: top + (ah - (y1 - y0) * s) / 2 - y0 * s });
@@ -605,20 +622,27 @@ export class BoardScreen {
   }
 
   // 오른쪽 목록: 판 위의 것들(노트·슬라이드·학습지·사진·영상…) — 누르면 그리로
-  private railItems(): Array<{ key: string; icon: string; label: string; title: string; page: string; rect: [number, number, number, number] }> {
-    const out: Array<{ key: string; icon: string; label: string; title: string; page: string; rect: [number, number, number, number] }> = [];
+  private railItems(): Array<{ key: string; icon: string; label: string; title: string; page: string; rect: [number, number, number, number]; ic?: string; name?: string; thumb?: string }> {
+    const out: Array<{ key: string; icon: string; label: string; title: string; page: string; rect: [number, number, number, number]; ic?: string; name?: string; thumb?: string }> = [];
     const ICON: Record<string, string> = { slide: '▤', html: '◫', img: '▣', video: '▶', youtube: '▶', audio: '♪' };
+    // 종류마다 다른 아이콘 (10/19: ▶·♪·▣ 가 두 개씩이라 구분이 안 됐다). 숙제는 따로
+    const IC: Record<string, string> = { slide: 'slide', html: 'web', img: 'image', video: 'video', youtube: 'youtube', audio: 'audio' };
     const NAME: Record<string, string> = { slide: '슬라이드', html: '웹 학습지', img: '사진', video: '영상', youtube: '유튜브', audio: '소리' };
     this.order.forEach((id, i) => {
       const v = this.views.get(id)!;
       if (this.isCanvas(id)) {
         const nh = Math.min(Math.max(300, v.editorHost?.offsetHeight || 600), 1000);
-        if (!v.editorHost?.classList.contains('note-empty')) out.push({ key: 'note', icon: '✎', label: '', title: '노트', page: id, rect: [0, v.y, TEXT_W, v.y + nh] });
+        if (!v.editorHost?.classList.contains('note-empty')) out.push({ key: 'note', icon: '✎', label: '', title: '노트', page: id, rect: [0, v.y, TEXT_W, v.y + nh], ic: 'note', name: '노트' });
         const objs = this.store.objList(id).filter((o) => o.type !== 'box').sort((a, b) => a.y - b.y || a.x - b.x);
         for (const o of objs) {
           const mat = o.mid ? this.store.materials.get(o.mid) : null;
           const title = o.type === 'slide' ? `${mat?.name || '슬라이드'} ${o.n}/${mat?.pages || ''}` : `${NAME[o.type]}${o.name && o.name !== NAME[o.type] ? ' · ' + o.name : ''}`;
-          out.push({ key: o.id, icon: ICON[o.type] || '•', label: o.type === 'slide' ? String(o.n) : '', title, page: id, rect: [o.x, v.y + o.y, o.x + o.w, v.y + o.y + o.h] });
+          const hw = /숙제|과제/.test(o.name || '');
+          const ic = hw ? (o.type === 'audio' ? 'voice' : 'homework') : IC[o.type] || 'doc';
+          const name = o.type === 'slide' ? `${(mat?.name || '슬라이드').replace(/^#\d+\s*/, '')} ${o.n}` : o.name || NAME[o.type] || '';
+          const md = o.type === 'slide' ? this.store.matdata.get(`${o.mid}/${o.n}`) : undefined;
+          const thumb = o.type === 'img' && o.src ? this.store.resolveImg(o.src) : md?.img ? this.store.resolveImg(md.img) : undefined;
+          out.push({ key: o.id, icon: ICON[o.type] || '•', label: o.type === 'slide' ? String(o.n) : '', title, page: id, rect: [o.x, v.y + o.y, o.x + o.w, v.y + o.y + o.h], ic, name, thumb });
         }
       } else out.push({ key: id, icon: '', label: String(i + 1), title: this.pageLabel(id, i), page: id, rect: [0, v.y, v.info.w, v.y + v.h] });
     });
@@ -632,8 +656,37 @@ export class BoardScreen {
     }
     this.rail.hidden = false;
     this.rail.innerHTML = '';
+    // 넓게: 작은 그림 + 짧은 이름 (한 줄 44px). 좁게: 종류 아이콘만. 접기 단추로 바꾸고 이 기기에 기억
+    let wide = window.innerWidth >= 1100;
+    try {
+      const w = localStorage.getItem('kwd.railWide');
+      if (w) wide = w === '1';
+    } catch {
+      /* 기본값 */
+    }
+    this.rail.classList.toggle('wide', wide);
+    const tg = h('button', { type: 'button', class: 'rail-toggle', title: wide ? '목록 좁게' : '목록 넓게 (이름 보기)', 'aria-label': wide ? '목록 좁게' : '목록 넓게' }, wide ? '›' : '‹');
+    tg.addEventListener('click', () => {
+      try {
+        localStorage.setItem('kwd.railWide', wide ? '0' : '1');
+      } catch {
+        /* 이번만 */
+      }
+      this.renderRail();
+    });
+    this.rail.append(tg);
     for (const it of this.railItems()) {
-      const b = h('button', { type: 'button', class: 'rail-item' + (it.key === this.railOn ? ' on' : '') + (it.icon ? ' ico' : ''), title: it.title, 'data-key': it.key, 'data-page': it.page }, it.icon ? h('span', { class: 'ri-ico' }, it.icon) : '', it.label ? h('span', { class: 'ri-n' }, it.label) : '');
+      const vis = h('span', { class: 'ri-vis' });
+      if (it.thumb && wide) {
+        const im = h('img', { class: 'ri-thumb', alt: '', loading: 'lazy', draggable: 'false' }) as HTMLImageElement;
+        im.src = it.thumb;
+        vis.append(im);
+      } else if (it.ic) {
+        vis.append(icon(it.ic));
+        if (it.label && !wide) vis.append(h('span', { class: 'ri-n' }, it.label)); // 슬라이드 쪽 번호
+      } else vis.append(h('span', { class: 'ri-n' }, it.label || it.icon));
+      const b = h('button', { type: 'button', class: 'rail-item' + (it.key === this.railOn ? ' on' : '') + (it.icon || it.ic ? ' ico' : ''), title: it.title, 'aria-label': it.title, 'data-key': it.key, 'data-page': it.page }, vis);
+      if (wide) b.append(h('span', { class: 'ri-name' }, it.name || it.title));
       b.addEventListener('click', () => this.gotoItem(it.key));
       this.rail.append(b);
     }
@@ -958,6 +1011,8 @@ export class BoardScreen {
       const g = 28 * sc;
       stage.style.backgroundSize = `${g}px ${g}px`;
       stage.style.backgroundPosition = `${x}px ${y}px`;
+      // 판 위 자료의 고르기 막대·크기 손잡이는 판 배율을 거꾸로 곱해 화면에서 늘 같은 크기
+      this.root.style.setProperty('--inv', String(1 / Math.max(0.05, sc)));
     };
     this.vp.onChange(grid);
     grid();
@@ -1319,26 +1374,38 @@ export class BoardScreen {
   // ================= 도구 줄 =================
   private slots: HTMLElement[] = [];
   private buildToolbar(): HTMLElement {
+    // 아이콘 한 가지 모양의 줄 (10/19 UI/UX): 단추 44px, 이름·단축키는 마우스를 올리면. 처음 세 번은 아이콘 아래 작은 이름
     const bar = h('div', { class: 'toolbar' });
-    const btn = (id: string, label: string, title: string, cls = '') => h('button', { type: 'button', class: `tb ${cls}`, 'data-tool': id, title }, label);
-    const select = btn('select', '선택', '선택 (V) · 필기·사진·글상자를 골라 옮기기 · 빈 곳 끌면 여러 개');
-    const text = btn('text', '글', '글 (T) · 빈 곳을 두 번 누르면 글상자');
+    const btn = (id: string, ic: string, label: string, title: string, cls = '') => {
+      const b = h('button', { type: 'button', class: `tb ${cls}`, 'data-tool': id, title, 'aria-label': label }, icon(ic), h('span', { class: 'tb-label' }, label));
+      return b;
+    };
+    const select = btn('select', 'select', '선택', '선택 (V) · 필기·사진·글상자를 골라 옮기기 · 빈 곳을 끌면 여러 개');
+    const text = btn('text', 'text', '글', '글 (T) · 빈 곳을 두 번 누르면 글상자');
     this.slots = [0, 1, 2].map((i) => penSlot(i, this.prefs.pens[i]));
     const hl = penSlot(3, this.prefs.hl, true);
     this.slots.push(hl);
-    const eraser = btn('eraser', '지우개', '지우개 (E) · 한 번 더 누르면 크기');
-    const undo = btn('undo', '↶', '되돌리기 (Ctrl+Z)', 'icon');
-    const redo = btn('redo', '↷', '다시하기 (Ctrl+Shift+Z)', 'icon');
-    const imp = btn('import', '가져오기', '사진 · PDF/슬라이드 · 웹 학습지');
-    const more = btn('more', '⋯', '더보기', 'icon');
+    const eraser = btn('eraser', this.prefs.eraserMode === 'part' ? 'eraserPart' : 'eraser', '지우개', '지우개 (E) · 한 번 더 누르면 획 전체/닿은 부분·크기');
+    const laser = btn('laser', 'laser', '레이저', '레이저 (L) · 가리키면 학생 화면에도 보이고 1.5초 뒤 사라져요');
+    const undo = btn('undo', 'undo', '되돌리기', '되돌리기 (Ctrl+Z)');
+    const redo = btn('redo', 'redo', '다시', '다시하기 (Ctrl+Shift+Z)');
+    const imp = btn('import', 'add', '넣기', '넣기 · 사진 · PDF/슬라이드 · 웹 학습지 · 유튜브');
+    const more = btn('more', 'more', '더보기', '더보기 · 학생 허락 · 기록 · 학생 링크');
     const sep = () => h('span', { class: 'tb-sep' });
     const pens = h('span', { class: 'tb-pens' }, ...this.slots);
-    if (this.role === 'teacher') bar.append(select, text, sep(), pens, eraser, sep(), undo, redo, sep(), imp, more);
-    else if (this.role === 'assist') bar.append(pens, eraser, sep(), undo, redo);
+    if (this.role === 'teacher') bar.append(select, text, sep(), pens, eraser, laser, sep(), undo, redo, sep(), imp, more);
+    else if (this.role === 'assist') bar.append(pens, eraser, laser, sep(), undo, redo);
     else {
       // 학생: 글·펜·지우개·되돌리기 + 과제 사진 찍어 올리기 (글 쓰기 허락이 있을 때)
-      const cam = btn('camera', '사진', '사진 찍어 판에 올리기', 'cam');
+      const cam = btn('camera', 'camera', '사진', '사진 찍어 판에 올리기', 'cam');
       bar.append(text, pens, eraser, undo, cam);
+    }
+    try {
+      const seen = Number(localStorage.getItem('kwd.tb.seen') || 0) + 1;
+      localStorage.setItem('kwd.tb.seen', String(seen));
+      if (seen <= 3) bar.classList.add('with-labels');
+    } catch {
+      /* 저장 못 하면 이름 없이 */
     }
     bar.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest('button') as HTMLButtonElement | null;
@@ -1347,6 +1414,7 @@ export class BoardScreen {
       const id = b.dataset.tool;
       if (id === 'text') this.setTool('text');
       else if (id === 'select') this.setTool('select');
+      else if (id === 'laser') this.setTool('laser');
       else if (id === 'eraser') {
         if (this.tool === 'eraser') this.openPenPopover('eraser', b);
         else this.setTool('eraser');
@@ -1407,6 +1475,8 @@ export class BoardScreen {
         this.prefs.eraserMode = m;
         savePrefs(this.role, this.prefs);
         this.applyPenStyle();
+        const eb = this.toolbar.querySelector('[data-tool="eraser"] .ic');
+        if (eb) eb.replaceWith(icon(m === 'part' ? 'eraserPart' : 'eraser'));
       },
       onClearPage: () => {
         this.store.clearInk(this.currentPage);
@@ -1429,7 +1499,9 @@ export class BoardScreen {
     const r = anchor.getBoundingClientRect();
     const pw = pop.offsetWidth || 300;
     pop.style.left = Math.max(8, Math.min(window.innerWidth - pw - 8, r.left + r.width / 2 - pw / 2)) + 'px';
-    pop.style.bottom = window.innerHeight - r.top + 10 + 'px';
+    // 도구 줄이 위에 있으면 아래로 연다
+    if (r.top < window.innerHeight / 2) pop.style.top = r.bottom + 10 + 'px';
+    else pop.style.bottom = window.innerHeight - r.top + 10 + 'px';
   }
 
   private closePopover() {
@@ -1445,7 +1517,7 @@ export class BoardScreen {
     this.toolbar.querySelectorAll<HTMLButtonElement>('button').forEach((b) => {
       if (b.dataset.slot != null) {
         const i = Number(b.dataset.slot);
-        b.classList.toggle('on', (t === 'pen' && i === this.prefs.active) || (t === 'hl' && i === 3) || (t === 'laser' && i === this.prefs.active));
+        b.classList.toggle('on', (t === 'pen' && i === this.prefs.active) || (t === 'hl' && i === 3));
       } else if (b.dataset.tool) b.classList.toggle('on', b.dataset.tool === t);
     });
     this.closePopover();
@@ -1506,6 +1578,7 @@ export class BoardScreen {
       else if (e.key === 'e' || e.key === 'E') this.setTool('eraser');
       else if (e.key === 't' || e.key === 'T') this.setTool('text');
       else if ((e.key === 'v' || e.key === 'V') && this.role === 'teacher') this.setTool('select');
+      else if (e.key === 'l' || e.key === 'L') this.setTool('laser');
     };
     window.addEventListener('keydown', onKey);
     this.disposers.push(() => window.removeEventListener('keydown', onKey));
@@ -2576,15 +2649,6 @@ export class BoardScreen {
     };
     const menu = h('div', { class: 'menu' });
     const cur = this.views.get(this.currentPage);
-    const timers = h('div', { class: 'mi-chips' }, h('span', { class: 'mi-chips-label' }, '타이머'));
-    for (const [label, sec] of [['30초', 30], ['1분', 60], ['3분', 180]] as Array<[string, number]>) {
-      const b = h('button', { type: 'button', class: 'chip-btn' }, label);
-      b.addEventListener('click', () => {
-        this.closePanel();
-        this.startTimer(sec);
-      });
-      timers.append(b);
-    }
     const saved = this.lastBundleAt ? `${new Date(this.lastBundleAt).toTimeString().slice(0, 5)} 저장됨` : '';
     menu.append(
       h('div', { class: 'mh' }, '학생에게 허락'),
@@ -2594,14 +2658,36 @@ export class BoardScreen {
       h('div', { class: 'mi-sep' }),
       toggle('학생에게 내 커서 보이기', 'showCaret', true),
       toggle('학생이 내 화면 따라오기', 'followAll', false),
-      timers,
       item('수업 요약 보기', () => this.openSummary()),
       item('지금 기록 저장', () => void this.saveBundleNow(), { sub: saved }),
       item('학생 링크', () => this.openLinks()),
+      this.tbPosItem(),
       item('더 보기…', () => this.openMoreMenu(anchor)),
       ...(this.order.length > 1 && cur && !this.isCanvas(this.currentPage) ? [h('div', { class: 'mi-sep' }), item(`${this.order.indexOf(this.currentPage) + 1}페이지 지우기…`, () => this.confirmDeletePage(), { danger: true })] : []),
     );
     this.showPanel(menu, anchor);
+  }
+
+  // 도구 줄 위·아래 (태블릿에서 손바닥이 아래 줄을 가릴 때). 이 기기에만 저장. 줄이 옮겨 가므로 메뉴는 닫는다
+  private tbPosItem(): HTMLElement {
+    const top = () => this.root.classList.contains('tb-top');
+    const el = h('button', { type: 'button', class: 'mi ' + (top() ? 'on' : 'off'), role: 'switch', 'aria-checked': String(top()), 'data-key': 'tbTop' }, h('span', {}, '도구 줄을 위에'));
+    el.addEventListener('mousedown', (e) => e.preventDefault());
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const v = !top();
+      this.root.classList.toggle('tb-top', v);
+      try {
+        localStorage.setItem('kwd.tbTop', v ? '1' : '0');
+      } catch {
+        /* 이번만 */
+      }
+      el.classList.toggle('on', v);
+      el.classList.toggle('off', !v);
+      el.setAttribute('aria-checked', String(v));
+      this.closePanel();
+    });
+    return el;
   }
 
   private openMoreMenu(anchor: HTMLElement) {
@@ -2674,7 +2760,8 @@ export class BoardScreen {
     if (anchor) {
       const r = anchor.getBoundingClientRect();
       el.classList.add('anchored');
-      el.style.bottom = `${window.innerHeight - r.top + 10}px`;
+      if (r.top < window.innerHeight / 2) el.style.top = `${r.bottom + 10}px`;
+      else el.style.bottom = `${window.innerHeight - r.top + 10}px`;
       el.style.left = `${Math.max(8, Math.min(window.innerWidth - el.offsetWidth - 8, r.left + r.width / 2 - el.offsetWidth / 2))}px`;
     }
     wrap.addEventListener('pointerdown', (e) => {
@@ -2685,6 +2772,22 @@ export class BoardScreen {
   private closePanel() {
     this.panel?.remove();
     this.panel = null;
+  }
+
+  private openTimerMenu(anchor: HTMLElement) {
+    if (this.panel) return this.closePanel();
+    const menu = h('div', { class: 'menu timer-menu' }, h('div', { class: 'mh' }, '타이머'));
+    const row = h('div', { class: 'mi-chips' });
+    for (const [label, sec] of [['30초', 30], ['1분', 60], ['3분', 180], ['5분', 300]] as Array<[string, number]>) {
+      const b = h('button', { type: 'button', class: 'chip-btn' }, label);
+      b.addEventListener('click', () => {
+        this.closePanel();
+        this.startTimer(sec);
+      });
+      row.append(b);
+    }
+    menu.append(row, h('p', { class: 'mnote' }, '오늘 탭의 수업 단계(대화·과제 피드백…)를 누르면 그 단계 타이머가 켜져요. 도는 타이머를 누르면 멈춰요.'));
+    this.showPanel(menu, anchor);
   }
 
   private startTimer(seconds: number, label = '') {
@@ -2715,15 +2818,18 @@ export class BoardScreen {
     const t = this.store.getSetting<{ endsAt: number } | null>('timer', null);
     if (!t || !t.endsAt) {
       this.timerEl.hidden = true;
+      if (this.timerBtn) this.timerBtn.hidden = false;
       return;
     }
     const left = Math.ceil((t.endsAt - this.store.now()) / 1000);
     if (left <= -5) {
       this.timerEl.hidden = true;
+      if (this.timerBtn) this.timerBtn.hidden = false;
       if (this.role === 'teacher') this.store.setSetting('timer', null);
       return;
     }
     this.timerEl.hidden = false;
+    if (this.timerBtn) this.timerBtn.hidden = true;
     const label = (t as { label?: string }).label || '';
     this.timerEl.textContent = (label ? label + ' ' : '') + (left > 0 ? fmtClock(left) : '끝');
     this.timerEl.classList.toggle('done', left <= 0);

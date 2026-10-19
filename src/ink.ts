@@ -98,6 +98,7 @@ export class InkLayer {
   private observed = new Set<string>();
   private lasers = new Map<number, { x: number; y: number; t: number; trail: Array<[number, number, number]> }>();
   private lastAwarenessPush = 0;
+  private seenLaser = new Map<number, string>();
   private raf = 0;
   private cursor: { x: number; y: number } | null = null;
   getPages: () => PageBox[] = () => [];
@@ -119,8 +120,8 @@ export class InkLayer {
     store.awareness.on('change', () => this.invalidate());
     canvas.addEventListener('pointerdown', (e) => {
       // 펜을 든 채로도 물건 막대의 단추(학습지 T·저장·크게 등)는 눌린다
-      const under = document.elementsFromPoint(e.clientX, e.clientY).find((el) => el !== canvas && el.closest('.obj-bar button, .obj-bt'));
-      const btn = under?.closest<HTMLElement>('.obj-bar button, .obj-bt');
+      const under = document.elementsFromPoint(e.clientX, e.clientY).find((el) => el !== canvas && el.closest('.obj-tools button, .obj-bar button, .obj-bt'));
+      const btn = under?.closest<HTMLElement>('.obj-tools button, .obj-bar button, .obj-bt');
       if (btn) {
         e.preventDefault();
         btn.click();
@@ -162,7 +163,8 @@ export class InkLayer {
 
   updateCursor() {
     const t = this.tool;
-    this.canvas.style.cursor = t === 'eraser' || t === 'laser' ? 'none' : t === 'pen' || t === 'hl' ? penCursor(this.style.color, this.style.size, t === 'hl') : 'default';
+    const laserCur = `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><circle cx="12" cy="12" r="9" fill="rgba(230,40,40,.18)"/><circle cx="12" cy="12" r="4.5" fill="#e62828" stroke="#fff" stroke-width="1.5"/></svg>')}") 12 12, crosshair`;
+    this.canvas.style.cursor = t === 'laser' ? laserCur : t === 'eraser' ? 'none' : t === 'pen' || t === 'hl' ? penCursor(this.style.color, this.style.size, t === 'hl') : 'default';
   }
 
   resize() {
@@ -441,22 +443,54 @@ export class InkLayer {
   }
 
   // ---- 레이저 ----
+  // 자국은 1.5초에 걸쳐 사라진다(학생 화면도 같게). 한 번 가리킨 것(멈춘 지 1.2초)마다 판 기록에 '가리킴' 한 줄
+  static LASER_FADE = 1500;
+  onPoint?: (p: { page: string; x: number; y: number; target?: InkTarget }) => void;
+  private gesture: { pts: number[]; screen: Array<[number, number]>; timer: number } | null = null;
   private pushLaser(e: PointerEvent) {
     const [x, y] = this.vp.toWorld(e.clientX, e.clientY);
     const now = performance.now();
     const local = this.lasers.get(-1) || { x, y, t: now, trail: [] };
     Object.assign(local, { x, y, t: now });
     local.trail.push([x, y, now]);
-    if (local.trail.length > 40) local.trail.shift();
+    if (local.trail.length > 90) local.trail.shift();
     this.lasers.set(-1, local);
     if (now - this.lastAwarenessPush > 40) {
       this.lastAwarenessPush = now;
       this.store.awareness.setLocalStateField('laser', { x, y, t: Date.now() });
     }
+    const g = this.gesture || { pts: [], screen: [], timer: 0 };
+    g.pts.push(x, y, 0.5);
+    g.screen.push([e.clientX, e.clientY]);
+    if (g.pts.length > 600) g.pts.splice(0, 3), g.screen.shift();
+    window.clearTimeout(g.timer);
+    g.timer = window.setTimeout(() => this.endGesture(), 1200);
+    this.gesture = g;
     this.invalidate();
+  }
+  private endGesture() {
+    const g = this.gesture;
+    this.gesture = null;
+    if (!g || g.pts.length < 3 || !this.onPoint) return;
+    const n = g.pts.length;
+    const hit = this.hitPage(g.pts[n - 3], g.pts[n - 2]);
+    if (!hit) return;
+    const local: number[] = [];
+    for (let i = 0; i + 2 < n; i += 3) local.push(g.pts[i] - hit.page.x, g.pts[i + 1] - hit.page.y, 0.5);
+    let target: InkTarget | undefined;
+    try {
+      target = this.locate(hit.page.id, local, g.screen);
+    } catch {
+      target = undefined;
+    }
+    this.onPoint({ page: hit.page.id, x: Math.round(hit.x), y: Math.round(hit.y), target });
   }
   clearLaser() {
     this.lasers.delete(-1);
+    if (this.gesture) {
+      window.clearTimeout(this.gesture.timer);
+      this.endGesture();
+    }
     if (this.store.awareness.getLocalState()?.laser) this.store.awareness.setLocalStateField('laser', null);
     this.invalidate();
   }
@@ -549,14 +583,16 @@ export class InkLayer {
     ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * x, dpr * y);
     const now = performance.now();
     for (const [key, l] of this.lasers) {
-      if (now - l.t > 900) {
+      const F = InkLayer.LASER_FADE;
+      const idle = now - l.t;
+      if (idle > F) {
         this.lasers.delete(key);
         continue;
       }
-      const tr = (l.trail = l.trail.filter((p) => now - p[2] < 600));
+      const tr = (l.trail = l.trail.filter((p) => now - p[2] < F));
       ctx.lineCap = 'round';
       for (let i = 1; i < tr.length; i++) {
-        const age = (now - tr[i][2]) / 600;
+        const age = (now - tr[i][2]) / F;
         ctx.strokeStyle = `rgba(230,40,40,${(1 - age) * 0.6})`;
         ctx.lineWidth = (6 * (1 - age) + 1.5) / s;
         ctx.beginPath();
@@ -564,19 +600,30 @@ export class InkLayer {
         ctx.lineTo(tr[i][0], tr[i][1]);
         ctx.stroke();
       }
-      ctx.fillStyle = 'rgba(230,40,40,0.9)';
+      // 점: 움직이는 동안 또렷하고, 멈추면 1.5초에 걸쳐 흐려진다. 바깥에 옅은 빛
+      const fade = Math.max(0, 1 - Math.max(0, idle - 300) / (F - 300));
+      ctx.fillStyle = `rgba(230,40,40,${0.18 * fade})`;
       ctx.beginPath();
-      ctx.arc(l.x, l.y, 5 / s, 0, Math.PI * 2);
+      ctx.arc(l.x, l.y, 12 / s, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(230,40,40,${0.92 * fade})`;
+      ctx.beginPath();
+      ctx.arc(l.x, l.y, 5.5 / s, 0, Math.PI * 2);
       ctx.fill();
     }
     for (const [cid, state] of this.store.awareness.getStates()) {
       if (cid === this.store.awareness.clientID) continue;
       const l = state?.laser as { x: number; y: number } | undefined;
       if (!l) continue;
-      const entry = this.lasers.get(cid) || { x: l.x, y: l.y, t: now, trail: [] };
-      if (entry.x !== l.x || entry.y !== l.y) entry.trail.push([l.x, l.y, now]);
+      // 상대가 움직일 때만 시각을 새로 (멈춰 있으면 1.5초 뒤 사라진다)
+      const known = this.lasers.get(cid);
+      if (known && known.x === l.x && known.y === l.y) continue;
+      if (!known && this.seenLaser.get(cid) === `${l.x},${l.y}`) continue;
+      const entry = known || { x: l.x, y: l.y, t: now, trail: [] };
+      entry.trail.push([l.x, l.y, now]);
       Object.assign(entry, { x: l.x, y: l.y, t: now });
       this.lasers.set(cid, entry);
+      this.seenLaser.set(cid, `${l.x},${l.y}`);
     }
     // 선택 상자·고르는 네모
     ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * x, dpr * y);

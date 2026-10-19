@@ -97,6 +97,7 @@ export interface BoardEvent {
     | 'presence'
     | 'segment'
     | 'segment_edit'
+    | 'point'
     | 'media'
     | 'call'
     | 'lesson'

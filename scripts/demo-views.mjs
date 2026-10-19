@@ -34,6 +34,7 @@ res.sSees = await s.evaluate(() => window.__kwd.editor().getText().includes('학
 const yt = await t.evaluate(() => window.__kwd.objs(window.__kwd.pages()[0].id).find((o) => o.type === 'youtube').id);
 await t.evaluate((id) => document.querySelector(`.rail-item[data-key="${id}"]`).click(), yt);
 await p.waitForTimeout(800);
+await t.locator('.obj-youtube').first().hover(); // 자료 단추는 마우스를 올리면 보인다
 await t.locator('.obj-youtube .obj-big, .obj-youtube button:has-text("크게")').first().click();
 await p.waitForTimeout(800);
 res.tPopup = await t.locator('.popup, .kwd-popup, .pop-over').count();

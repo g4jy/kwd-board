@@ -31,6 +31,8 @@ async function openTeacher(page: Page, id: string, student = '12', srv?: string,
   await page.waitForSelector('.board-doc');
   await page.waitForFunction(() => !!(window as any).__kwd);
   await page.waitForTimeout(350);
+  // 빈 판이면 노트에 커서가 들어온 뒤에 친다 (자동 커서는 60ms 뒤 — 느린 기기에서 타자가 먼저 가지 않게)
+  await page.waitForFunction(() => document.activeElement?.classList.contains('board-doc'), null, { timeout: 3000 }).catch(() => {});
 }
 
 const newId = () => 'test' + Math.random().toString(36).slice(2, 8);
@@ -74,8 +76,8 @@ test.describe('판 화면', () => {
     await expect(page.locator('.zoom .pct')).toHaveText('100%');
     await page.waitForTimeout(200);
     expect(await page.evaluate(() => document.activeElement?.classList.contains('board-doc'))).toBe(true);
-    // 도구 줄: 선택 · 글 · 펜3 · 형광 · 지우개 · ↶ · ↷ · 가져오기 · ⋯
-    await expect(page.locator('.toolbar button')).toHaveCount(11);
+    // 도구 줄: 선택 · 글 · 펜3 · 형광 · 지우개 · 레이저 · ↶ · ↷ · 넣기 · ⋯
+    await expect(page.locator('.toolbar button')).toHaveCount(12);
     await page.click('.back-btn');
     await expect(page.locator('h1')).toHaveText('KWD 클래스룸');
     await expect(page.locator('.board-row').first()).toContainText('학생 12');
@@ -500,7 +502,7 @@ test.describe('두 기기', () => {
     await a.goto(`/#/b/${id}?r=a&srv=${encodeURIComponent(WS)}`);
     await a.waitForSelector('.board-doc');
     await expect(a.locator('.chip .dot')).toHaveClass(/connected/, { timeout: 10000 });
-    await expect(a.locator('.toolbar button')).toHaveCount(7); // 펜3·형광·지우개·↶·↷
+    await expect(a.locator('.toolbar button')).toHaveCount(8); // 펜3·형광·지우개·레이저·↶·↷
     await a.click('.pen-slot[data-slot="0"]');
     const box = (await a.locator('.page').first().boundingBox())!;
     await drawLine(a, [[box.x + 100, box.y + 300], [box.x + 200, box.y + 320], [box.x + 300, box.y + 300]]);
@@ -898,8 +900,9 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
     expect(r.errs).toEqual([]);
     expect(r.cols).toEqual(['일상·여행', '한국 생활', '일·비즈니스', 'TOPIK·시험', 'K-문화·취미', '가족·뿌리', '목적 미정']);
     expect(r.rows).toEqual(['씨앗', '새싹', '잎새', '꽃', '열매', '나무', '단계 미정']); // 단계 6줄은 비어도 보임
-    expect(r.cards).toBe(20); // 지금 학생만
-    expect([r.allCards, r.past]).toEqual([22, 2]);
+    expect(r.cards).toBe(21); // 지금 학생만 (복귀 학생 Yuki A 포함)
+    expect(r.returning).toEqual([false, '복귀']); // 쉬는 학생인데 수업이 다시 잡힘 → 수업 중 + 복귀 꼬리표
+    expect([r.allCards, r.past]).toEqual([23, 2]);
     expect(r.inesCell).toEqual(['새싹', 'life']); // ⋯ 로 단계 정하기
     expect(r.raviCell).toEqual(['잎새', 'work']); // 끌어 놓기로 단계·목적
     expect(r.unsetAfter).not.toContain('단계 미정');
@@ -907,15 +910,46 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
     expect(r.inesReload).toBe('새싹'); // 다시 읽어도 선생님 수정이 이긴다
     expect([r.tomTag, r.tomTagReload]).toEqual([0, 0]); // 체험 아님으로 고치기
     expect(r.tomLesson).not.toMatch(/· 체험/); // 오늘 수업 줄의 체험 꼬리표도 사라짐
-    expect(r.chips).toEqual(['수업 중 20', '쉬는 학생까지 22']); // 보관함은 비어 있으면 숨김
+    expect(r.chips).toEqual(['수업 중 21', '쉬는 학생까지 23']); // 보관함은 비어 있으면 숨김
     expect(r.erikNow).toBe(0); // 보관하면 수업 중에서 빠짐
-    expect(r.chipsArch).toEqual(['수업 중 19', '쉬는 학생까지 21', '보관함 1']);
+    expect(r.chipsArch).toEqual(['수업 중 20', '쉬는 학생까지 22', '보관함 1']);
     expect(r.archCards[0]).toContain('이사로 잠시 중단');
     expect(r.archReload).toBe('보관함 1');
     expect(r.first).toContain('GB');
     expect(r.kenji).toBe('열매'); // level 키(L5) → 단계 이름
-    expect(r.search).toEqual(['Mina K', 'Kenji T']); // 나라로 찾기
+    expect(r.search).toEqual(['Mina K', 'Yuki A', 'Kenji T']); // 나라로 찾기
     expect(r.opened).toMatch(/^#\/b\/demo/);
   });
 });
 
+test.describe('UI 10/19: 아이콘 도구 줄 · 레이저 · 자료 막대 · 오른쪽', () => {
+  test('단추 44px(자료 막대 36px) · 막대는 판 배율과 상관없이 같은 크기 · 타이머 칩 · 도구 줄 위/아래 · 레이저가 학생 폰에 보이고 사라짐', () => {
+    const r = JSON.parse(execFileSync('node', ['scripts/ui-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/ui' } }));
+    expect(r.errs).toEqual([]);
+    expect(r.laptop.counts.toolbar).toBe(12);
+    expect(r.toolbarLabels.slice(0, 2)).toEqual(['선택', '글']);
+    expect(r.toolbarLabels).toContain('레이저');
+    expect(r.laptop.under44).toEqual([]);
+    expect(r.tablet.under44).toEqual([]);
+    expect(r.phone.under44).toEqual([]);
+    expect(r.selBar.under36).toEqual([]);
+    expect(r.selBar.at35).toEqual(r.selBar.zoomed); // 판을 키워도 막대는 같은 크기
+    expect(r.selBar.pct).not.toBe('35%');
+    expect(r.timerBtn).toBe(1);
+    expect(r.timerChip).toMatch(/^0:(30|29|28)$/);
+    expect(r.tbTopY).toBeLessThan(120);
+    expect(r.tbBackY).toBeGreaterThan(700);
+    expect(r.laserBefore).toBe(0);
+    expect(r.laserTeacher).toBeGreaterThan(10);
+    expect(r.laserStudent).toBeGreaterThan(10); // 학생 폰에도 보인다
+    expect(r.laserStudentAfter).toBe(0); // 1.5초 뒤 사라진다
+  });
+
+  test('레이저로 가리키고 멈추면 판 기록에 point 한 줄 (가리킨 글자와 함께)', () => {
+    const r = JSON.parse(execFileSync('node', ['scripts/laser-point.mjs'], { encoding: 'utf8' }).trim().split('\n').pop()!);
+    expect(r.errs).toEqual([]);
+    expect(r.tool).toBe('laser');
+    expect(r.ev.length).toBe(1);
+    expect(r.ev[0].target).toContain('가족');
+  });
+});

@@ -3,6 +3,7 @@
 import { h } from './ui';
 import { buildColorPicker } from './colorpicker';
 import { PEN_KINDS } from './ink';
+import { penIcon, hlIcon } from './icons';
 import type { PenKind } from './store';
 
 export const PEN_COLORS = ['#222222', '#7a7a7a', '#d32f2f', '#ef6c00', '#f9a825', '#2e7d32', '#00897b', '#1565c0', '#283593', '#6a1b9a', '#d81b60', '#6d4c41'];
@@ -55,27 +56,30 @@ export function savePrefs(role: string, p: PenPrefs) {
   }
 }
 
-// 펜 칸 버튼의 모양: 색 점 + 굵기
+// 펜 칸 버튼의 모양: 펜 끝 모양을 그 펜의 색으로 + 아래 굵기 막대 (Samsung Notes·GoodNotes 즐겨찾기 펜)
+const kindLabel = (p: PenPreset) => PEN_KINDS.find((k) => k.id === (p.kind || 'fountain'))?.label || '만년필';
+export function slotTitle(idx: number, p: PenPreset, hl = false): string {
+  const c = COLOR_NAMES[p.color] || '직접 고른 색';
+  return hl ? `형광펜 · ${c} (H) · 한 번 더 누르면 설정` : `펜 ${idx + 1} · ${kindLabel(p)} · ${c} · 굵기 ${p.size} (${idx + 1}) · 한 번 더 누르면 설정`;
+}
 export function penSlot(idx: number, p: PenPreset, hl = false): HTMLElement {
-  const b = h('button', { type: 'button', class: 'tb pen-slot' + (hl ? ' hl-slot' : ''), 'data-slot': String(idx), title: hl ? '형광펜 (H) · 한 번 더 누르면 설정' : `펜 ${idx + 1} · ${PEN_KINDS.find((k) => k.id === (p.kind || 'fountain'))?.label} (${idx + 1}) · 한 번 더 누르면 설정` });
+  const b = h('button', { type: 'button', class: 'tb pen-slot' + (hl ? ' hl-slot' : ''), 'data-slot': String(idx) });
   renderSlot(b, p, hl);
   return b;
 }
 
 export function renderSlot(b: HTMLElement, p: PenPreset, hl = false) {
   b.innerHTML = '';
-  if (hl) {
-    const bar = h('span', { class: 'slot-hl' });
-    bar.style.background = p.color;
-    bar.style.opacity = String(Math.min(1, (p.opacity ?? 0.35) + 0.35));
-    b.append(bar);
-  } else {
-    const dot = h('span', { class: 'slot-dot' });
-    const d = Math.max(11, Math.min(22, 9 + p.size * 0.8));
-    dot.style.width = dot.style.height = d + 'px';
-    dot.style.background = p.color;
-    b.append(dot);
-  }
+  const idx = Number(b.dataset.slot || 0);
+  b.title = slotTitle(idx, p, hl);
+  b.setAttribute('aria-label', b.title.split(' · 한 번')[0]);
+  const ic = h('span', { class: 'ic' });
+  ic.innerHTML = hl ? hlIcon(p.color, p.opacity ?? 0.35) : penIcon(p.kind, p.color);
+  const bar = h('span', { class: 'slot-w' });
+  bar.style.background = p.color;
+  bar.style.height = (hl ? 4 : Math.max(1.5, Math.min(5, 1 + p.size / 4))) + 'px';
+  if (hl) bar.style.opacity = String(Math.min(1, (p.opacity ?? 0.35) + 0.3));
+  b.append(ic, bar, h('span', { class: 'tb-label' }, hl ? '형광' : `펜 ${idx + 1}`));
 }
 
 // 설정창
