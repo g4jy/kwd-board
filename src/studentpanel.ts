@@ -1,5 +1,6 @@
 // '이 학생' 패널 (선생님 화면만): 오늘 · 수업안 · 자료 · 학생 · 지난 수업 · 단어
 // KWD 폴더에서 읽은 것을 그대로 보여 주고, 한 번 눌러 판에 넣는다.
+import { blockMd, UNIT_BLOCK_LABEL } from './units';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { h, fmtDate } from './ui';
@@ -122,6 +123,24 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
         mats.append(r);
       }
       body.append(section('자료', mats));
+    }
+    for (const u of pack.units || []) {
+      const box = h('div', {});
+      const isNow = u.unit_id === pack.packet?.roadmap?.unit_id;
+      if (u.goal) box.append(h('div', { class: 'mp-rsub' }, u.goal));
+      for (const b of u.blocks) {
+        const md = blockMd(b);
+        if (!md) continue;
+        const showAns = blockMd(b, true);
+        const det = details(UNIT_BLOCK_LABEL[b.type] || b.type, h('div', {}, mdToEl(showAns), (() => {
+          const put = h('button', { type: 'button', class: 'mp-ins', title: '문제만 판에 글상자로 (정답은 선생님 화면에만)' }, '판에 놓기');
+          put.addEventListener('mousedown', (e) => e.preventDefault());
+          put.addEventListener('click', () => act.placeText(md));
+          return put;
+        })()), false);
+        box.append(det);
+      }
+      body.append(section(`${isNow ? '지금 단원' : '다음 단원'} · ${u.title_ko}`, box));
     }
     const doc = pack.plan || (pack.trialPrep ? { name: pack.trialPrep.name, text: pack.trialPrep.text } : null);
     if (doc) body.append(section(pack.plan ? `수업안 #${pack.plan.n}` : '체험 수업 준비', mdToEl(doc.text)));

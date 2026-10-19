@@ -1,6 +1,7 @@
 // KWD 폴더 연결: 선생님 PC의 work 폴더(C:\KWD\work 또는 구글 드라이브 거울)를 한 번 고르면
 // 오늘 수업(intake/<날짜>/brief_data.json)과 학생 폴더(Student_Lessons/<이름 (번호)>)를 판이 직접 읽는다.
 // AI·서버 없이 브라우저 안에서만 읽고, 학생 기기로는 아무것도 보내지 않는다.
+import { validUnit, type KwdUnit } from './units';
 import { validPacket, indexEntries, type LessonPacket } from './packet';
 import type { StudentMemory, MemVocab, MemGrammar, MemError, MemHomework, MemLesson } from './memory';
 
@@ -607,6 +608,7 @@ export interface StudentPack {
   brief?: BriefLesson;
   db?: BoardData; // work/board_data/<폴더>.json (중앙 DB에서 뽑은 전체 단어·문형)
   hwHistory?: import('./homework').HwHistory; // 과제/hw_history.json (숙제 플랫폼이 내보낸 날마다 과제·피드백)
+  units?: KwdUnit[]; // 묶음 로드맵이 가리키는 커리큘럼 단원 (work/curriculum_v2/units/KWD-U###.json)
   packet?: LessonPacket; // work/lesson_packets/<오늘>/ (수업 직전 자동화 묶음, 이 창 메모리에만)
 }
 
@@ -701,6 +703,27 @@ export async function packetFor(folder: string, date = ymd()): Promise<LessonPac
   return undefined;
 }
 
+// 로드맵 지금 단원 + 다음 단원 (최대 3). 파일이 없으면 조용히 건너뜀 (커리큘럼이 work/curriculum_v2/units 에 둔다)
+async function unitsFor(pk: LessonPacket | undefined): Promise<KwdUnit[]> {
+  const rm = pk?.roadmap;
+  const ids = [rm?.unit_id, ...(rm?.next_units || [])].filter((x): x is string => !!x && /^KWD-U\d+$/.test(x)).slice(0, 3);
+  if (!ids.length) return [];
+  const work = await storedWork();
+  const dir = work ? await sub(work, 'curriculum_v2') : null;
+  const ud = dir ? await sub(dir, 'units') : null;
+  if (!ud) return [];
+  const out: KwdUnit[] = [];
+  for (const id of ids) {
+    try {
+      const j = JSON.parse((await textOf(ud, `${id}.json`)) || 'null');
+      if (validUnit(j)) out.push(j);
+    } catch {
+      /* 깨진 단원 파일은 건너뜀 */
+    }
+  }
+  return out;
+}
+
 async function studentDir(folder: string): Promise<DirHandle | null> {
   const work = await storedWork();
   if (!work) return null;
@@ -774,6 +797,7 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
   pack.lessonData.sort((a, b) => numOf(a) - numOf(b));
   pack.db = await boardDataFor(folder);
   pack.packet = await packetFor(folder);
+  pack.units = await unitsFor(pack.packet);
   return pack;
 }
 
