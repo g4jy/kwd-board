@@ -2877,7 +2877,7 @@ body.in-demo { background: var(--bg); overflow: auto; }
   .cam-dock.big .cam-tile.local { aspect-ratio: auto; height: 100%; }
 }
 /* 수업 시작 단추 */
-.lesson-btn { border: 1.5px solid #1f2a44; background: #1f2a44; color: #fff; border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums; }
+.lesson-btn, .mic-rec { border: 1.5px solid #1f2a44; background: #1f2a44; color: #fff; border-radius: 999px; padding: 6px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; font-variant-numeric: tabular-nums; }
 .lesson-btn.rec { background: #fff; color: #b3261e; border-color: #e7a59d; }
 .lesson-btn.confirm { background: #b3261e; color: #fff; border-color: #b3261e; }
 /* 학생 입장 */
@@ -3352,3 +3352,5 @@ body.in-demo { background: var(--bg); overflow: auto; }
   padding: 0 14px;
   font-size: 14px;
 }
+.mic-rec { background: #fff; color: #1f2a44; }
+.mic-rec[hidden] { display: none; }

@@ -212,7 +212,7 @@ export class BoardScreen {
       });
     }
     topLeft.append(this.timerEl);
-    const topRight = h('div', { class: 'top-right' }, ...(this.role === 'teacher' && this.classroom?.lessonBtn ? [this.classroom.lessonBtn] : []), ...(this.role === 'teacher' ? [lookBtn] : []), this.memBtn);
+    const topRight = h('div', { class: 'top-right' }, ...(this.role === 'teacher' && this.classroom?.lessonBtn ? [this.classroom.lessonBtn, ...(this.classroom.micBtn ? [this.classroom.micBtn] : [])] : []), ...(this.role === 'teacher' ? [lookBtn] : []), this.memBtn);
     this.followBtn = h('button', { type: 'button', class: 'follow-btn', hidden: '' }, '선생님 화면으로');
     this.followBtn.addEventListener('click', () => {
       this.following = true;

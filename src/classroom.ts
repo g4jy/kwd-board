@@ -49,6 +49,7 @@ export class Classroom {
   readonly call: Call | null = null;
   readonly dock: HTMLElement;
   readonly lessonBtn: HTMLButtonElement | null = null;
+  readonly micBtn: HTMLButtonElement | null = null; // 카메라 없이 마이크만 켜고 녹화
   private rec = new LessonRecorder();
   private remoteV: HTMLVideoElement;
   private localV: HTMLVideoElement;
@@ -96,6 +97,8 @@ export class Classroom {
     if (role === 'teacher') {
       this.lessonBtn = h('button', { type: 'button', class: 'lesson-btn' }, '수업 시작') as HTMLButtonElement;
       this.lessonBtn.addEventListener('click', () => void this.toggleLesson());
+      this.micBtn = h('button', { type: 'button', class: 'mic-rec', title: '카메라는 켜지 않고 마이크만 켜서 수업을 녹화해요' }, '마이크만 녹화') as HTMLButtonElement;
+      this.micBtn.addEventListener('click', () => void this.micOnlyLesson());
       this.rec.onEnded = () => void this.endLesson(); // 크롬의 '공유 중지'
       this.rec.onMedia = (op, sp) => host.store.log({ kind: 'media', data: { op, kind: sp.kind, name: sp.name, ref: sp.ref, at_s: op === 'play' ? sp.from_s : sp.to_s } });
     }
@@ -443,6 +446,19 @@ export class Classroom {
     await this.endLesson();
   }
 
+  private async micOnlyLesson() {
+    if (this.rec.active) return;
+    if (!this.call?.local?.getAudioTracks().length) {
+      const s = await this.getMedia(false);
+      if (!s?.getAudioTracks().length) {
+        toast('마이크를 쓸 수 없어요. 주소창 자물쇠에서 허용해 주세요');
+        return;
+      }
+      await this.start(s);
+    }
+    await this.startLesson();
+  }
+
   private async startLesson() {
     const md = navigator.mediaDevices as MediaDevices & { getDisplayMedia?: unknown };
     if (!md?.getDisplayMedia || typeof MediaRecorder === 'undefined') {
@@ -486,6 +502,7 @@ export class Classroom {
   private renderLesson() {
     const b = this.lessonBtn;
     if (!b) return;
+    if (this.micBtn) this.micBtn.hidden = this.rec.active || !!this.call?.local?.getAudioTracks().length;
     if (!this.rec.active) {
       b.textContent = '수업 시작';
       b.classList.remove('rec', 'confirm');
