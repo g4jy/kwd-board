@@ -144,11 +144,13 @@ export class BoardScreen {
         if (this.tool !== 'text') this.setTool('text');
         // 글상자 편집기는 문서가 갱신된 뒤에 만들어진다 — 느린 기기에서 30ms 안에 안 생기면 커서가 안 들어가 첫 글자를 잃으므로 생길 때까지 기다린다(최대 약 1.5초)
         let tries = 0;
+        let userMoved = false; // 그 사이 사용자가 다른 곳을 누르면 포커스를 되돌리지 않는다
+        document.addEventListener('pointerdown', () => (userMoved = true), { once: true, capture: true });
         const focusSoon = () => {
           const ed = this.findBoxEditor(o.id);
           if (ed) ed.commands.focus('end');
           // 편집기가 다시 만들어지거나 포커스를 뺏기면 실제로 커서가 들어갈 때까지 다시 (한번 focus 했다고 끝내지 않는다)
-          if (!(ed && ed.view.dom.contains(document.activeElement)) && ++tries < 30) window.setTimeout(focusSoon, 50);
+          if (!userMoved && !(ed && ed.view.dom.contains(document.activeElement)) && ++tries < 30) window.setTimeout(focusSoon, 50);
         };
         window.setTimeout(focusSoon, 30);
       },

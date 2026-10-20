@@ -385,21 +385,35 @@ export async function loadRoster(): Promise<Roster | null> {
 const TEACHER_FILE = '_roster_teacher.json';
 export type RosterStatus = 'active' | 'paused' | 'archived';
 export type RosterEdit = { stage?: string; purpose?: string; trial?: boolean; status?: RosterStatus; reason?: string; at?: string; stage_from?: string; stage_changed_at?: string };
-export async function loadRosterTeacher(): Promise<Record<string, RosterEdit>> {
+// 읽기 실패(null)와 '아직 파일 없음'({})을 구분한다 — 저장할 때 읽기 실패면 다른 학생 수정을 덮어쓰지 않게 멈춘다
+async function readRosterTeacher(): Promise<Record<string, RosterEdit> | null> {
   try {
     const work = await storedWork();
     const sl = await work!.getDirectoryHandle('Student_Lessons');
-    const f = await (await sl.getFileHandle(TEACHER_FILE)).getFile();
+    let f: File;
+    try {
+      f = await (await sl.getFileHandle(TEACHER_FILE)).getFile();
+    } catch (e) {
+      if ((e as DOMException)?.name === 'NotFoundError') return {};
+      throw e;
+    }
     const j = JSON.parse(await f.text()) as { students?: Record<string, RosterEdit> };
     return j.students || {};
   } catch {
-    return {};
+    return null;
   }
+}
+export async function loadRosterTeacher(): Promise<Record<string, RosterEdit>> {
+  return (await readRosterTeacher()) || {};
 }
 export async function saveRosterEdit(folder: string, edit: RosterEdit): Promise<boolean> {
   const work = await storedWork();
   if (!work) return false;
-  const all = await loadRosterTeacher();
+  const all = await readRosterTeacher();
+  if (!all) {
+    console.warn('roster edit: 기존 수정 파일을 읽지 못해 저장을 멈춤');
+    return false;
+  }
   const now = new Date().toISOString();
   // 단계가 바뀌면 이전 단계와 바뀐 때를 같이 남긴다 — 자동화가 과제 수준을 다시 판단할 신호 (칸을 더하기만 함)
   all[folder] = { ...all[folder], ...edit, at: now, ...(edit.stage !== undefined ? { stage_changed_at: now } : {}) };

@@ -21,6 +21,7 @@ await p.waitForTimeout(2500);
 const t = await T();
 const s = await S();
 res.tPages = await t.evaluate(() => window.__kwd.objs(window.__kwd.pages()[0].id).length);
+await s.waitForFunction(() => window.__kwd?.pages()[0], null, { timeout: 20000 }); // 학생 창이 동기를 받기까지(느린 PC) 기다린다
 res.sPages = await s.evaluate(() => window.__kwd?.objs(window.__kwd.pages()[0].id).length);
 await p.screenshot({ path: `${OUT}/6-split.png` });
 // 선생님이 쓰면 학생 창에

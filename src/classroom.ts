@@ -484,8 +484,18 @@ export class Classroom {
     }
   }
 
+  private ending = false;
   async endLesson() {
-    if (!this.rec.active) return;
+    if (!this.rec.active || this.ending) return; // '공유 중지'와 '끝내기'가 겹쳐도 한 번만
+    this.ending = true;
+    try {
+      await this.endLessonOnce();
+    } finally {
+      this.ending = false;
+    }
+  }
+
+  private async endLessonOnce() {
     this.confirmEnd = 0;
     const dur = Math.round((this.host.store.now() - this.rec.startedAt) / 1000);
     const open = this.recOpen;

@@ -389,7 +389,9 @@ export class PageObjects {
         if (v.data.type === 'box') hh = oh;
         return { w: Math.round(w), h: Math.round(hh) };
       };
+      let last = { x: sx, y: sy };
       const mv = (ev: PointerEvent) => {
+        last = { x: ev.clientX, y: ev.clientY };
         const r = calc(ev);
         v.el.style.width = r.w + 'px';
         if (v.data.type !== 'box') v.el.style.height = r.h + 'px';
@@ -399,7 +401,8 @@ export class PageObjects {
         handle.removeEventListener('pointerup', up);
         handle.removeEventListener('pointercancel', up);
         v.el.classList.remove('resizing');
-        this.ctx.store.updateObj(this.pageId, v.data.id, calc(ev));
+        // 취소 이벤트의 좌표는 믿을 수 없다 → 마지막 움직임 자리로
+        this.ctx.store.updateObj(this.pageId, v.data.id, calc(ev.type === 'pointercancel' ? ({ clientX: last.x, clientY: last.y } as PointerEvent) : ev));
       };
       handle.addEventListener('pointermove', mv);
       handle.addEventListener('pointerup', up);
