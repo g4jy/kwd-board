@@ -117,6 +117,23 @@ export interface HwHistory {
   source: 'folder' | 'app';
 }
 
+// ---- 검증 (T044): 수업 시작에 과제 결과를 하나씩 확인·고친 기록. 이름 없이 날짜·문항만. 자동화가 피드백 몫으로 읽는다 ----
+export interface VerifyRec {
+  schema: 'kwd-verify/v1';
+  id: string; // 문항 구분(날짜|과제|문항|제출 시각)
+  student?: string; // 번호(이름 아님)
+  date: string; // 과제 날짜 YYYY-MM-DD
+  task: string;
+  label: string;
+  kind?: string;
+  student_text?: string; // 학생 답 (200자까지)
+  ai?: string;
+  verdict: 'ok' | 'fix' | 'redo'; // 맞음 · 고침 · 다시 해 와야 함
+  correction?: string; // 선생님이 고친 답
+  note?: string;
+  at: string; // ISO
+}
+
 const ymd = (t: string | number | Date) => {
   const d = new Date(t);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

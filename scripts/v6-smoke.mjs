@@ -130,6 +130,19 @@ res.hwThumbs = await t.locator('.hw-item .mp-thumb').count();
 await t.screenshot({ path: `${OUT}/7-hw-tab.png` });
 await t.click('.mp-sec:has(h4:has-text("수업에서 짚을 것")) > .mp-ins');
 res.hwPlaced = await t.evaluate((c) => window.__kwd.objs(c).filter((o) => o.type === 'box').length, C);
+// 9-2) 검증 탭 (T044): 하나씩 띄워 확인·고침 → 판 기록 'verify' 사건
+await t.click('.mp-tab[data-tab="verify"]');
+await t.waitForSelector('.vf-card');
+res.vfSum = await t.locator('.hw-sum').innerText();
+res.vfPos = await t.locator('.vf-pos').innerText();
+await t.fill('.vf-fix', '고친 답 예시');
+await t.click('.vf-v.fix');
+await t.waitForFunction(() => document.querySelector('.vf-pos')?.textContent?.startsWith('2 /'));
+await t.click('.vf-nav .mp-ins >> nth=0');
+await t.waitForSelector('.vf-v.fix.on');
+res.vfPrevMarked = await t.locator('.vf-fix').inputValue();
+res.vfEvents = await t.evaluate(() => window.__kwd.store.events.toArray().filter((e) => e.kind === 'verify').map((e) => [e.data.verdict, e.data.correction]));
+await t.screenshot({ path: `${OUT}/7b-verify-tab.png` });
 // 10) 오늘 탭 시간 나누기
 await t.click('.mp-tab[data-tab="today"]');
 res.plan = await t.locator('.plan-seg').allInnerTexts();

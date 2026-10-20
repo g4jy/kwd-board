@@ -674,7 +674,7 @@ test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
     expect(r.rows[1]).toContain('시작');
     expect(r.url).toMatch(/^\/b\/k[a-z0-9]{8}d\d{6}\?r=t$/);
     expect(r.chip).toBe('Mina K');
-    expect(r.tabs).toEqual(['오늘', '수업안·자료', '과제', '학생 정보', '지난 수업', '단어']);
+    expect(r.tabs).toEqual(['오늘', '수업안·자료', '검증', '과제', '학생 정보', '지난 수업', '단어']);
     expect(r.today).toContain('주말에 부산에 갔어요');
     expect(r.boardText).toContain('송편');
     expect(r.plan).toContain('맛 형용사');
@@ -702,7 +702,7 @@ test.describe('v5: 체험 화면·지우개 부분·자료 종류·숙제·요�
     expect(r.rail).not.toContain('노트'); // 수업안 노트 없음 (10/18): 빈 노트는 접혀 있고 목록에도 없다
     expect(r.rail[0]).toBe('웹 학습지 · #12 수업 페이지');
     expect(r.firstText.trim()).toBe('');
-    expect(r.tabs).toEqual(['오늘', '수업안·자료', '과제', '학생 정보', '지난 수업', '단어']);
+    expect(r.tabs).toEqual(['오늘', '수업안·자료', '검증', '과제', '학생 정보', '지난 수업', '단어']);
     expect(r.tab_plan).toContain('영상');
     expect(r.tab_hw).toContain('지난 수업');
     expect(r.tab_hw).toContain('수업에서 짚을 것');
@@ -773,6 +773,10 @@ test.describe('v6: 무한 판 · 같은 좌표 · 여기 보세요 · 학습지 
     expect(r.hwDays).toBe(6);
     expect(r.hwPoints).toBe(4);
     expect(r.hwThumbs).toBeGreaterThanOrEqual(3);
+    expect(r.vfSum).toContain('확인한 것 0/');
+    expect(r.vfPos).toMatch(/^1 \//);
+    expect(r.vfPrevMarked).toBe('고친 답 예시');
+    expect(r.vfEvents).toEqual([['fix', '고친 답 예시']]);
     expect(r.plan).toHaveLength(4);
     expect(r.timer).toBe(true);
   });

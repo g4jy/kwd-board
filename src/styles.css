@@ -2695,6 +2695,14 @@ body.in-demo { background: var(--bg); overflow: auto; }
 }
 /* 과제 탭 */
 .hw-sum { font-size: 14px; margin: 4px 0 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.vf-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+.vf-pos { font-size: 12px; color: var(--muted, #667); }
+.vf-card { display: grid; gap: 6px; border: 1px solid var(--line); border-radius: 10px; padding: 8px; }
+.vf-fix, .vf-note { width: 100%; box-sizing: border-box; font: inherit; font-size: 13px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; }
+.vf-verdicts { display: flex; gap: 6px; }
+.vf-v { flex: 1; font: inherit; font-size: 13px; font-weight: 600; padding: 7px 4px; border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer; }
+.vf-v.ok { color: #1e7a3c; } .vf-v.fix { color: #b3261e; } .vf-v.redo { color: #7a5300; }
+.vf-v.on { outline: 2px solid currentColor; }
 .hw-badge { font-size: 11px; padding: 2px 7px; border-radius: 999px; font-weight: 600; }
 .hw-badge.fix { background: #fde4e4; color: #b3261e; }
 .hw-badge.wait { background: #fff1c7; color: #7a5300; }

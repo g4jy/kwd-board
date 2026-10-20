@@ -14,11 +14,11 @@ import { importPdf, importHtml, htmlWithBridge, joinText } from './importer';
 import { loadPrefs, savePrefs, penSlot, renderSlot, buildPenPopover, type PenPrefs } from './palette';
 import { icon } from './icons';
 import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY, type StudentMemory } from './memory';
-import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, makeLessonDir, type StudentPack, type PackFile } from './kwdfolder';
+import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, makeLessonDir, openStudentWriter, type StudentPack, type PackFile } from './kwdfolder';
 import { annotatedWorksheet } from './wsexport';
 import { Classroom } from './classroom';
 import { renderStudentPanel, type SplitSeg, type PanelTab } from './studentpanel';
-import { hwConfig, setHwConfig, hwMedia, historyFromApp } from './homework';
+import { hwConfig, setHwConfig, hwMedia, historyFromApp, type VerifyRec } from './homework';
 import { h, download, downloadBlob, fmtDate, fmtClock, toast, EMBEDDED } from './ui';
 
 const GAP = 28; // 페이지 사이
@@ -2439,6 +2439,34 @@ export class BoardScreen {
     }
   }
 
+  // 검증 결과: 판 기록(사건)에 한 줄씩 + 학생 폴더 검증/verify_<시작 시각>.json 에 모아 쓴다 (이름 없음 · 자동화가 피드백 몫으로 읽음)
+  private verifyRecs = new Map<string, VerifyRec>();
+  private verifyFile = '';
+  private verifyFolder = '';
+  private saveVerify(rec: VerifyRec) {
+    if (this.verifyFolder !== this.packFolder) {
+      this.verifyFolder = this.packFolder;
+      this.verifyRecs.clear();
+      this.verifyFile = '';
+    }
+    rec.student = this.pack?.id || undefined;
+    this.verifyRecs.set(rec.id, rec);
+    this.store.log({ kind: 'verify', data: { student: rec.student || '', date: rec.date, task: rec.task, label: rec.label, verdict: rec.verdict, student_text: rec.student_text || '', correction: rec.correction || '', note: rec.note || '' } });
+    if (!this.verifyFile) this.verifyFile = `verify_${new Date().toISOString().slice(0, 16).replace(/[T:]/g, (c) => (c === 'T' ? ' ' : '-'))}.json`;
+    const all = [...this.verifyRecs.values()];
+    const label = { ok: '맞음', fix: '고침', redo: '다시 해 오기' }[rec.verdict];
+    void (async () => {
+      const w = await openStudentWriter(this.packFolder, '검증', this.verifyFile);
+      if (!w) {
+        toast('검증은 판 기록에만 저장했어요 (학생 폴더에 못 씀)', 4000);
+        return;
+      }
+      await w.write(JSON.stringify({ schema: 'kwd-verify-set/v1', saved_at: new Date().toISOString(), items: all }, null, 1));
+      await w.close();
+      toast('검증 저장 · ' + label);
+    })().catch(() => toast('검증 파일을 못 썼어요 · 판 기록에는 저장됨', 4000));
+  }
+
   private memTab = 'vocab';
   private renderMemPanel() {
     const p = this.memPanel;
@@ -2506,6 +2534,7 @@ export class BoardScreen {
             toast(`${g.label} ${g.min}분 시작`);
           },
           placeTalkKit: (md) => void this.placeTalkKit(md),
+          saveVerify: (rec) => this.saveVerify(rec),
         },
       );
       return;

@@ -6,7 +6,7 @@ import DOMPurify from 'dompurify';
 import { h, fmtDate } from './ui';
 import { vocabNote, type StudentMemory } from './memory';
 import type { StudentPack, PackFile, BoardData } from './kwdfolder';
-import { type HwHistory, type HwMedia, type HwDay, type HwItem } from './homework';
+import { type HwHistory, type HwMedia, type HwDay, type HwItem, type VerifyRec } from './homework';
 import { talkKitMarkdown, PACE_KO, type TalkKit, type PacketRoadmap, type Learner } from './packet';
 
 export interface PanelActions {
@@ -28,6 +28,7 @@ export interface PanelActions {
   startSegment(seg: SplitSeg): void;
   placeTalkKit(md: string): void; // 대화 재료를 판 위 카드로, 학생 화면도 거기로
   placeMedia(m: HwMedia, label: string): Promise<void>;
+  saveVerify(rec: VerifyRec): void; // 검증 결과를 수업 기록(판 기록 + 학생 폴더 검증/)에
 }
 
 // 숙제 앱에서 불러온 것 (패널이 다시 그려져도 남게, 이 창에서만)
@@ -40,7 +41,7 @@ export interface SplitSeg {
   what?: string[];
 }
 
-export type PanelTab = 'today' | 'plan' | 'hw' | 'student' | 'lessons' | 'vocab';
+export type PanelTab = 'today' | 'plan' | 'verify' | 'hw' | 'student' | 'lessons' | 'vocab';
 
 function mdToEl(text: string, cls = 'mp-md'): HTMLElement {
   const el = h('div', { class: cls });
@@ -65,12 +66,13 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
   const has: Record<PanelTab, boolean> = {
     today: !!(b || pack.packet || pack.trialPrep || pack.lessons.length),
     plan: !!(pack.plan || pack.trialPrep || pack.files.length),
+    verify: true,
     hw: true,
     student: !!(pack.profile || pack.roadmap || pack.status || pack.packet?.roadmap),
     lessons: pack.lessons.length > 0,
     vocab: !!(mem?.vocab.length || pack.db?.vocab.length),
   };
-  const labels: Record<PanelTab, string> = { today: '오늘', plan: '수업안·자료', hw: '과제', student: '학생 정보', lessons: '지난 수업', vocab: '단어' };
+  const labels: Record<PanelTab, string> = { today: '오늘', plan: '수업안·자료', verify: '검증', hw: '과제', student: '학생 정보', lessons: '지난 수업', vocab: '단어' };
   if (!has[tab]) tab = (Object.keys(has) as PanelTab[]).find((k) => has[k]) || 'today';
   const tabs = h('div', { class: 'mp-tabs' });
   for (const id of Object.keys(labels) as PanelTab[]) {
@@ -168,6 +170,8 @@ export function renderStudentPanel(root: HTMLElement, pack: StudentPack, mem: St
     const boards = act.otherBoards();
     if (boards.length) list.append(h('h4', { class: 'mp-h4' }, '이 학생의 다른 판'), ...boards.map((bb) => h('a', { class: 'mp-row mp-link', href: `#/b/${bb.id}?r=t`, target: '_blank', rel: 'noopener' }, h('div', { class: 'mp-main' }, `판 ${fmtDate(bb.createdAt)}`), h('div', { class: 'mp-rsub' }, bb.id))));
     body.append(list, viewer);
+  } else if (tab === 'verify') {
+    renderVerify(body, pack, act, () => setTab('verify'));
   } else if (tab === 'hw') {
     renderHomework(body, pack, act, section);
   } else if (tab === 'vocab' && pack.db) {
@@ -361,6 +365,89 @@ function details(title: string, content: HTMLElement, open: boolean): HTMLElemen
   if (open) d.setAttribute('open', '');
   d.append(h('summary', {}, title), content);
   return d;
+}
+
+// ---- 검증 탭 (T044): 수업 시작에 지난 수업 뒤 과제 결과를 하나씩 띄워 확인·고친다 → 수업 기록 ----
+interface VerifyState {
+  idx: number;
+  done: Map<string, VerifyRec>;
+  tried: boolean;
+}
+const verifyState = new Map<string, VerifyState>();
+function renderVerify(body: HTMLElement, pack: StudentPack, act: PanelActions, redraw: () => void) {
+  const st = verifyState.get(pack.folder) || { idx: 0, done: new Map<string, VerifyRec>(), tried: false };
+  verifyState.set(pack.folder, st);
+  const hist = hwCache.get(pack.folder) || pack.hwHistory || null;
+  if (!hist && act.hwConnected() && !st.tried) {
+    st.tried = true;
+    body.append(h('p', { class: 'mp-p muted' }, '숙제 앱에서 불러오는 중…'));
+    void act.loadHistory().then((hh) => {
+      hwCache.set(pack.folder, hh);
+      redraw();
+    }, () => redraw());
+    return;
+  }
+  if (!hist || !hist.days.length) {
+    body.append(h('p', { class: 'mp-p muted' }, '아직 불러온 과제 결과가 없어요. 과제 탭에서 숙제 앱 연결·불러오기를 확인해 주세요.'));
+    return;
+  }
+  const since = hist.lastLesson || '';
+  const days = hist.days.filter((d) => !since || d.date > since);
+  const counted = days.filter((d) => d.status !== 'today' && d.status !== 'rest');
+  const did = counted.filter((d) => /done|on_time|late/.test(d.status)).length;
+  const rank = (s?: string) => (s === 'wait' ? 0 : s === 'fix' ? 1 : 2);
+  const queue = days
+    .flatMap((d) => d.tasks.flatMap((t) => t.items.filter((it) => it.text || it.media?.length).map((it) => ({ d, t, it, key: `${d.date}|${t.title}|${it.label}|${it.at || ''}` }))))
+    .sort((a, b) => rank(a.it.status) - rank(b.it.status));
+  const md = (s: string) => `${Number(s.slice(5, 7))}/${Number(s.slice(8, 10))}`;
+  const fixN = queue.filter((x) => x.it.status === 'fix').length;
+  const waitN = queue.filter((x) => x.it.status === 'wait').length;
+  body.append(
+    h('p', { class: 'hw-sum' }, since ? `지난 수업(${md(since)}) 뒤 ` : '최근 ', `${counted.length}일 중 ${did}일 완료`, ` · 확인한 것 ${st.done.size}/${queue.length}`, fixN ? h('span', { class: 'hw-badge fix' }, `틀린 것 ${fixN}`) : '', waitN ? h('span', { class: 'hw-badge wait' }, `확인 기다림 ${waitN}`) : ''),
+  );
+  if (!queue.length) {
+    body.append(h('p', { class: 'mp-p muted' }, '확인할 답이 없어요.'));
+    return;
+  }
+  st.idx = Math.max(0, Math.min(st.idx, queue.length - 1));
+  const cur = queue[st.idx];
+  const prev = st.done.get(cur.key);
+  const nav = h('div', { class: 'vf-nav' });
+  const go = (n: number) => {
+    st.idx = n;
+    redraw();
+  };
+  const bPrev = h('button', { type: 'button', class: 'mp-ins' }, '← 이전') as HTMLButtonElement;
+  bPrev.disabled = st.idx === 0;
+  bPrev.addEventListener('click', () => go(st.idx - 1));
+  const bNext = h('button', { type: 'button', class: 'mp-ins' }, '다음 →') as HTMLButtonElement;
+  bNext.disabled = st.idx >= queue.length - 1;
+  bNext.addEventListener('click', () => go(st.idx + 1));
+  nav.append(bPrev, h('span', { class: 'vf-pos' }, `${st.idx + 1} / ${queue.length}`), bNext);
+  const card = itemRow(cur.it, act, `${md(cur.d.date)} · ${cur.t.title}`);
+  const show = h('button', { type: 'button', class: 'mp-ins' }, '판에 띄우기');
+  show.addEventListener('click', () => {
+    if (cur.it.text) act.placeText(`${cur.it.label}\n${cur.it.text}`);
+    else if (cur.it.media?.[0]) void act.placeMedia(cur.it.media[0], cur.it.label);
+  });
+  const fix = h('textarea', { class: 'vf-fix', rows: '2', lang: 'ko', placeholder: '고친 답 (선택)' }) as HTMLTextAreaElement;
+  fix.value = prev?.correction || cur.it.teacher || '';
+  const note = h('input', { type: 'text', class: 'vf-note', lang: 'ko', placeholder: '메모 (선택)' }) as HTMLInputElement;
+  note.value = prev?.note || '';
+  for (const el of [fix, note]) el.addEventListener('keydown', (e) => e.stopPropagation());
+  const save = (verdict: VerifyRec['verdict']) => {
+    const rec: VerifyRec = { schema: 'kwd-verify/v1', id: cur.key, date: cur.d.date, task: cur.t.title, label: cur.it.label, kind: cur.it.kind, student_text: (cur.it.text || '').slice(0, 200) || undefined, ai: cur.it.ai ? cur.it.ai.slice(0, 200) : undefined, verdict, correction: fix.value.trim() || undefined, note: note.value.trim() || undefined, at: new Date().toISOString() };
+    st.done.set(cur.key, rec);
+    act.saveVerify(rec);
+    go(Math.min(st.idx + 1, queue.length - 1));
+  };
+  const verdicts = h('div', { class: 'vf-verdicts' });
+  for (const [v, label] of [['ok', '맞음'], ['fix', '고침'], ['redo', '다시 해 오기']] as const) {
+    const b = h('button', { type: 'button', class: 'vf-v ' + v + (prev?.verdict === v ? ' on' : '') }, label);
+    b.addEventListener('click', () => save(v));
+    verdicts.append(b);
+  }
+  body.append(nav, h('div', { class: 'vf-card' }, card, show, fix, note, verdicts), h('p', { class: 'mp-note' }, prev ? `저장함 · ${{ ok: '맞음', fix: '고침', redo: '다시 해 오기' }[prev.verdict]}. 다시 누르면 덮어써요.` : '버튼을 누르면 수업 기록에 저장되고 다음 문항으로 가요. 자동화가 피드백 몫으로 읽어요.'));
 }
 
 // ---- 과제 탭: 지난 수업 뒤 날마다 낸 과제와 피드백 → 수업에서 짚을 것 ----
