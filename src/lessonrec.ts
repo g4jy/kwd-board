@@ -88,6 +88,8 @@ export class LessonRecorder {
     // 소리
     const ac = new AudioContext();
     this.ac = ac;
+    // 멈춘(suspended) 소리 맥락이면 소리 줄이 데이터를 안 내고, 영상도 소리 줄을 기다려 0바이트로 끝난다 → 꼭 깨운다
+    if (ac.state !== 'running') await ac.resume().catch(() => {});
     const mix = ac.createMediaStreamDestination();
     // 아무 소리가 없는 줄도 끊기지 않게(모든 줄의 시각이 맞도록) 무음을 흘린다
     const hush = ac.createConstantSource();

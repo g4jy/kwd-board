@@ -1855,6 +1855,11 @@ canvas.ink.active {
 .obj.dragging {
   opacity: 0.85;
 }
+/* 끌거나 크기를 바꾸는 동안 학습지·영상 창이 마우스를 가져가면 움직임이 끊긴다 */
+.obj.dragging iframe,
+.obj.resizing iframe {
+  pointer-events: none;
+}
 .obj.sel {
   outline: 2px solid var(--accent, #1f6feb);
   outline-offset: 3px;

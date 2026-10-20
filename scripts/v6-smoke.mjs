@@ -43,7 +43,6 @@ res.geoS = await geo(s);
 // 2) '여기 보세요': 선생님이 학습지를 고르고 누르면 학생 화면이 그리로
 const ws = await t.evaluate((c) => window.__kwd.objs(c).find((o) => o.type === 'html'), C);
 await t.evaluate((id) => document.querySelector(`.rail-item[data-key="${id}"]`).click(), ws.id);
-await t.waitForTimeout(400);
 await t.click('.toolbar [data-tool="select"]');
 await t.click('.obj-html .obj-bar .obj-name');
 await t.click('.look-btn');
@@ -57,8 +56,11 @@ await s.screenshot({ path: `${OUT}/2-student-look.png` });
 
 // 3) 학습지 안에서 고르기 → 학생 학습지에도 (함께 움직임)
 await t.click('.toolbar [data-tool="text"]');
+// 이 PC 의 크롬(155)은 판 배율이 100% 가 아니면 학습지 창(iframe) 안을 누르는 마우스를 안쪽 창에 전달하지 않는다 → 100% 로 맞추고 누른다
+await t.evaluate((id) => { const k = window.__kwd; const o = k.objs(k.pages()[0].id).find((x) => x.id === id); k.vp.centerOn(o.x + o.w / 2, o.y + o.h / 2, 1); }, ws.id);
+await t.waitForTimeout(300);
 const tf = t.frameLocator('.obj-html iframe');
-await tf.locator('#s1 .pick[data-v="food"]').click();
+await tf.locator('#s1 .pick[data-v="food"]').evaluate((b) => b.click()); // 안쪽 창 마우스 입력 대신 단추 자체의 click (이 PC 크롬 155 는 안쪽 창 마우스 입력이 들쭉날쭉)
 await t.waitForTimeout(600);
 res.studentPick = await s.frameLocator('.obj-html iframe').locator('#s1 .pick[data-v="food"]').evaluate((el) => el.classList.contains('on'));
 
@@ -71,12 +73,15 @@ res.ink1 = await t.evaluate((id) => window.__kwd.store.ink(`ws:${id}:1`).length,
 // 글상자 (T 단추)
 await t.click('.obj-html .ws-t', { force: true }); // 펜을 든 채로 (잉크 판이 위에 있어도 단추는 눌림)
 await t.waitForTimeout(200);
+await t.bringToFront(); // 학생 창이 따로 떠 있으면 선생님 창의 커서가 풀린다(시험 환경) — 실제 선생님 창은 늘 앞
+await t.waitForTimeout(100);
 await t.keyboard.type('1단계 메모');
+await t.waitForTimeout(400);
 await t.click('.toolbar [data-tool="text"]');
 res.box1 = await t.evaluate((id) => window.__kwd.objs(`ws:${id}:1`).length, ws.id);
 await t.screenshot({ path: `${OUT}/3-ws-step1-ink.png` });
 // 5) 다음 단계 → 필기가 사라지고, 학생 학습지도 2단계
-await tf.locator('#next').click();
+await tf.locator('#next').evaluate((b) => b.click()); // 크롬 155: 100% 가 아닌 배율에서 안쪽 창 마우스 입력이 안 전달되는 경우가 있어 단추 자체의 click 으로
 await t.waitForTimeout(700);
 res.stepT = await t.evaluate((id) => window.__kwd.objs(window.__kwd.pages()[0].id).find((o) => o.id === id).step, ws.id);
 res.stepS = await s.frameLocator('.obj-html iframe').locator('#lab').textContent();
@@ -90,7 +95,7 @@ res.studentInk2 = await s.evaluate((id) => window.__kwd.store.ink(`ws:${id}:2`).
 await s.screenshot({ path: `${OUT}/5-student-step2.png` });
 // 6) 다시 1단계 → 1단계 필기·글상자가 돌아온다
 await t.click('.toolbar [data-tool="text"]');
-await tf.locator('#prev').click();
+await tf.locator('#prev').evaluate((b) => b.click());
 await t.waitForTimeout(600);
 res.backStep = await t.evaluate((id) => window.__kwd.objs(window.__kwd.pages()[0].id).find((o) => o.id === id).step, ws.id);
 res.boxesVisibleStep1 = await t.locator('.ws-layer .obj-box').count();

@@ -131,7 +131,9 @@ document.addEventListener('click',function(e){var el=e.target.closest('button,a,
 document.addEventListener('change',function(e){var el=e.target;if(!el||!('value' in el))return;send('kwd:event',{name:el.name||el.id||'input',value:String(el.value).slice(0,120)})},true);
 function canScroll(el,dy,dx){while(el&&el.nodeType===1){var cs=getComputedStyle(el);var oy=/(auto|scroll)/.test(cs.overflowY)||el===document.scrollingElement;var ox=/(auto|scroll)/.test(cs.overflowX)||el===document.scrollingElement;if(dy&&oy&&el.scrollHeight>el.clientHeight+1){if(dy<0&&el.scrollTop>0)return true;if(dy>0&&el.scrollTop+el.clientHeight<el.scrollHeight-1)return true}if(dx&&ox&&el.scrollWidth>el.clientWidth+1){if(dx<0&&el.scrollLeft>0)return true;if(dx>0&&el.scrollLeft+el.clientWidth<el.scrollWidth-1)return true}el=el.parentElement}var se=document.scrollingElement;if(se&&dy){if(dy<0&&se.scrollTop>0)return true;if(dy>0&&se.scrollTop+innerHeight<se.scrollHeight-1)return true}return false}
 document.addEventListener('wheel',function(e){var ctrl=e.ctrlKey||e.metaKey;if(ctrl||!canScroll(e.target,e.deltaY,e.deltaX)){e.preventDefault();send('kwd:wheel',{dx:e.deltaX,dy:e.deltaY,x:e.clientX,y:e.clientY,ctrl:ctrl})}},{passive:false});
-window.addEventListener('load',function(){send('kwd:text',{text:(document.body.innerText||'').slice(0,4000)})});
+var rw=innerWidth,rh=innerHeight;function resized(){if(innerWidth!==rw||innerHeight!==rh){rw=innerWidth;rh=innerHeight;window.dispatchEvent(new Event('resize'))}}
+try{new ResizeObserver(resized).observe(document.documentElement)}catch(e){}
+window.addEventListener('load',function(){window.dispatchEvent(new Event('resize'));send('kwd:text',{text:(document.body.innerText||'').slice(0,4000)})});
 })();<\/script>`;
 
 export function htmlWithBridge(html: string): string {

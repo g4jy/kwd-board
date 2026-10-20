@@ -376,6 +376,7 @@ export class PageObjects {
       e.preventDefault();
       e.stopPropagation();
       handle.setPointerCapture(e.pointerId);
+      v.el.classList.add('resizing'); // 끄는 동안 안쪽 창(iframe)이 마우스를 가로채지 않게
       const sx = e.clientX, sy = e.clientY;
       const ow = v.data.w, oh = v.data.h;
       const ratio = v.data.ratio || ow / oh;
@@ -397,6 +398,7 @@ export class PageObjects {
         handle.removeEventListener('pointermove', mv);
         handle.removeEventListener('pointerup', up);
         handle.removeEventListener('pointercancel', up);
+        v.el.classList.remove('resizing');
         this.ctx.store.updateObj(this.pageId, v.data.id, calc(ev));
       };
       handle.addEventListener('pointermove', mv);

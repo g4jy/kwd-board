@@ -25,7 +25,7 @@ const lesson = async () => {
   await p.click('.lesson-btn');
   await p.waitForFunction(() => document.querySelector('.lesson-btn')?.classList.contains('rec'), null, { timeout: 10000 });
   await p.keyboard.type('수업 글');
-  await p.waitForTimeout(2500);
+  await p.waitForTimeout(7000); // 첫 수업은 소리 장치가 처음 깨어나느라 첫 덩어리가 몇 초 늦다(이 PC 크롬 155) — 짧으면 영상·소리 모두 0바이트로 끝난다
   await p.click('.lesson-btn');
   await p.click('.lesson-btn');
   await p.waitForFunction(() => !document.querySelector('.lesson-btn')?.classList.contains('rec'), null, { timeout: 15000 });
