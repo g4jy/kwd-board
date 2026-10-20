@@ -773,6 +773,7 @@ test.describe('v6: 무한 판 · 같은 좌표 · 여기 보세요 · 학습지 
     expect(r.hwDays).toBe(6);
     expect(r.hwPoints).toBe(4);
     expect(r.hwThumbs).toBeGreaterThanOrEqual(3);
+    expect(r.vfAuto).toBe(true);
     expect(r.vfSum).toContain('확인한 것 0/');
     expect(r.vfPos).toMatch(/^1 \//);
     expect(r.vfPrevMarked).toBe('고친 답 예시');

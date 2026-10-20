@@ -34,6 +34,15 @@ export interface PanelActions {
 // 숙제 앱에서 불러온 것 (패널이 다시 그려져도 남게, 이 창에서만)
 const hwCache = new Map<string, HwHistory | null>();
 
+export const cachedHistory = (folder: string) => hwCache.get(folder);
+export const cacheHistory = (folder: string, hh: HwHistory | null) => void hwCache.set(folder, hh);
+// 검증할 문항 수 (지난 수업 뒤 답이 있는 것) — 수업 시작 때 검증 탭을 열지 정한다
+export function verifyCount(hist: HwHistory | null | undefined): number {
+  if (!hist) return 0;
+  const since = hist.lastLesson || '';
+  return hist.days.filter((d) => !since || d.date > since).reduce((n, d) => n + d.tasks.reduce((m, t) => m + t.items.filter((it) => it.text || it.media?.length).length, 0), 0);
+}
+
 export interface SplitSeg {
   key: string;
   label: string;

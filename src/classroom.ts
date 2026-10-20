@@ -17,6 +17,7 @@ export interface ClassroomHost {
   stem: () => string; // 녹화 파일 이름 앞부분
   saveBundle: (open: OpenWriter | null) => Promise<boolean>; // 판 기록(.kwd.zip)을 같은 수업 폴더에
   meta: () => Record<string, unknown>;
+  onLessonStarted?: () => void; // 수업 시작 직후 (검증 탭 열기)
 }
 
 type CamView = 'board' | 'cams';
@@ -475,6 +476,7 @@ export class Classroom {
       this.host.store.meta.set('recording', { startedAt: this.rec.startedAt, files: this.rec.files, crop: this.rec.cropped || 'none' });
       this.host.store.log({ kind: 'lesson', data: { op: 'start', rec: this.rec.files, crop: this.rec.cropped || 'none' } });
       toast(this.rec.cropped ? '수업을 시작했어요 · 판과 목소리를 녹화해요' : '수업을 시작했어요 · 녹화 중');
+      this.host.onLessonStarted?.();
     } catch (e) {
       console.warn('rec', e);
       toast('녹화를 시작하지 못했어요. 크롬이 묻는 창에서 이 탭을 고르고 공유를 눌러 주세요', 5000);

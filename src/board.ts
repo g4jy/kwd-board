@@ -17,7 +17,7 @@ import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY,
 import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, makeLessonDir, openStudentWriter, type StudentPack, type PackFile } from './kwdfolder';
 import { annotatedWorksheet } from './wsexport';
 import { Classroom } from './classroom';
-import { renderStudentPanel, type SplitSeg, type PanelTab } from './studentpanel';
+import { renderStudentPanel, cachedHistory, cacheHistory, verifyCount, type SplitSeg, type PanelTab } from './studentpanel';
 import { hwConfig, setHwConfig, hwMedia, historyFromApp, type VerifyRec } from './homework';
 import { h, download, downloadBlob, fmtDate, fmtClock, toast, EMBEDDED } from './ui';
 
@@ -218,6 +218,7 @@ export class BoardScreen {
         demo: isDemo(),
         serverUrl: () => this.store.serverUrl || '',
         lessonDir: (stem) => makeLessonDir(this.packFolder, this.params.id, stem),
+        onLessonStarted: () => void this.openVerifyIfAny(),
         stem: () => {
           const d = new Date(this.store.now());
           const p2 = (n: number) => String(n).padStart(2, '0');
@@ -277,6 +278,7 @@ export class BoardScreen {
 
     (window as unknown as { __kwd?: unknown }).__kwd = {
       store: this.store,
+      openVerifyIfAny: () => this.openVerifyIfAny(),
       vp: this.vp,
       ink: this.ink,
       undo: this.undo,
@@ -2465,6 +2467,24 @@ export class BoardScreen {
       await w.close();
       toast('검증 저장 · ' + label);
     })().catch(() => toast('검증 파일을 못 썼어요 · 판 기록에는 저장됨', 4000));
+  }
+
+  // 수업 시작: 검증할 문항이 있으면 검증 탭을 자동으로 연다 (없으면 그대로)
+  private async openVerifyIfAny() {
+    if (this.role !== 'teacher' || !this.pack) return;
+    try {
+      let hist = cachedHistory(this.packFolder) || this.pack.hwHistory || null;
+      if (!hist && hwConfig()) {
+        hist = await historyFromApp(this.pack.name || '', this.pack.id || '');
+        cacheHistory(this.packFolder, hist);
+      }
+      if (!verifyCount(hist)) return;
+      this.packTab = 'verify';
+      if (this.memPanel) this.renderMemPanel();
+      else this.toggleMemPanel();
+    } catch {
+      /* 숙제 앱이 안 되면 그대로 */
+    }
   }
 
   private memTab = 'vocab';
