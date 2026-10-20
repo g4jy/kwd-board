@@ -22,6 +22,7 @@ export interface ObjectHost {
   onText(pageId: string, block: string, kind: string, text: string): void;
   onBoxFocus(editor: Editor, pageId: string): void;
   openPopup(pageId: string, id: string): void; // 모두의 화면에 크게
+  zoom100(clientX: number, clientY: number): void; // 누른 자리를 가운데 두고 판을 100% 로 (작게 본 학습지 안은 크롬이 마우스를 안 받는다)
   focusObj(pageId: string, id: string): void; // 화면에 꽉 차게 (선생님: 학생 화면도 '여기 보세요')
   canDrive(): boolean; // 웹 학습지 단계를 넘기고 고를 수 있나 (선생님, 또는 허락받은 학생)
   addWsBox?(layerId: string, x: number, y: number): void; // 학습지 위 글상자
@@ -260,7 +261,14 @@ export class PageObjects {
       tools.append(tool('obj-bt', 'big', this.ctx.role === 'teacher' ? '학습지를 크게 (학생 화면도)' : '학습지를 크게', () => this.ctx.focusObj(this.pageId, o.id)));
       if (this.ctx.role === 'teacher' && this.ctx.saveWs) tools.append(tool('obj-bt', 'save', '필기 넣은 학습지 저장 (학생 폴더 또는 내려받기)', () => this.ctx.saveWs!(this.pageId, o.id)));
       tools.append(del);
-      el.append(bar, frame, layer, tools, size);
+      // 판이 100% 보다 작으면 이 덮개가 첫 누름을 받아 100% 로 키워 준다(크롬 155 는 작게 본 안쪽 창에 마우스를 안 전달)
+      const guard = h('div', { class: 'frame-guard', title: '누르면 100% 로 키워요' });
+      guard.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.ctx.zoom100(e.clientX, e.clientY);
+      });
+      el.append(bar, frame, guard, layer, tools, size);
       v.frame = frame;
       v.ws = { layer, objs: null, step: 0, frameStep: 0, stepEl };
       this.bindMove(v, bar);

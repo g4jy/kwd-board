@@ -3359,3 +3359,8 @@ body.in-demo { background: var(--bg); overflow: auto; }
 }
 .mic-rec { background: #fff; color: #1f2a44; }
 .mic-rec[hidden] { display: none; }
+
+/* 작게 본 학습지(판 < 100%) 위 덮개: 첫 누름으로 100% 로 키운다 */
+.frame-guard { position: absolute; inset: 0; display: none; z-index: 3; cursor: zoom-in; }
+/* 글 도구일 때만 (선택·펜·지우개는 덮개 없이 끌기·필기가 되어야 한다) */
+.small-zoom[data-tool='text'] .frame-guard { display: block; }

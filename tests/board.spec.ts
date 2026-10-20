@@ -285,9 +285,14 @@ test.describe('페이지·확대·자료', () => {
     await page.evaluate((h) => (window as any).__kwd.importHtmlText(h, '조사 퀴즈'), html);
     await expect(page.locator('.mat-frame')).toHaveCount(1);
     await page.click('.rail-item:has-text("2")');
-    // 이 PC 의 크롬(155)은 판 배율이 약 52% 이하이면 학습지 창(iframe) 안을 누르는 마우스를 안쪽 창에 전달하지 않는다 → 시험은 배율을 100%로 맞춘 뒤 누른다
+    // 이 PC 의 크롬(155)은 판 배율이 100% 아니면 학습지(iframe) 안을 누르는 마우스를 안쪽 창에 전달하지 않는다 → 글 도구로 작게 본 학습지를 누르면 덮개가 100% 로 키운다
+    await page.click('.toolbar [data-tool="text"]');
+    expect(await kwd(page, (k) => k.vp.view.s)).toBeLessThan(0.99);
+    await expect(page.locator('.board.small-zoom .page-material .frame-guard')).toBeVisible();
     const fr0 = (await page.locator('.mat-frame').boundingBox())!;
-    await page.evaluate(([x, y]) => { const k = (window as any).__kwd; k.vp.zoomAt(x, y, 1 / k.vp.view.s); }, [fr0.x + fr0.width / 2, fr0.y + fr0.height / 2]);
+    await page.mouse.click(fr0.x + fr0.width / 2, fr0.y + fr0.height / 2);
+    await expect.poll(() => kwd(page, (k) => k.vp.view.s)).toBeGreaterThan(0.99);
+    await expect(page.locator('.board.small-zoom')).toHaveCount(0);
     await page.waitForTimeout(300);
     const frame = page.frameLocator('.mat-frame');
     await frame.locator('button:has-text("께")').click();

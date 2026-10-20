@@ -46,6 +46,14 @@ interface PageView {
   h: number;
 }
 
+function fit100On(): boolean {
+  try {
+    return localStorage.getItem('kwd.fit100') !== '0';
+  } catch {
+    return true;
+  }
+}
+
 export class BoardScreen {
   readonly root: HTMLElement;
   readonly store: BoardStore;
@@ -121,6 +129,7 @@ export class BoardScreen {
     this.world.append(this.pagesHost);
     this.stage.append(this.world, canvas);
     this.vp = new Viewport(this.stage, this.world);
+    this.vp.onChange((v) => this.root.classList.toggle('small-zoom', v.s < 0.99 && this.role === 'teacher' && fit100On()));
     this.vp.clamp = (v) => this.clampView(v);
 
     // 글·잉크 한 스택 되돌리기 (페이지가 생기면 scope 에 더한다)
@@ -137,6 +146,7 @@ export class BoardScreen {
       interactive: () => this.tool === 'text' || this.tool === 'select',
       selectMode: () => this.tool === 'select',
       openPopup: (page, id) => this.setPopup({ page, id }),
+      zoom100: (x, y) => this.vp.zoomAt(x, y, 1 / this.vp.view.s),
       focusObj: (page, id) => this.gotoObj(page, id, this.role === 'teacher'),
       canDrive: () => this.role === 'teacher' || (this.role === 'student' && !!this.store.getSetting('studentMaterial', false)),
       addWsBox: (layer, x, y) => {
@@ -453,7 +463,13 @@ export class BoardScreen {
     if (data.html != null) {
       const frame = h('iframe', { class: 'mat-frame', sandbox: 'allow-scripts allow-forms', title: '자료' }) as HTMLIFrameElement;
       frame.srcdoc = htmlWithBridge(data.html);
-      bg.append(frame);
+      const guard = h('div', { class: 'frame-guard', title: '누르면 100% 로 키워요' });
+      guard.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.vp.zoomAt(e.clientX, e.clientY, 1 / this.vp.view.s);
+      });
+      bg.append(frame, guard);
       const onMsg = (e: MessageEvent) => {
         if (e.source !== frame.contentWindow || !e.data || typeof e.data !== 'object') return;
         const d = e.data as { type?: string; name?: string; value?: unknown; score?: unknown; text?: string };
@@ -2669,10 +2685,31 @@ export class BoardScreen {
       item('지금 기록 저장', () => void this.saveBundleNow(), { sub: saved }),
       item('학생 링크', () => this.openLinks()),
       this.tbPosItem(),
+      this.fit100Item(),
       item('더 보기…', () => this.openMoreMenu(anchor)),
       ...(this.order.length > 1 && cur && !this.isCanvas(this.currentPage) ? [h('div', { class: 'mi-sep' }), item(`${this.order.indexOf(this.currentPage) + 1}페이지 지우기…`, () => this.confirmDeletePage(), { danger: true })] : []),
     );
     this.showPanel(menu, anchor);
+  }
+
+  // 학습지를 누르면 판을 100% 로 (기본 켬, 이 기기에만 저장)
+  private fit100Item(): HTMLElement {
+    const el = h('button', { type: 'button', class: 'mi ' + (fit100On() ? 'on' : 'off'), role: 'switch', 'aria-checked': String(fit100On()), 'data-key': 'fit100' }, h('span', {}, '학습지 누르면 100%로'));
+    el.addEventListener('mousedown', (e) => e.preventDefault());
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const v = !fit100On();
+      try {
+        localStorage.setItem('kwd.fit100', v ? '1' : '0');
+      } catch {
+        /* 이번만 */
+      }
+      this.root.classList.toggle('small-zoom', v && this.vp.view.s < 0.99 && this.role === 'teacher');
+      el.classList.toggle('on', v);
+      el.classList.toggle('off', !v);
+      el.setAttribute('aria-checked', String(v));
+    });
+    return el;
   }
 
   // 도구 줄 위·아래 (태블릿에서 손바닥이 아래 줄을 가릴 때). 이 기기에만 저장. 줄이 옮겨 가므로 메뉴는 닫는다
