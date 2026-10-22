@@ -28,6 +28,7 @@ export interface PanelActions {
   startSegment(seg: SplitSeg): void;
   placeTalkKit(md: string): void; // 대화 재료를 판 위 카드로, 학생 화면도 거기로
   placeMedia(m: HwMedia, label: string): Promise<void>;
+  loadVerify(): Promise<VerifyRec[]>; // 학생 폴더 검증/ 에 저장된 기록 (복원용)
   saveVerify(rec: VerifyRec): void; // 검증 결과를 수업 기록(판 기록 + 학생 폴더 검증/)에
 }
 
@@ -381,11 +382,20 @@ interface VerifyState {
   idx: number;
   done: Map<string, VerifyRec>;
   tried: boolean;
+  restored: boolean;
 }
 const verifyState = new Map<string, VerifyState>();
 function renderVerify(body: HTMLElement, pack: StudentPack, act: PanelActions, redraw: () => void) {
-  const st = verifyState.get(pack.folder) || { idx: 0, done: new Map<string, VerifyRec>(), tried: false };
+  const st = verifyState.get(pack.folder) || { idx: 0, done: new Map<string, VerifyRec>(), tried: false, restored: false };
   verifyState.set(pack.folder, st);
+  if (!st.restored) {
+    // 새로고침 뒤에도 이미 확인한 문항을 '저장함'으로 보이게 폴더 기록을 한 번 읽어 온다
+    st.restored = true;
+    void act.loadVerify().then((recs) => {
+      for (const r of recs) if (!st.done.has(r.id)) st.done.set(r.id, r);
+      if (recs.length) redraw();
+    }, () => undefined);
+  }
   const hist = hwCache.get(pack.folder) || pack.hwHistory || null;
   if (!hist && act.hwConnected() && !st.tried) {
     st.tried = true;

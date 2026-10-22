@@ -3,6 +3,7 @@
 // AI·서버 없이 브라우저 안에서만 읽고, 학생 기기로는 아무것도 보내지 않는다.
 import { validUnit, type KwdUnit } from './units';
 import { validPacket, indexEntries, type LessonPacket } from './packet';
+import type { VerifyRec } from './homework';
 import type { StudentMemory, MemVocab, MemGrammar, MemError, MemHomework, MemLesson } from './memory';
 
 type DirHandle = FileSystemDirectoryHandle & {
@@ -813,6 +814,33 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
   pack.packet = await packetFor(folder);
   pack.units = await unitsFor(pack.packet);
   return pack;
+}
+
+// 학생 폴더 검증/verify_*.json 을 모두 읽어 id별 최신 기록으로 합친다 (새로고침 뒤 '저장함' 복원). 못 읽으면 빈 목록
+export async function readStudentVerify(folder: string): Promise<VerifyRec[]> {
+  const work = await storedWork();
+  if (!work || (work as unknown as VDir) instanceof VDir || !folder) return [];
+  const byId = new Map<string, VerifyRec>();
+  try {
+    const sd = await (await work.getDirectoryHandle('Student_Lessons')).getDirectoryHandle(folder);
+    const dir = await sd.getDirectoryHandle('검증');
+    for await (const [name, h] of (dir as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }).entries()) {
+      if (h.kind !== 'file' || !/^verify_.*\.json$/.test(name)) continue;
+      try {
+        const j = JSON.parse(await (await (h as FileSystemFileHandle).getFile()).text());
+        for (const r of Array.isArray(j.items) ? j.items : []) {
+          if (!r || typeof r.id !== 'string') continue;
+          const old = byId.get(r.id);
+          if (!old || String(r.at || '') >= String(old.at || '')) byId.set(r.id, r as VerifyRec);
+        }
+      } catch {
+        /* 깨진 파일은 무시 */
+      }
+    }
+  } catch {
+    /* 폴더 없음 */
+  }
+  return [...byId.values()];
 }
 
 // 학생 폴더에 파일 쓰기 (수업 필기 넣은 학습지 등). 쓰기 허락을 한 번 더 묻는다. 체험·파일 목록 폴더는 못 쓴다 → false

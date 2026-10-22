@@ -14,7 +14,7 @@ import { importPdf, importHtml, htmlWithBridge, joinText } from './importer';
 import { loadPrefs, savePrefs, penSlot, renderSlot, buildPenPopover, type PenPrefs } from './palette';
 import { icon } from './icons';
 import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY, type StudentMemory } from './memory';
-import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, makeLessonDir, openStudentWriter, type StudentPack, type PackFile } from './kwdfolder';
+import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, makeLessonDir, openStudentWriter, readStudentVerify, type StudentPack, type PackFile } from './kwdfolder';
 import { annotatedWorksheet } from './wsexport';
 import { Classroom } from './classroom';
 import { renderStudentPanel, cachedHistory, cacheHistory, verifyCount, type SplitSeg, type PanelTab } from './studentpanel';
@@ -2554,6 +2554,7 @@ export class BoardScreen {
             toast(`${g.label} ${g.min}분 시작`);
           },
           placeTalkKit: (md) => void this.placeTalkKit(md),
+          loadVerify: () => readStudentVerify(this.packFolder),
           saveVerify: (rec) => this.saveVerify(rec),
         },
       );
