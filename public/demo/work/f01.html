@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>#12 추석에 뭐 했어요? — 수업 페이지</title>
 <style>
-:root{--ink:#1f2a37;--muted:#6b7380;--card:#fff;--line:#e5e1d8;--accent:#e8743b;--blue:#1f6feb;--ok:#2e9e5b;--no:#d64545;--bg:#fff8ef}
+:root{--ink:#0F1A3B;--muted:#5B6684;--card:#fff;--line:#DADFEC;--accent:#2145C4;--blue:#2145C4;--ok:#1F7A4D;--no:#B3261E;--bg:#F6F7FB}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:#1d2733;font-family:sans-serif;color:var(--ink)}
 /* 무대는 늘 960×600 으로 그리고 창 크기에 맞춰 통째로 줄이고 늘린다 → 어느 기기에서나 같은 자리 */
@@ -19,7 +19,7 @@ h2{font-size:32px;margin:0 0 18px}
 .nav{position:absolute;left:0;right:0;bottom:0;height:64px;display:flex;align-items:center;justify-content:center;gap:14px;background:rgba(255,255,255,.7);border-top:1px solid var(--line);z-index:5}
 .nav button{font:inherit;font-size:22px;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:#fff;cursor:pointer}
 .nav button:disabled{opacity:.3;cursor:default}
-.dots{display:flex;gap:8px}.dot{width:10px;height:10px;border-radius:50%;background:#d8d2c4;transition:.2s}.dot.on{background:var(--accent);width:26px;border-radius:6px}
+.dots{display:flex;gap:8px}.dot{width:10px;height:10px;border-radius:50%;background:#DADFEC;transition:.2s}.dot.on{background:var(--accent);width:26px;border-radius:6px}
 .label{position:absolute;right:20px;font-size:14px;color:var(--muted)}
 /* 1 */
 .sky{position:absolute;inset:0;background:linear-gradient(#20324a,#4b5f7c 60%,#c98d5a);z-index:-1}
@@ -36,15 +36,15 @@ h2{font-size:32px;margin:0 0 18px}
 .flip.on .in{transform:rotateY(180deg)}
 .face{position:absolute;inset:0;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;backface-visibility:hidden;background:#fff;border:2px solid var(--line);font-size:32px;font-weight:800}
 .face small{font-size:15px;font-weight:500;color:var(--muted);margin-top:6px}
-.back{transform:rotateY(180deg);background:#fff4e8;border-color:#f3c9a6;font-size:44px}
+.back{transform:rotateY(180deg);background:#EEF1FA;border-color:#DADFEC;font-size:44px}
 .back small{font-size:17px}
 /* 3 */
 .machine{display:flex;align-items:center;gap:22px;margin-top:10px}
 .verbs{display:flex;flex-direction:column;gap:10px}
 .verb{font:inherit;font-size:22px;padding:10px 18px;border-radius:12px;border:2px solid var(--line);background:#fff;cursor:pointer;min-width:130px}
-.verb.on{border-color:var(--blue);background:#eaf2ff}
+.verb.on{border-color:var(--blue);background:#EEF1FA}
 .arrow{font-size:46px;color:var(--accent)}
-.out{width:330px;height:190px;border-radius:20px;background:#fff;border:3px dashed #f0c7a5;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:46px;font-weight:800}
+.out{width:330px;height:190px;border-radius:20px;background:#fff;border:3px dashed #DADFEC;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:46px;font-weight:800}
 .out .rule{font-size:16px;font-weight:500;color:var(--muted);margin-top:8px;text-align:center;padding:0 12px}
 .pop{animation:pop .45s ease}
 @keyframes pop{0%{transform:scale(.6);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
@@ -54,11 +54,11 @@ h2{font-size:32px;margin:0 0 18px}
 .tile{font-size:24px;font-weight:700;padding:10px 16px;border-radius:12px;background:#fff;border:2px solid var(--line);cursor:grab;user-select:none;touch-action:none}
 .tile.used{opacity:.35}
 .targets{display:grid;grid-template-columns:repeat(3,170px);gap:14px}
-.target{height:130px;border-radius:16px;border:2px dashed #cfc7b6;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:52px;transition:.2s}
+.target{height:130px;border-radius:16px;border:2px dashed #B8C0D6;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:52px;transition:.2s}
 .target .ans{font-size:20px;font-weight:700;min-height:26px;margin-top:4px}
-.target.over{border-color:var(--blue);background:#eef4ff}
-.target.ok{border-style:solid;border-color:var(--ok);background:#eefaf2}
-.target.no{border-style:solid;border-color:var(--no);background:#fff0f0;animation:shake .4s}
+.target.over{border-color:var(--blue);background:#EEF1FA}
+.target.ok{border-style:solid;border-color:var(--ok);background:#E6F4EC}
+.target.no{border-style:solid;border-color:var(--no);background:#FCEBE9;animation:shake .4s}
 @keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
 .ghost{position:fixed;pointer-events:none;z-index:99;font-size:24px;font-weight:700;padding:10px 16px;border-radius:12px;background:#fff;border:2px solid var(--blue);box-shadow:0 8px 20px rgba(0,0,0,.15)}
 /* 5 */
@@ -66,13 +66,13 @@ h2{font-size:32px;margin:0 0 18px}
 .food{border-radius:18px;background:#fff;border:2px solid var(--line);padding:14px;text-align:center}
 .food .em{font-size:54px}.food .nm{font-size:22px;font-weight:700;margin:4px 0 10px}
 .tastes{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
-.taste{font:inherit;font-size:16px;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:#faf7f0;cursor:pointer}
+.taste{font:inherit;font-size:16px;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:#F6F7FB;cursor:pointer}
 .taste.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
-.taste.no{background:#fde4e4;border-color:var(--no)}
+.taste.no{background:#FCEBE9;border-color:var(--no)}
 /* 6 */
 .slots{display:flex;gap:10px;min-height:70px;padding:12px;border-radius:16px;background:#fff;border:2px solid var(--line);margin-bottom:18px;flex-wrap:wrap}
 .bank{display:flex;gap:10px;flex-wrap:wrap}
-.word{font:inherit;font-size:24px;font-weight:700;padding:10px 16px;border-radius:12px;border:2px solid #f0c7a5;background:#fff4e8;cursor:pointer}
+.word{font:inherit;font-size:24px;font-weight:700;padding:10px 16px;border-radius:12px;border:2px solid #DADFEC;background:#EEF1FA;cursor:pointer}
 .result{font-size:22px;font-weight:700;margin-top:16px;min-height:30px}
 .result.ok{color:var(--ok)}.result.no{color:var(--no)}
 /* 7 */
@@ -176,7 +176,7 @@ h2{font-size:32px;margin:0 0 18px}
     <h2>오늘 잘했어요</h2>
     <p class="lead">이번 주 과제 (매일 조금씩)</p>
     <div class="hw">
-      <div class="hwc"><i class="ill sm" data-ill="pencil"></i><b>쓰기</b>추석에 한 일 3문장<br><span style="color:#6b7380">-았/었어요</span></div>
+      <div class="hwc"><i class="ill sm" data-ill="pencil"></i><b>쓰기</b>추석에 한 일 3문장<br><span style="color:#5B6684">-았/었어요</span></div>
       <div class="hwc"><i class="ill sm" data-ill="mic"></i><b>말하기</b>쓴 문장을 읽고 녹음해서 올리기</div>
       <div class="hwc"><i class="ill sm" data-ill="camera"></i><b>사진</b>좋아하는 한국 음식 사진 + 맛 한 줄</div>
     </div>
