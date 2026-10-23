@@ -43,9 +43,9 @@ export function annotatedWorksheet(store: BoardStore, o: PageObject, studentName
   const title = `${o.name || '웹 학습지'} — 수업 필기 ${date}`;
   const src = JSON.stringify(htmlWithBridge(md.html)).replace(/<\//g, '<\\/');
   const html = `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
-<style>html,body{margin:0;background:#f3f1ec;font-family:'Pretendard Variable',Pretendard,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:#222}
-.top{max-width:${W}px;margin:14px auto 8px;padding:0 12px;font-size:14px;color:#6b665c}.top b{color:#222}
-#outer{margin:0 auto 24px}#wrap{position:relative;transform-origin:0 0;width:${W}px;height:${H}px;box-shadow:0 8px 24px rgba(0,0,0,.08);border-radius:8px;overflow:hidden;background:#fff}
+<style>html,body{margin:0;background:#F6F7FB;font-family:'Pretendard Variable',Pretendard,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;color:#0F1A3B}
+.top{max-width:${W}px;margin:14px auto 8px;padding:0 12px;font-size:14px;color:#5B6684}.top b{color:#0F1A3B}
+#outer{margin:0 auto 24px}#wrap{position:relative;transform-origin:0 0;width:${W}px;height:${H}px;box-shadow:0 0 0 1px #DADFEC;border-radius:16px;overflow:hidden;background:#fff}
 iframe{border:0;width:${W}px;height:${H}px;display:block}svg{position:absolute;left:0;top:0;pointer-events:none}
 #boxes{position:absolute;inset:0;pointer-events:none}.box{position:absolute;font-size:17px;line-height:1.5;background:rgba(255,255,255,.85);border-radius:6px;padding:2px 8px}.box p{margin:0}</style></head>
 <body><div class="top"><b>${esc(o.name || '웹 학습지')}</b>${studentName ? ' · ' + esc(studentName) : ''} · ${date} 수업 필기 — 단계를 넘기면 그때 쓴 필기가 보여요</div>

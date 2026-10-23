@@ -632,14 +632,14 @@ export class InkLayer {
       ctx.globalAlpha = 1;
       ctx.lineWidth = 1.5 / s;
       ctx.setLineDash([6 / s, 4 / s]);
-      ctx.strokeStyle = '#1f6feb';
+      ctx.strokeStyle = '#2145C4';
       ctx.strokeRect(sb[0] - 6 / s, sb[1] - 6 / s, sb[2] - sb[0] + 12 / s, sb[3] - sb[1] + 12 / s);
       ctx.setLineDash([]);
     }
     if (this.band) {
       const b = this.band;
-      ctx.fillStyle = 'rgba(31,111,235,0.08)';
-      ctx.strokeStyle = 'rgba(31,111,235,0.8)';
+      ctx.fillStyle = 'rgba(33,69,196,0.08)';
+      ctx.strokeStyle = 'rgba(33,69,196,0.8)';
       ctx.lineWidth = 1 / s;
       ctx.fillRect(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.abs(b.x1 - b.x0), Math.abs(b.y1 - b.y0));
       ctx.strokeRect(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.abs(b.x1 - b.x0), Math.abs(b.y1 - b.y0));
