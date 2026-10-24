@@ -2908,6 +2908,9 @@ body.in-demo { background: var(--bg); overflow: auto; }
 .join-nocam { align-self: center; font-size: 13px; }
 .join-note { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.5; }
 .join-board { align-self: center; font-size: 12.5px; color: var(--muted); margin-top: -6px; }
+.join-en { margin: 0; font-size: 15px; color: var(--muted); line-height: 1.45; }
+.join-title-en { margin-top: -8px; }
+.join-nocam, .join-board { font-size: 15px; text-align: center; }
 
 /* v8.1 카메라 칸 배치 */
 .cam-tile.local { width: 32%; }

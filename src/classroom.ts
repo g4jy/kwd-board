@@ -185,11 +185,16 @@ export class Classroom {
     const pv = h('video', { class: 'join-preview', autoplay: '', playsinline: '' }) as HTMLVideoElement;
     pv.muted = true;
     const meter = h('div', { class: 'join-meter' }, h('i', {}));
-    const go = h('button', { type: 'button', class: 'join-go' }, '들어가기') as HTMLButtonElement;
-    const noCam = h('button', { type: 'button', class: 'linkish join-nocam' }, '카메라 없이 들어가기');
+    const go = h('button', { type: 'button', class: 'join-go' }, '들어가기 · Join') as HTMLButtonElement;
+    const noCam = h('button', { type: 'button', class: 'linkish join-nocam' }, '카메라 없이 들어가기 · Join without camera');
     const msg = h('p', { class: 'join-msg' }, '카메라와 마이크를 켜는 중…');
-    const boardOnly = h('button', { type: 'button', class: 'linkish join-board' }, '판만 볼게요');
-    const card = h('div', { class: 'join-card' }, h('h2', {}, '한국어 수업'), h('div', { class: 'join-pv' }, pv), meter, msg, go, noCam, boardOnly, h('p', { class: 'join-note' }, '이 수업은 복습 자료를 위해 녹화돼요. 녹화에는 판과 목소리만 들어가고 내 얼굴은 들어가지 않아요. 들어가기를 누르면 동의한 것으로 봐요.'));
+    const msgEn = h('p', { class: 'join-en' }, 'Turning on your camera and microphone…');
+    const say = (ko: string, en: string) => {
+      msg.textContent = ko;
+      msgEn.textContent = en;
+    };
+    const boardOnly = h('button', { type: 'button', class: 'linkish join-board' }, '판만 볼게요 · Just the board');
+    const card = h('div', { class: 'join-card' }, h('h2', {}, '한국어 수업'), h('p', { class: 'join-en join-title-en' }, 'Korean lesson'), h('div', { class: 'join-pv' }, pv), meter, msg, msgEn, go, noCam, boardOnly, h('p', { class: 'join-note' }, '이 수업은 복습 자료를 위해 녹화돼요. 녹화에는 판과 목소리만 들어가고 내 얼굴은 들어가지 않아요. 들어가기를 누르면 동의한 것으로 봐요.'), h('p', { class: 'join-en' }, 'This lesson is recorded for review. The recording has the board and voices only, not your face. Pressing Join means you agree.'));
     this.join = h('div', { class: 'join' }, card);
     this.host.root.append(this.join);
     let stream: MediaStream | null = null;
@@ -197,11 +202,12 @@ export class Classroom {
     void this.getMedia(true).then((s) => {
       stream = s;
       if (!s) {
-        msg.textContent = '카메라·마이크를 쓸 수 없어요. 브라우저 주소창의 자물쇠에서 허용하거나, 카메라 없이 들어가세요.';
+        say('카메라·마이크를 쓸 수 없어요. 브라우저 주소창의 자물쇠에서 허용하거나, 카메라 없이 들어가세요.', "Can't use the camera or microphone. Allow them with the lock icon in the address bar, or join without camera.");
         return;
       }
       pv.srcObject = s;
-      msg.textContent = s.getVideoTracks().length ? '좋아요. 들어가기를 누르세요.' : '카메라가 없어요. 목소리로만 들어가요.';
+      if (s.getVideoTracks().length) say('좋아요. 들어가기를 누르세요.', 'Good. Press Join.');
+      else say('카메라가 없어요. 목소리로만 들어가요.', 'No camera. You will join with voice only.');
       try {
         const ac = new AudioContext();
         const an = ac.createAnalyser();
