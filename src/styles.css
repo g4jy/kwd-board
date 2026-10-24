@@ -634,12 +634,13 @@ canvas.ink.active {
   right: 12px;
   bottom: calc(14px + env(safe-area-inset-bottom));
   padding: 10px 16px;
+  min-height: 44px;
   border-radius: 999px;
-  border: 0;
-  background: var(--accent);
-  color: #fff;
+  border: 1px solid #8f9ab8;
+  background: #fff;
+  color: var(--ink);
   font-weight: 600;
-  box-shadow: var(--shadow);
+  box-shadow: none;
   z-index: 6;
   cursor: pointer;
 }
@@ -2558,7 +2559,7 @@ body.in-demo { background: var(--bg); overflow: auto; }
 /* ---------- v6: 무한 판 ---------- */
 .stage {
   background-color: var(--bg);
-  background-image: radial-gradient(circle, rgba(60, 50, 30, 0.16) 1.1px, transparent 1.3px);
+  background-image: radial-gradient(circle, rgba(60, 50, 30, 0.09) 1.1px, transparent 1.3px);
 }
 .page.canvas {
   background: transparent;
