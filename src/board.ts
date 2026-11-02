@@ -231,7 +231,7 @@ export class BoardScreen {
       });
     }
     topLeft.append(this.timerEl);
-    const topRight = h('div', { class: 'top-right' }, ...(this.role === 'teacher' && this.classroom?.lessonBtn ? [this.classroom.lessonBtn, ...(this.classroom.micBtn ? [this.classroom.micBtn] : [])] : []), ...(this.role === 'teacher' ? [lookBtn] : []), this.memBtn);
+    const topRight = h('div', { class: 'top-right' }, ...(this.role === 'teacher' && this.classroom?.lessonBtn ? [this.classroom.lessonBtn, ...(this.classroom.micBtn ? [this.classroom.micBtn] : []), ...(this.classroom.savedBtn ? [this.classroom.savedBtn] : [])] : []), ...(this.role === 'teacher' ? [lookBtn] : []), this.memBtn);
     this.followBtn = h('button', { type: 'button', class: 'follow-btn', hidden: '' }, '선생님 화면으로');
     this.followBtn.addEventListener('click', () => {
       this.following = true;
@@ -643,15 +643,16 @@ export class BoardScreen {
     }
     this.bounds = [x0, y0, x1, y1];
   }
+  // T083b: 무한 판 — 사방 어디로든 (줌아웃 상태에서도). 놓인 것에서 화면 5장 넘게 멀어지는 것만 막는다(길 잃음 방지).
   private clampView(v: { x: number; y: number; s: number }) {
     const r = this.stage.getBoundingClientRect();
     const W = r.width || window.innerWidth;
     const H = r.height || window.innerHeight;
     const [x0, y0, x1, y1] = this.bounds;
-    const m = 120;
+    const mx = W * 5, my = H * 5;
     let { x, y } = v;
-    x = Math.min(W - m - x0 * v.s, Math.max(m - x1 * v.s, x));
-    y = Math.min(H - m - y0 * v.s, Math.max(m - y1 * v.s, y));
+    x = Math.min(W + mx - x0 * v.s, Math.max(-mx - x1 * v.s, x));
+    y = Math.min(H + my - y0 * v.s, Math.max(-my - y1 * v.s, y));
     return { x, y, s: v.s };
   }
 

@@ -222,10 +222,17 @@ test.describe('페이지·확대·자료', () => {
     await page.mouse.move(box.x + 300, box.y + 300);
     for (let i = 0; i < 40; i++) await page.mouse.wheel(0, 900);
     const v = await kwd(page, (k) => ({ ...k.vp.view, b: k.boxes()[0] }));
-    expect(v.y + 400 * v.s).toBeGreaterThan(0); // 노트 위쪽이 화면 위로 다 사라지지 않음
+    // T083b: 무한 판 — 예전 한계(노트가 화면에서 다 사라지기 직전)를 훨씬 넘어 어디로든 간다. 다만 화면 5장 밖으로는 안 간다
+    expect(v.y + 400 * v.s).toBeLessThan(0);
+    expect(v.y).toBeGreaterThan(-6 * 820 - 2000);
     for (let i = 0; i < 40; i++) await page.mouse.wheel(900, 0);
     const v2 = await kwd(page, (k) => ({ ...k.vp.view }));
-    expect(v2.x + 1100 * v2.s).toBeGreaterThan(0);
+    expect(v2.x + 1100 * v2.s).toBeLessThan(0);
+    // 반대 방향(위·왼쪽)으로도 빈 곳이 열린다
+    for (let i = 0; i < 40; i++) await page.mouse.wheel(-900, -900);
+    const v3 = await kwd(page, (k) => ({ ...k.vp.view }));
+    expect(v3.x).toBeGreaterThan(300);
+    expect(v3.y).toBeGreaterThan(300);
     // 확대 버튼 · 전체 보기
     await page.click('.zoom .zb[title^="확대"]');
     const s1 = await kwd(page, (k) => k.vp.view.s);
@@ -870,8 +877,15 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
     expect(r.crop).toBe('element'); // 판만 (카메라 칸·패널 빠짐)
     expect(r.confirm).toContain('한 번 더');
     const names = r.files.map((f: { name: string }) => f.name);
+    expect(r.recZip).toMatch(/_녹화\.zip$/); // 내려받기는 zip 1개 (T083b)
     expect(names.filter((n: string) => /\.webm$/.test(n))).toHaveLength(4);
     expect(names.some((n: string) => /_Media\.webm$/.test(n))).toBe(true); // 판 자료 소리 따로
+    expect(r.saved.sessions).toBeGreaterThanOrEqual(1); // 조각 복사본이 저장소에 (T083b)
+    expect(r.saved.chunks).toBeGreaterThan(4);
+    expect(r.saved.ended).toBe(true);
+    expect(r.redoVisible).toBe(true);
+    expect(r.redo.filter((n: string) => /\.webm$/.test(n))).toHaveLength(4);
+    expect(r.redo.some((n: string) => /_rec\.json$/.test(n))).toBe(true);
     expect(r.meta.schema).toBe('kwd-lesson-rec/v2');
     expect(r.meta.media.map((m: { kind: string; name: string }) => m.kind + ':' + m.name)).toEqual(['audio:듣기 자료']);
     expect(r.meta.media[0].to_s - r.meta.media[0].from_s).toBeGreaterThan(1.5);
@@ -1010,5 +1024,83 @@ test.describe('T083: 선생님 고정 링크 · 자료 자동 배치 · 첫 페�
     expect(await kwd(b, (k) => k.pages().length)).toBe(1);
     for (const c of [ctxT, ctxS, c1, c2]) await c.close();
     fs.unlinkSync(file);
+  });
+});
+
+test.describe('T083b: 스크롤형 자료 펼침 · 펜 고정 · 학생 같은 위치 · 빈칸 · 녹화 복구', () => {
+  test.describe.configure({ timeout: 120_000 });
+  test('긴 자료는 전체 높이로 펼쳐져 안쪽 스크롤이 없고, 펜 자국이 내용에 붙어 판을 옮겨도 같이 움직이며, 학생도 같은 크기', async ({ browser }) => {
+    const id = newId();
+    const ctxA = await browser.newContext({ viewport: { width: 1366, height: 820 } });
+    const ctxB = await browser.newContext({ viewport: { width: 390, height: 780 }, isMobile: true, hasTouch: true });
+    const t = await ctxA.newPage();
+    const s = await ctxB.newPage();
+    const errs: string[] = [];
+    for (const p of [t, s]) p.on('pageerror', (e) => errs.push(String(e)));
+    await openTeacher(t, id, '7', WS);
+    await s.goto(`/#/b/${id}?r=s&srv=${encodeURIComponent(WS)}`);
+    await s.click('.join-board');
+    await s.waitForSelector('.board-doc');
+    const html = fs.readFileSync('tests/fixtures/long.html', 'utf8');
+    await t.evaluate((h) => (window as any).__kwd.placeHtml(h, '긴 자료'), html);
+    const objH = () => kwd(t, (k) => k.objs(k.pages()[0].id).find((o: any) => o.type === 'html'));
+    await expect.poll(async () => (await objH()).h, { timeout: 15_000 }).toBeGreaterThan(2400); // 내용 높이만큼 늘어남
+    const o = await objH();
+    await expect.poll(() => kwd(s, (k) => k.objs(k.pages()[0].id).find((x: any) => x.type === 'html')?.h), { timeout: 15_000 }).toBe(o.h);
+    // 안쪽 스크롤 없음: iframe 이 내용 전체를 담는다
+    const inner = await t.frameLocator('.obj-frame').locator('html').evaluate((e) => ({ sh: e.scrollHeight, ch: e.clientHeight }));
+    expect(inner.sh).toBeLessThanOrEqual(inner.ch + 2);
+    // 아래쪽 문장에 펜: 학습지 필기층 좌표
+    await t.evaluate((id2) => (window as any).__kwd.gotoItem(id2), o.id).catch(() => {});
+    await t.evaluate(() => (window as any).__kwd.setTool('pen'));
+    const target = await t.frameLocator('.obj-frame').locator('#bottom').evaluate((e) => { const r = e.getBoundingClientRect(); return { y: r.top, x: r.left }; });
+    const fr = (await t.locator('.obj-frame').boundingBox())!;
+    const sc = fr.width / 720;
+    await t.evaluate((y) => (window as any).__kwd.vp.panBy(0, -y), fr.y + target.y * sc - 300);
+    const fr2 = (await t.locator('.obj-frame').boundingBox())!;
+    const py = fr2.y + target.y * sc + 10;
+    await drawLine(t, [[fr2.x + 40 * sc, py], [fr2.x + 200 * sc, py + 3], [fr2.x + 360 * sc, py]]);
+    const layerId = `ws:${o.id}:1`;
+    await expect.poll(() => kwd(t, (k) => k.store.ink(`ws:${(k.objs(k.pages()[0].id).find((x: any) => x.type === 'html')).id}:1`).length), { timeout: 8000 }).toBe(1);
+    await expect.poll(() => kwd(s, (k) => k.store.ink(`ws:${(k.objs(k.pages()[0].id).find((x: any) => x.type === 'html')).id}:1`).length), { timeout: 10_000 }).toBe(1);
+    void layerId;
+    // 판을 옮겨도 펜 자국과 문장의 거리가 같다 (같은 좌표 위)
+    const dist = async () => t.evaluate(async () => {
+      const f = document.querySelector('.obj-frame') as HTMLIFrameElement;
+      const w = (window as any).__kwd;
+      const o = w.objs(w.pages()[0].id).find((x: any) => x.type === 'html');
+      const st = w.store.ink(`ws:${o.id}:1`).toArray()[0];
+      return { inkY: st.pts[1], objY: o.y, frameTop: f.getBoundingClientRect().top, s: w.vp.view.s, vy: w.vp.view.y };
+    });
+    const d1 = await dist();
+    await t.evaluate(() => (window as any).__kwd.vp.panBy(0, 500));
+    const d2 = await dist();
+    expect(d2.inkY).toBe(d1.inkY); // 판 좌표 그대로 (자료와 함께)
+    expect(Math.round((d2.frameTop - d1.frameTop))).toBe(500);
+    // 학생 화면의 같은 자료 크기·위치
+    const geo = (pg: Page) => pg.evaluate(() => { const w = (window as any).__kwd; const o = w.objs(w.pages()[0].id).find((x: any) => x.type === 'html'); return [o.x, o.y, o.w, o.h]; });
+    expect(await geo(s)).toEqual(await geo(t));
+    expect(await s.evaluate(() => document.documentElement.scrollWidth <= 390)).toBe(true);
+    expect(errs).toEqual([]);
+    await ctxA.close();
+    await ctxB.close();
+  });
+
+  test('빈칸: 한글을 쳐도 뒤에 스페이스 없이 글자 폭에 딱 맞는다', async ({ page }) => {
+    await openTeacher(page, newId());
+    await page.keyboard.type('나는 ___');
+    const inp = page.locator('.blank-input').first();
+    await expect(inp).toBeVisible();
+    await inp.click();
+    await inp.fill('먹으러');
+    const m = await inp.evaluate((el: HTMLInputElement) => {
+      const cs = getComputedStyle(el);
+      const c = document.createElement('canvas').getContext('2d')!;
+      c.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      return { box: parseFloat(cs.width), text: c.measureText(el.value).width, scroll: el.scrollWidth, client: el.clientWidth };
+    });
+    expect(m.box).toBeGreaterThanOrEqual(m.text); // 글자가 잘리지 않음
+    expect(m.box - m.text).toBeLessThan(16); // 남는 칸도 스페이스 2개(약 20px+)보다 작음
+    expect(m.scroll).toBeLessThanOrEqual(m.client + 1);
   });
 });

@@ -254,7 +254,7 @@ export class PageObjects {
       const bar = h('div', { class: 'obj-bar' }, h('span', { class: 'obj-name' }, o.name || '웹 학습지'), stepEl);
       const frame = h('iframe', { class: 'mat-frame obj-frame', sandbox: 'allow-scripts allow-forms', title: o.name || '자료' }) as HTMLIFrameElement;
       const md = o.mid ? this.ctx.store.matdata.get(`${o.mid}/1`) : undefined;
-      if (md?.html != null) frame.srcdoc = htmlWithBridge(md.html);
+      if (md?.html != null) frame.srcdoc = htmlWithBridge(md.html, true);
       const layer = h('div', { class: 'ws-layer' });
       tools.append(grip);
       if (this.ctx.canType() && this.ctx.addWsBox) tools.append(tool('obj-bt ws-t', 'textbox', '이 단계 위에 글상자', () => this.ctx.addWsBox!(wsLayerId(o.id, v.data.step || 1), Math.max(16, v.data.w / 2 - 130), 40)));
@@ -295,6 +295,11 @@ export class PageObjects {
         const t = d.type;
         if (t === 'kwd:event' || t === 'kwd:text') this.ctx.onHtmlEvent(this.pageId, o.mid || '', e.data);
         else if (t === 'kwd:hello') pushAll();
+        else if (t === 'kwd:height') {
+          // 스크롤형 자료: 내용 높이만큼 판 위 자리를 늘린다 (선생님만 쓴다 → 학생에게도 같은 크기로 전해짐)
+          const hh = Math.round((e.data as { h?: number }).h || 0) + 33 + 1;
+          if (this.ctx.role === 'teacher' && this.ctx.canEdit() && !v.data.fixh && hh > 80 && Math.abs(hh - v.data.h) > 3) this.ctx.store.updateObj(this.pageId, o.id, { h: hh }, false);
+        }
         else if (t === 'kwd:step' && typeof d.n === 'number') {
           v.ws!.frameStep = d.n;
           if (!synced) {
@@ -410,7 +415,9 @@ export class PageObjects {
         handle.removeEventListener('pointercancel', up);
         v.el.classList.remove('resizing');
         // 취소 이벤트의 좌표는 믿을 수 없다 → 마지막 움직임 자리로
-        this.ctx.store.updateObj(this.pageId, v.data.id, calc(ev.type === 'pointercancel' ? ({ clientX: last.x, clientY: last.y } as PointerEvent) : ev));
+        const patch: Partial<PageObject> = calc(ev.type === 'pointercancel' ? ({ clientX: last.x, clientY: last.y } as PointerEvent) : ev);
+        if (v.data.type === 'html') patch.fixh = true; // 손으로 키운 학습지는 내용 높이를 따라 자동으로 늘리지 않는다
+        this.ctx.store.updateObj(this.pageId, v.data.id, patch);
       };
       handle.addEventListener('pointermove', mv);
       handle.addEventListener('pointerup', up);

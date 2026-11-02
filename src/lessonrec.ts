@@ -5,6 +5,8 @@
 // - 시각: 시작 순간의 판 시계(store.now) 를 _rec.json 에 → 판 사건 기록과 영상 시각이 맞는다
 // 파일은 KWD 폴더 Student_Lessons/<학생>/녹화/ 에 1초마다 이어 쓴다. 폴더가 없으면 끝날 때 내려받기.
 
+import { beginSession, putChunk, markEnded } from './recstore';
+
 export interface RecFiles {
   video: string;
   teacher: string;
@@ -29,6 +31,7 @@ interface Track {
   chunks: Blob[];
   bytes: number;
   queue: Promise<void>;
+  seq: number;
 }
 
 const pick = (cands: string[]) => cands.find((m) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) || '';
@@ -38,6 +41,7 @@ export class LessonRecorder {
   private display: MediaStream | null = null;
   private ac: AudioContext | null = null;
   startedAt = 0;
+  sid = ''; // 폴더에 못 쓸 때 조각을 브라우저 저장소에 남기는 수업 id (T083b)
   startedPerf = 0;
   files: RecFiles | null = null;
   cropped = '';
@@ -58,7 +62,7 @@ export class LessonRecorder {
   }
 
   // stage: 남길 요소. mine/theirs: 내 마이크·상대 소리 (없어도 됨)
-  async start(opts: { stage: HTMLElement; mine: MediaStream | null; theirs: MediaStream | null; stem: string; open: OpenWriter; now: number }) {
+  async start(opts: { stage: HTMLElement; mine: MediaStream | null; theirs: MediaStream | null; stem: string; open: OpenWriter; now: number; tag?: string }) {
     const md = navigator.mediaDevices as MediaDevices & { getDisplayMedia(o: unknown): Promise<MediaStream> };
     this.display = await md.getDisplayMedia({
       video: { frameRate: 15, width: { max: 1920 }, height: { max: 1080 } },
@@ -132,12 +136,15 @@ export class LessonRecorder {
     this.files = { video: `${opts.stem}.webm`, teacher: `${opts.stem}_Teacher.webm`, student: `${opts.stem}_Student.webm`, media: `${opts.stem}_Media.webm`, meta: `${opts.stem}_rec.json` };
     const add = async (stream: MediaStream, name: string, mime: string, bps: { videoBitsPerSecond?: number; audioBitsPerSecond?: number }) => {
       const rec = new MediaRecorder(stream, { mimeType: mime, ...bps });
-      const t: Track = { rec, name, writer: await opts.open(name), chunks: [], bytes: 0, queue: Promise.resolve() };
+      const t: Track = { rec, name, writer: await opts.open(name), chunks: [], bytes: 0, queue: Promise.resolve(), seq: 0 };
       rec.ondataavailable = (e) => {
         if (!e.data.size) return;
         t.bytes += e.data.size;
         if (t.writer) t.queue = t.queue.then(() => t.writer!.write(e.data)).catch((err) => console.warn('write', err));
-        else t.chunks.push(e.data);
+        else {
+          t.chunks.push(e.data);
+          if (this.sid) t.queue = t.queue.then(() => putChunk(this.sid, t.name, t.seq++, e.data));
+        }
       };
       this.tracks.push(t);
       return rec;
@@ -148,6 +155,12 @@ export class LessonRecorder {
       await add(studentAudio, this.files.student, aMime, { audioBitsPerSecond: 32_000 }),
       await add(this.mediaDest.stream, this.files.media, aMime, { audioBitsPerSecond: 32_000 }),
     ];
+    if (this.tracks.some((t) => !t.writer)) {
+      this.sid = `${opts.now}-${Math.random().toString(36).slice(2, 7)}`;
+      const tr: Record<string, { mime: string; n: number }> = {};
+      for (const t of this.tracks) if (!t.writer) tr[t.name] = { mime: t.rec.mimeType || 'video/webm', n: 0 };
+      await beginSession({ id: this.sid, tag: opts.tag || '', stem: opts.stem, startedAt: opts.now, tracks: tr });
+    } else this.sid = '';
     for (const r of recs) r.start(1000);
     this.spans = [];
     this.watchMedia(opts.stage.ownerDocument || document);
@@ -317,13 +330,26 @@ export class LessonRecorder {
         await w.write(new Blob([metaText], { type: 'application/json' }));
         await w.close();
         saved.push(this.files.meta);
-      } else blobs.push({ name: this.files.meta, blob: new Blob([metaText], { type: 'application/json' }) });
+      } else {
+        const mb = new Blob([metaText], { type: 'application/json' });
+        blobs.push({ name: this.files.meta, blob: mb });
+        if (this.sid) {
+          const sid = this.sid;
+          await markEndedWithMeta(sid, this.files.meta, mb);
+        }
+      }
     }
     this.display?.getTracks().forEach((t) => t.stop());
     this.display = null;
     void this.ac?.close();
     this.ac = null;
     this.tracks = [];
+    this.sid = '';
     return { saved, blobs, empty };
   }
+}
+
+async function markEndedWithMeta(sid: string, name: string, blob: Blob) {
+  await putChunk(sid, name, 0, blob);
+  await markEnded(sid);
 }

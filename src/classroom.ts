@@ -2,6 +2,8 @@
 // 통화는 call.ts(P2P), 녹화는 lessonrec.ts. 판 문서에는 영상·소리·시그널이 들어가지 않는다(카메라 보기 모드 설정만).
 import { icon } from './icons';
 import { h, toast, downloadBlob } from './ui';
+import JSZip from 'jszip';
+import { listSessions, loadSession, dropSession } from './recstore';
 import { Call, fakeMedia, DEFAULT_ICE } from './call';
 import { LessonRecorder, type OpenWriter } from './lessonrec';
 import { httpBase, type BoardStore, type Role } from './store';
@@ -50,6 +52,7 @@ export class Classroom {
   readonly call: Call | null = null;
   readonly dock: HTMLElement;
   readonly lessonBtn: HTMLButtonElement | null = null;
+  readonly savedBtn: HTMLButtonElement | null = null; // 지난 녹화 다시 받기
   readonly micBtn: HTMLButtonElement | null = null; // 카메라 없이 마이크만 켜고 녹화
   private rec = new LessonRecorder();
   private remoteV: HTMLVideoElement;
@@ -100,6 +103,10 @@ export class Classroom {
       this.lessonBtn.addEventListener('click', () => void this.toggleLesson());
       this.micBtn = h('button', { type: 'button', class: 'mic-rec', title: '카메라는 켜지 않고 마이크만 켜서 수업을 녹화해요' }, '마이크만 녹화') as HTMLButtonElement;
       this.micBtn.addEventListener('click', () => void this.micOnlyLesson());
+      this.savedBtn = h('button', { type: 'button', class: 'mic-rec', hidden: '', title: '브라우저에 남겨 둔 지난 수업 녹화를 zip 하나로 다시 받아요' }, '지난 녹화 다시 받기') as HTMLButtonElement;
+      this.savedBtn.addEventListener('click', () => void this.redownload());
+      this.savedBtn.dataset.none = '1';
+      void this.hasSaved().then((v) => ((this.savedBtn!.dataset.none = v ? '' : '1'), (this.savedBtn!.hidden = !v)));
       this.rec.onEnded = () => void this.endLesson(); // 크롬의 '공유 중지'
       this.rec.onMedia = (op, sp) => host.store.log({ kind: 'media', data: { op, kind: sp.kind, name: sp.name, ref: sp.ref, at_s: op === 'play' ? sp.from_s : sp.to_s } });
     }
@@ -478,7 +485,7 @@ export class Classroom {
       const dir = await this.host.lessonDir(stem.replace(/_#\d+$/, ''));
       this.recOpen = dir?.open || null;
       this.recPath = dir?.path || '';
-      await this.rec.start({ stage: this.host.stage, mine: this.call?.local || null, theirs: this.call?.remote() || null, stem, open: this.recOpen || (async () => null), now: this.host.store.now() });
+      await this.rec.start({ stage: this.host.stage, mine: this.call?.local || null, theirs: this.call?.remote() || null, stem, open: this.recOpen || (async () => null), now: this.host.store.now(), tag: String(this.host.meta().student || '').replace(/[^\w-]/g, '') });
       this.host.store.meta.set('recording', { startedAt: this.rec.startedAt, files: this.rec.files, crop: this.rec.cropped || 'none' });
       this.host.store.log({ kind: 'lesson', data: { op: 'start', rec: this.rec.files, crop: this.rec.cropped || 'none' } });
       toast(this.rec.cropped ? '수업을 시작했어요 · 판과 목소리를 녹화해요' : '수업을 시작했어요 · 녹화 중');
@@ -512,17 +519,57 @@ export class Classroom {
     this.renderLesson();
     // 폴더에 못 쓰고 내려받기로 끝나면 파일 이름만으로 학생·시각을 알 수 있게 학생 번호를 앞에 붙인다(예: 'pending-student-141 2026-11-02 20-00_#19_Teacher.webm')
     const tag = saved.length ? '' : String(this.host.meta().student || '').replace(/[^\w-]/g, '');
-    for (const b of blobs) downloadBlob(tag ? `${tag} ${b.name}` : b.name, b.blob);
+    await this.downloadZip(blobs, tag, this.host.stem());
     // 판 기록도 같은 수업 폴더에 (묻는 창 없이)
     const bundled = await this.host.saveBundle(open);
     toast(saved.length ? `수업 폴더에 저장했어요 · ${this.recPath}${bundled ? ' (녹화 + 판 기록)' : ''}` : '녹화 파일을 내려받았어요', 6000);
     this.recOpen = null;
+    void this.hasSaved().then((v) => this.savedBtn && ((this.savedBtn.dataset.none = v ? '' : '1'), (this.savedBtn.hidden = !v)));
     if (empty.length && dur > 5) toast('주의: 녹화 파일이 비어 있어요 (' + empty.map((n) => n.replace(/^.*_/, '')).join(', ') + ') · 마이크 허용과 소리 줄을 확인해 주세요', 9000);
+  }
+
+  // 내려받기 1개 묶음(zip) — 크롬의 '여러 파일 내려받기' 차단을 피한다. 영상은 이미 압축돼 있어 묶기만(STORE)
+  private async downloadZip(blobs: Array<{ name: string; blob: Blob }>, tag: string, stem: string) {
+    if (!blobs.length) return;
+    try {
+      const z = new JSZip();
+      for (const b of blobs) z.file(b.name, b.blob, { compression: 'STORE' });
+      const out = await z.generateAsync({ type: 'blob', compression: 'STORE', streamFiles: true });
+      downloadBlob(`${tag ? tag + ' ' : ''}${stem}_녹화.zip`, out);
+    } catch (e) {
+      console.warn('zip', e);
+      for (const b of blobs) downloadBlob(tag ? `${tag} ${b.name}` : b.name, b.blob); // 묶기 실패 → 낱개로
+    }
+  }
+
+  // 지난 녹화 다시 받기: 브라우저 저장소에 남겨 둔 조각에서 (탭이 닫혔거나 내려받기가 막혔을 때)
+  async redownload(): Promise<boolean> {
+    const list = await listSessions();
+    const s = list[0];
+    if (!s) {
+      toast('다시 받을 녹화가 없어요');
+      return false;
+    }
+    const parts = await loadSession(s.id);
+    if (!parts.length) {
+      toast('저장된 조각이 비어 있어요');
+      return false;
+    }
+    await this.downloadZip(parts, s.tag, s.stem);
+    toast(`지난 녹화를 다시 받았어요 (${new Date(s.startedAt).toLocaleString('ko-KR')})`, 6000);
+    return true;
+  }
+  async hasSaved(): Promise<boolean> {
+    return (await listSessions()).length > 0;
+  }
+  async dropSaved() {
+    for (const s of await listSessions()) await dropSession(s.id);
   }
 
   private renderLesson() {
     const b = this.lessonBtn;
     if (!b) return;
+    if (this.savedBtn) this.savedBtn.hidden = this.rec.active || this.savedBtn.dataset.none === '1';
     if (this.micBtn) this.micBtn.hidden = this.rec.active || !!this.call?.local?.getAudioTracks().length;
     if (!this.rec.active) {
       b.textContent = '수업 시작';

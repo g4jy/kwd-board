@@ -1,4 +1,5 @@
 // v8 교실: 선생님 카메라 켜기 → 학생 입장 화면 → 들어가기 → 서로 영상·소리 → 얼굴 크게(학생도) → 수업 시작(녹화) → 끝내기 → 파일
+import JSZip from 'jszip';
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 const BASE = process.env.BASE || 'http://localhost:4173';
@@ -100,11 +101,38 @@ res.files = [];
 for (const d of downloads) {
   const p = `${OUT}/dl_${d.suggestedFilename().replace(/[^\w.#-]/g, '_')}`;
   await d.saveAs(p);
+  if (/_녹화\.zip$/.test(d.suggestedFilename())) {
+    // T083b: 녹화 파일은 zip 하나로 내려온다 → 풀어서 안의 파일을 검사
+    res.recZip = d.suggestedFilename();
+    const z = await JSZip.loadAsync(fs.readFileSync(p));
+    for (const [nm, ent] of Object.entries(z.files)) {
+      const buf = await ent.async('nodebuffer');
+      const q = `${OUT}/dl_${nm.replace(/[^\w.#-]/g, '_')}`;
+      fs.writeFileSync(q, buf);
+      res.files.push({ name: nm, bytes: buf.length });
+      if (/_Media\.webm$/.test(nm)) res.mediaPath = q;
+      if (/_rec\.json$/.test(nm)) res.meta = JSON.parse(buf.toString('utf8'));
+    }
+    continue;
+  }
   res.files.push({ name: d.suggestedFilename(), bytes: fs.statSync(p).size });
   if (/_Media\.webm$/.test(d.suggestedFilename())) res.mediaPath = p;
   if (/_rec\.json$/.test(d.suggestedFilename())) res.meta = JSON.parse(fs.readFileSync(p, 'utf8'));
 }
 res.events = await t.evaluate(() => window.__kwd.store.events.toArray().filter((e) => e.kind === 'lesson' || e.kind === 'call' || e.kind === 'media').map((e) => e.kind + ':' + (e.data?.op || '')));
+// T083b: 조각이 브라우저 저장소에 남아 있고, '지난 녹화 다시 받기'로 zip 을 다시 받는다
+res.saved = await t.evaluate(() => new Promise((ok) => {
+  const q = indexedDB.open('kwd-rec');
+  q.onsuccess = () => { const db = q.result; const tx = db.transaction(['chunks', 'sessions']); const a = tx.objectStore('chunks').count(); const b = tx.objectStore('sessions').getAll(); tx.oncomplete = () => ok({ chunks: a.result, sessions: b.result.length, ended: b.result[0]?.ended }); };
+  q.onerror = () => ok(null);
+}));
+res.redoVisible = await t.locator('.mic-rec:has-text("다시 받기")').isVisible();
+const dl2 = t.waitForEvent('download', { timeout: 15000 });
+await t.locator('.mic-rec:has-text("다시 받기")').click();
+const d2 = await dl2;
+const p2 = `${OUT}/redo.zip`;
+await d2.saveAs(p2);
+res.redo = Object.keys((await JSZip.loadAsync(fs.readFileSync(p2))).files);
 // 학생이 나가면 선생님은 기다림으로
 await s.close();
 await t.waitForTimeout(3000);

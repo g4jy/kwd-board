@@ -171,6 +171,16 @@ export const Blank = Node.create<BlankOptions>({
       });
       [ok, no, eye, hintBtn].forEach((b) => b.addEventListener('mousedown', (e) => e.preventDefault()));
 
+      // 글자 폭을 실제로 재서 맞춘다 (한글은 ch 단위보다 넓어 뒤에 스페이스를 채워야 했던 문제, T083b)
+      const fit = (txt: string) => {
+        const cs = getComputedStyle(input);
+        const ctx = measureCtx();
+        ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+        const w = ctx.measureText(txt || '').width;
+        input.style.width = Math.ceil(w) + 10 + 'px';
+      };
+      input.addEventListener('input', () => fit(input.value));
+
       let current = node;
       const render = (n: typeof node) => {
         current = n;
@@ -181,8 +191,7 @@ export const Blank = Node.create<BlankOptions>({
         dom.classList.toggle('teacher', r !== 'student');
         if (document.activeElement !== input && input.value !== (n.attrs.value || '')) input.value = n.attrs.value || '';
         input.readOnly = r === 'assist';
-        const width = Math.max(4, Array.from(String(n.attrs.answer || n.attrs.value || '')).length + 2);
-        input.style.width = width + 'ch';
+        fit(String(input.value || n.attrs.value || n.attrs.answer || ''));
         input.placeholder = n.attrs.hint ? n.attrs.hint + '…' : ' ';
         answerEl.textContent = n.attrs.revealed && n.attrs.answer ? n.attrs.answer : '';
         answerEl.style.display = n.attrs.revealed && n.attrs.answer ? '' : 'none';
@@ -211,6 +220,12 @@ export const Blank = Node.create<BlankOptions>({
     };
   },
 });
+
+let _mc: CanvasRenderingContext2D | null = null;
+function measureCtx(): CanvasRenderingContext2D {
+  if (!_mc) _mc = document.createElement('canvas').getContext('2d')!;
+  return _mc;
+}
 
 function mkBtn(label: string, title: string, cls: string) {
   const b = document.createElement('button');

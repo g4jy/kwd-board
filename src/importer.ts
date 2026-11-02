@@ -136,7 +136,21 @@ try{new ResizeObserver(resized).observe(document.documentElement)}catch(e){}
 window.addEventListener('load',function(){window.dispatchEvent(new Event('resize'));send('kwd:text',{text:(document.body.innerText||'').slice(0,4000)})});
 })();<\/script>`;
 
-export function htmlWithBridge(html: string): string {
-  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, HTML_BRIDGE + '</head>');
-  return HTML_BRIDGE + html;
+// T083b: 스크롤형 자료를 판 위에 전체 높이로 펼친다 — 안쪽 스크롤을 없애고 내용 높이를 판에 알린다(kwd:height).
+// 펜 자국이 내용과 같은 좌표에 붙고(판을 옮겨도 같이 움직임), 학생도 같은 위치를 본다.
+export const EXPAND_BRIDGE = `<style>html,body{overflow:hidden!important}</style><script>(function(){
+var last=0,t=0;
+function measure(){var b=document.body,e=document.documentElement;if(!b)return 0;var r=b.getBoundingClientRect();var m=Math.ceil(Math.max(r.bottom+(parseFloat(getComputedStyle(b).marginBottom)||0),b.scrollHeight>innerHeight+1?b.scrollHeight:0,e.scrollHeight>innerHeight+1?e.scrollHeight:0));return m}
+function report(force){var h=measure();if(h<50||h>30000)return;if(!force&&Math.abs(h-last)<3)return;last=h;try{parent.postMessage({type:'kwd:height',h:h},'*')}catch(e){}}
+function soon(){clearTimeout(t);t=setTimeout(function(){report(false)},120)}
+window.addEventListener('load',function(){report(true);setTimeout(function(){report(true)},600)});
+window.addEventListener('message',function(e){if(e.source===parent&&e.data&&e.data.type==='kwd:measure')report(true)});
+try{new ResizeObserver(soon).observe(document.documentElement);new MutationObserver(soon).observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true})}catch(e){}
+document.addEventListener('input',soon,true);document.addEventListener('click',soon,true);
+})();<\/script>`;
+
+export function htmlWithBridge(html: string, expand = false): string {
+  const b = expand ? HTML_BRIDGE + EXPAND_BRIDGE : HTML_BRIDGE;
+  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, b + '</head>');
+  return b + html;
 }
