@@ -14,7 +14,7 @@ import { importPdf, importHtml, htmlWithBridge, joinText } from './importer';
 import { loadPrefs, savePrefs, penSlot, renderSlot, buildPenPopover, type PenPrefs } from './palette';
 import { icon } from './icons';
 import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY, type StudentMemory } from './memory';
-import { folderForBoard, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, makeLessonDir, openStudentWriter, readStudentVerify, type StudentPack, type PackFile } from './kwdfolder';
+import { folderForBoard, listStudents, rememberBoardFolder, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, makeLessonDir, openStudentWriter, readStudentVerify, type StudentPack, type PackFile } from './kwdfolder';
 import { annotatedWorksheet } from './wsexport';
 import { Classroom } from './classroom';
 import { renderStudentPanel, cachedHistory, cacheHistory, verifyCount, type SplitSeg, type PanelTab } from './studentpanel';
@@ -33,6 +33,7 @@ export interface BoardParams {
   student?: string;
   server?: string;
   token?: string;
+  fixed?: boolean; // 선생님 고정 링크(#/t/)
 }
 
 interface PageView {
@@ -226,7 +227,7 @@ export class BoardScreen {
           return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}-${p2(d.getMinutes())}${n ? `_#${n}` : ''}`;
         },
         saveBundle: (open) => this.saveLessonBundle(open),
-        meta: () => ({ student_folder: this.packFolder ? 'PC_ONLY' : null, lesson_no: this.pack?.brief?.next_lesson || null, packet_id: this.pack?.packet?.packet_id || null }),
+        meta: () => ({ student: this.studentNo() || null, student_folder: this.packFolder ? 'PC_ONLY' : null, lesson_no: this.pack?.brief?.next_lesson || null, packet_id: this.pack?.packet?.packet_id || null }),
       });
     }
     topLeft.append(this.timerEl);
@@ -317,17 +318,23 @@ export class BoardScreen {
     if (this.role === 'teacher') {
       if (this.params.student && !this.store.meta.get('student')) this.store.doc.transact(() => this.store.meta.set('student', this.params.student), 'meta');
       if (!this.store.meta.get('createdAt')) this.store.doc.transact(() => this.store.meta.set('createdAt', Date.now()), 'meta');
-      if (this.store.pages.length === 0) {
-        this.store.doc.transact(() => {
-          const m = new Y.Map<unknown>();
-          for (const [k, v] of Object.entries({ id: 'p1' + this.store.id.slice(0, 4), kind: 'text', w: TEXT_W, h: TEXT_H })) m.set(k, v);
-          this.store.pages.push([m]);
-        }, 'init');
-      }
+      // 새 기기(빈 로컬 저장소)는 서버에서 판을 받기 전에 pages 가 비어 보인다 → 서버 동기 뒤에 첫 페이지를 만든다(T083)
+      if (this.store.pages.length === 0) await this.store.whenServerSynced();
+      this.ensureFirstPage();
+      this.store.provider?.on('sync', (ok: boolean) => ok && this.dedupePages());
       this.touchIndex();
       this.store.meta.observe(() => this.touchIndex());
       const st = this.studentNo();
       this.packFolder = folderForBoard(this.store.id);
+      // 선생님 고정 링크(#/t/): 이 PC에 학생 폴더가 있으면 st(학생 번호)로 찾아 연결 (T083)
+      if (!this.packFolder && this.params.fixed && this.params.student) {
+        const sid = this.params.student;
+        const f = (await listStudents().catch(() => [])).find((x) => x.id === sid);
+        if (f) {
+          this.packFolder = f.folder;
+          rememberBoardFolder(this.store.id, f.folder);
+        }
+      }
       if (this.packFolder) void this.loadFolderStudent(false);
       else {
         const { mem } = await loadMemory(st);
@@ -344,6 +351,29 @@ export class BoardScreen {
       if (!busy) window.setTimeout(() => first?.commands.focus('end'), 60);
     }
     this.store.log({ kind: 'presence', data: { op: 'join', ua: navigator.userAgent.slice(0, 80) } });
+  }
+
+  private ensureFirstPage() {
+    const pid = 'p1' + this.store.id.slice(0, 4);
+    if (this.store.pages.length > 0 || this.store.pageList().some((p) => p.id === pid)) return;
+    this.store.doc.transact(() => {
+      const m = new Y.Map<unknown>();
+      for (const [k, v] of Object.entries({ id: pid, kind: 'text', w: TEXT_W, h: TEXT_H })) m.set(k, v);
+      this.store.pages.push([m]);
+    }, 'init');
+  }
+
+  // 두 기기가 동시에 같은 id 첫 페이지를 만들어 합쳐지면 뒤의 것을 지운다
+  private dedupePages() {
+    const seen = new Set<string>();
+    const drop: number[] = [];
+    this.store.pages.forEach((m, i) => {
+      const id = String((m as Y.Map<unknown>).get('id'));
+      if (seen.has(id)) drop.push(i);
+      else seen.add(id);
+    });
+    if (!drop.length) return;
+    this.store.doc.transact(() => drop.reverse().forEach((i) => this.store.pages.delete(i, 1)), 'init');
   }
 
   private touchIndex() {

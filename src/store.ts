@@ -268,6 +268,22 @@ export class BoardStore {
     return Promise.race([this.persistence.whenSynced.then(() => undefined), new Promise<void>((r) => setTimeout(r, 1500))]);
   }
 
+  // 서버와 첫 동기까지 기다린다(최대 ms). 서버 없음·연결 실패면 시간이 지나 그냥 넘어간다
+  whenServerSynced(ms = 3500): Promise<void> {
+    const p = this.provider;
+    if (!p || p.synced) return Promise.resolve();
+    return new Promise<void>((res) => {
+      const done = () => {
+        window.clearTimeout(t);
+        p.off('sync', on);
+        res();
+      };
+      const on = (ok: boolean) => ok && done();
+      const t = window.setTimeout(done, ms);
+      p.on('sync', on);
+    });
+  }
+
   // ---- 페이지 ----
   fragment(pageId: string): Y.XmlFragment {
     return this.doc.getXmlFragment('text:' + pageId);

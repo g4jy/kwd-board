@@ -12,7 +12,7 @@ import { h } from './ui';
 
 let current: { destroy(): void } | null = null;
 
-function parseRoute(): { kind: 'home' } | { kind: 'demo'; view?: DemoView } | { kind: 'board'; id: string; role: Role; student?: string; server?: string; token?: string } {
+function parseRoute(): { kind: 'home' } | { kind: 'demo'; view?: DemoView } | { kind: 'board'; id: string; role: Role; student?: string; server?: string; token?: string; fixed?: boolean } {
   const hash = location.hash.replace(/^#/, '');
   const d = /^\/demo(?:\/(phone|tablet|pen|split))?\/?$/.exec(hash);
   if (d) return { kind: 'demo', view: d[1] as DemoView | undefined };
@@ -21,6 +21,12 @@ function parseRoute(): { kind: 'home' } | { kind: 'demo'; view?: DemoView } | { 
   if (c && isClassCode(c[1].toLowerCase())) {
     const q = new URLSearchParams(c[2] || '');
     return { kind: 'board', id: classBoardId(c[1].toLowerCase()), role: 'student', server: q.get('srv') || undefined };
+  }
+  // 선생님 고정 링크: #/t/<교실 코드>?st=<학생 id> → 그날 판에 선생님으로 (학생 링크 #/c/ 는 항상 학생)
+  const t = /^\/t\/([a-z0-9]{9})\/?(?:\?(.*))?$/i.exec(hash);
+  if (t && isClassCode(t[1].toLowerCase())) {
+    const q = new URLSearchParams(t[2] || '');
+    return { kind: 'board', id: classBoardId(t[1].toLowerCase()), role: 'teacher', student: q.get('st') || undefined, server: q.get('srv') || undefined, token: q.get('tk') || undefined, fixed: true };
   }
   const m = /^\/b\/([a-z0-9]{4,})(?:\?(.*))?$/i.exec(hash);
   if (!m) return { kind: 'home' };
@@ -47,11 +53,11 @@ function route() {
     app.append(s.root);
     current = s;
   } else {
-    const s = new BoardScreen({ id: r.id, role: r.role, student: r.student, server: r.server, token: r.token });
+    const s = new BoardScreen({ id: r.id, role: r.role, student: r.student, server: r.server, token: r.token, fixed: r.fixed });
     app.append(s.root);
     current = s;
     // 학생 번호는 처음 열 때만 주소에 둔다
-    if (r.student || r.token) history.replaceState(null, '', `#/b/${r.id}?r=${r.role[0]}${r.server ? `&srv=${encodeURIComponent(r.server)}` : ''}`);
+    if (!r.fixed && (r.student || r.token)) history.replaceState(null, '', `#/b/${r.id}?r=${r.role[0]}${r.server ? `&srv=${encodeURIComponent(r.server)}` : ''}`);
   }
 }
 

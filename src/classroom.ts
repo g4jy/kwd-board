@@ -510,7 +510,9 @@ export class Classroom {
     const { saved, blobs, empty } = await this.rec.stop({ board: this.host.store.id, ...this.host.meta(), call: this.call?.stats() }, open || (async () => null));
     this.host.store.log({ kind: 'lesson', data: { op: 'end', seconds: dur, saved: saved.length, empty: empty.length ? empty : undefined } });
     this.renderLesson();
-    for (const b of blobs) downloadBlob(b.name, b.blob);
+    // 폴더에 못 쓰고 내려받기로 끝나면 파일 이름만으로 학생·시각을 알 수 있게 학생 번호를 앞에 붙인다(예: 'pending-student-141 2026-11-02 20-00_#19_Teacher.webm')
+    const tag = saved.length ? '' : String(this.host.meta().student || '').replace(/[^\w-]/g, '');
+    for (const b of blobs) downloadBlob(tag ? `${tag} ${b.name}` : b.name, b.blob);
     // 판 기록도 같은 수업 폴더에 (묻는 창 없이)
     const bundled = await this.host.saveBundle(open);
     toast(saved.length ? `수업 폴더에 저장했어요 · ${this.recPath}${bundled ? ' (녹화 + 판 기록)' : ''}` : '녹화 파일을 내려받았어요', 6000);

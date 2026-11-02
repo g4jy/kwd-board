@@ -967,3 +967,48 @@ test.describe('UI 10/19: 아이콘 도구 줄 · 레이저 · 자료 막대 · �
     expect(r.ev[0].target).toContain('가족');
   });
 });
+
+test.describe('T083: 선생님 고정 링크 · 자료 자동 배치 · 첫 페이지 중복 없음', () => {
+  test.describe.configure({ timeout: 120_000 });
+  test('seed 한 번만 · #/t/ 선생님 · #/c/ 학생 같은 판에서 자료 보임, 페이지 중복 0', async ({ browser }) => {
+    const code = 'k' + Math.random().toString(36).slice(2, 10).padEnd(8, 'x').replace(/[^a-z0-9]/g, 'y');
+    const file = path.join(process.env.TEMP || '.', `t083-${code}.html`);
+    fs.writeFileSync(file, '<!doctype html><meta charset="utf-8"><body><h1 id="m">고정링크 자료</h1></body>');
+    const seed = (name: string) => execFileSync('node', ['scripts/seed-board.cjs', code, file, name], { encoding: 'utf8', env: { ...process.env, KWD_BOARD_WS: WS } }).trim();
+    expect(seed('#19_시험_판')).toMatch(/^seeded /);
+    expect(seed('#19_시험_판')).toMatch(/^already/); // 같은 이름 다시 안 넣음
+    expect(seed('#19_다른이름')).toMatch(/^already/); // 같은 수업 번호도 다시 안 넣음
+    const ctxT = await browser.newContext({ viewport: { width: 1366, height: 820 } }); // 빈 IndexedDB = 새 기기
+    const ctxS = await browser.newContext({ viewport: { width: 390, height: 780 }, isMobile: true, hasTouch: true });
+    const t = await ctxT.newPage();
+    const s = await ctxS.newPage();
+    const errs: string[] = [];
+    for (const p of [t, s]) p.on('pageerror', (e) => errs.push(String(e)));
+    await t.goto(`/#/t/${code}?st=99&srv=${encodeURIComponent(WS)}`);
+    await s.goto(`/#/c/${code}?r=t&srv=${encodeURIComponent(WS)}`); // 학생 링크에 r=t 를 붙여도 학생
+    await expect(t.locator('body')).toHaveClass(/role-teacher/);
+    await expect(s.locator('body')).toHaveClass(/role-student/);
+    for (const p of [t, s]) await expect(p.locator('.obj iframe')).toHaveCount(1, { timeout: 20_000 });
+    await t.waitForTimeout(2500);
+    for (const p of [t, s]) {
+      expect(await kwd(p, (k) => k.pages().length)).toBe(1);
+      expect(await kwd(p, (k) => k.objs(k.pages()[0].id).length)).toBe(1);
+    }
+    expect(await s.evaluate(() => document.documentElement.scrollWidth <= 390)).toBe(true);
+    expect(errs).toEqual([]);
+    // 자료 없는 새 판: 새 기기 두 대가 차례로 열어도 첫 페이지 1개
+    const code2 = code.slice(0, 8) + 'z';
+    const c1 = await browser.newContext();
+    const c2 = await browser.newContext();
+    const a = await c1.newPage();
+    await a.goto(`/#/t/${code2}?srv=${encodeURIComponent(WS)}`);
+    await expect.poll(() => kwd(a, (k) => k.pages().length)).toBe(1);
+    await a.waitForTimeout(1500);
+    const b = await c2.newPage();
+    await b.goto(`/#/t/${code2}?srv=${encodeURIComponent(WS)}`);
+    await b.waitForTimeout(4500);
+    expect(await kwd(b, (k) => k.pages().length)).toBe(1);
+    for (const c of [ctxT, ctxS, c1, c2]) await c.close();
+    fs.unlinkSync(file);
+  });
+});
