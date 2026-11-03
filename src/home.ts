@@ -133,7 +133,7 @@ export class HomeScreen {
     }
     main.append(sec);
 
-    // 학생 전체: 학생 표(_roster.json)가 있으면 목적 × 단계 표, 없으면 찾기 목록
+    // 학생 전체: 학생 표(_roster.json)가 있으면 목표 × 수준 표, 없으면 찾기 목록
     const roster = await loadRoster();
     if (!this.alive) return;
     if (roster && roster.students.length) main.append(this.rosterGrid(roster, students));
@@ -154,7 +154,7 @@ export class HomeScreen {
         list.append(r);
       }
       if (!rows.length) list.append(h('p', { class: 'empty' }, '찾는 학생이 없어요.'));
-      if (!q && students.length > 12) list.append(h('p', { class: 'home-note' }, '최근 수업 순 12명 · 이름으로 찾으면 전부 · 학생 표(_roster.json)가 생기면 목적 × 단계 표로 보여요'));
+      if (!q && students.length > 12) list.append(h('p', { class: 'home-note' }, '최근 수업 순 12명 · 이름으로 찾으면 전부 · 학생 표(_roster.json)가 생기면 목표 × 수준 표로 보여요'));
     };
     search.addEventListener('input', draw);
     all.append(h('h2', {}, '학생'), search, list);
@@ -162,7 +162,7 @@ export class HomeScreen {
     return all;
   }
 
-  // 가로 = 수업 목적, 세로 = 단계(씨앗~나무). 칸마다 학생 카드: 이름 · 나라 · 꼭 알아야 할 것 1~2줄
+  // 가로 = 수준(단계 씨앗~나무), 세로 = 목표(수업 목적). 칸마다 학생 카드: 이름 · 나라 · 꼭 알아야 할 것 1~2줄
   private rosterGrid(roster: Roster, students: StudentEntry[]): HTMLElement {
     const sec = h('section', { class: 'home-sec roster' });
     const byFolder = new Map(students.map((s) => [s.folder, s]));
@@ -199,21 +199,21 @@ export class HomeScreen {
       const list = roster.students.filter((r) => (q ? `${r.name} ${r.country || ''} ${r.folder}`.toLowerCase().includes(q) : inView(r)));
       const cell = (r: RosterStudent) => [stageNames.includes(r.stage || '') ? r.stage! : '', r.purpose && known.has(r.purpose) ? r.purpose : ''];
       // 끄는 중에는 빈 줄·칸도 다 보여서 어디로든 옮길 수 있게
-      const cols = dragging ? purposes : purposes.filter((p) => list.some((r) => cell(r)[1] === p.key));
-      // 단계 6줄(씨앗~나무)은 늘 보인다 — 비어 있어도 거기로 옮길 수 있게. '단계 미정'만 있을 때 보인다
-      const rws = dragging ? rows : rows.filter((st) => st !== '' || list.some((r) => cell(r)[0] === st));
+      // 행 = 목표(목적), 열 = 수준(단계 씨앗~나무). 수준 열은 늘 보이고 '단계 미정'은 쓰일 때만
+      const rws = dragging ? purposes : purposes.filter((p) => list.some((r) => cell(r)[1] === p.key));
+      const cols = dragging ? rows : rows.filter((st) => st !== '' || list.some((r) => cell(r)[0] === st));
       grid.innerHTML = '';
       if (!list.length) {
         grid.append(h('p', { class: 'empty' }, '찾는 학생이 없어요.'));
         return;
       }
       const t = h('div', { class: 'roster-grid' });
-      t.style.gridTemplateColumns = `76px repeat(${cols.length}, minmax(188px, 1fr))`;
+      t.style.gridTemplateColumns = `84px repeat(${cols.length}, minmax(150px, 1fr))`;
       t.append(h('div', { class: 'rg-corner' }));
-      for (const c of cols) t.append(h('div', { class: 'rg-col' }, h('span', {}, c.label), h('b', {}, String(list.filter((r) => cell(r)[1] === c.key).length))));
-      for (const st of rws) {
-        t.append(h('div', { class: 'rg-row' }, h('span', {}, st || '단계 미정'), h('b', {}, String(list.filter((r) => cell(r)[0] === st).length))));
-        for (const c of cols) {
+      for (const st of cols) t.append(h('div', { class: 'rg-col' }, h('span', {}, st || '단계 미정'), h('b', {}, String(list.filter((r) => cell(r)[0] === st).length))));
+      for (const c of rws) {
+        t.append(h('div', { class: 'rg-row' }, h('span', {}, c.label), h('b', {}, String(list.filter((r) => cell(r)[1] === c.key).length))));
+        for (const st of cols) {
           const box = h('div', { class: 'rg-cell', 'data-stage': st, 'data-purpose': c.key });
           box.addEventListener('dragover', (e) => {
             e.preventDefault();
@@ -273,7 +273,7 @@ export class HomeScreen {
     };
     for (const k of Object.keys(chips) as View[]) chips[k].addEventListener('click', () => ((view = k), draw()));
     search.addEventListener('input', draw);
-    sec.append(head, grid, h('p', { class: 'home-note roster-tip' }, '카드를 다른 칸으로 끌어 놓거나 카드의 ⋯ 를 누르면 단계·목적·상태를 바꿀 수 있어요. 고친 값은 다음 자동 갱신 때도 그대로 남아요.'));
+    sec.append(head, grid, h('p', { class: 'home-note roster-tip' }, '카드를 다른 칸으로 끌어 놓거나 카드의 ⋯ 를 누르면 단계·목적·상태를 바꿀 수 있어요. 이 기기에만 저장돼요(PC에는 아직 반영 안 됨).'));
     draw();
     return sec;
   }
