@@ -3,6 +3,8 @@ import type { Editor } from '@tiptap/core';
 import { NodeSelection, TextSelection } from '@tiptap/pm/state';
 import * as Y from 'yjs';
 import { ySyncPluginKey } from '@tiptap/y-tiptap';
+import { gasReady } from './gas';
+import { attachFile } from './recupload';
 import { BoardStore, randomId, DEFAULT_SERVER, getServerUrl, setServerUrl, getToken, setToken, upsertIndex, loadIndex, LOCAL, TEXT_W, TEXT_H, type Role, type PageInfo, type InkTarget } from './store';
 import { Viewport } from './viewport';
 import { InkLayer, CURSOR_ARROW, CURSOR_TEXT, type Tool, type PageBox } from './ink';
@@ -226,12 +228,12 @@ export class BoardScreen {
           const n = this.pack?.brief?.next_lesson || (this.pack?.lessons[0] ? this.pack.lessons[0].n + 1 : 0);
           return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}-${p2(d.getMinutes())}${n ? `_#${n}` : ''}`;
         },
-        saveBundle: (open) => this.saveLessonBundle(open),
+        saveBundle: (open, sid) => this.saveLessonBundle(open, sid),
         meta: () => ({ student: this.studentNo() || null, student_folder: this.packFolder ? 'PC_ONLY' : null, lesson_no: this.pack?.brief?.next_lesson || null, packet_id: this.pack?.packet?.packet_id || null }),
       });
     }
     topLeft.append(this.timerEl);
-    const topRight = h('div', { class: 'top-right' }, ...(this.role === 'teacher' && this.classroom?.lessonBtn ? [this.classroom.lessonBtn, ...(this.classroom.micBtn ? [this.classroom.micBtn] : []), ...(this.classroom.savedBtn ? [this.classroom.savedBtn] : [])] : []), ...(this.role === 'teacher' ? [lookBtn] : []), this.memBtn);
+    const topRight = h('div', { class: 'top-right' }, ...(this.role === 'teacher' && this.classroom?.lessonBtn ? [this.classroom.lessonBtn, ...(this.classroom.meterEl ? [this.classroom.meterEl] : []), ...(this.classroom.micBtn ? [this.classroom.micBtn] : []), ...(this.classroom.savedBtn ? [this.classroom.savedBtn] : [])] : []), ...(this.role === 'teacher' ? [lookBtn] : []), this.memBtn);
     this.followBtn = h('button', { type: 'button', class: 'follow-btn', hidden: '' }, '선생님 화면으로');
     this.followBtn.addEventListener('click', () => {
       this.following = true;
@@ -2678,9 +2680,21 @@ export class BoardScreen {
   }
 
   // 수업 끝: 판 기록을 수업 폴더에. 기록 폴더가 정해져 있으면 거기에도(묻지 않고). 둘 다 없으면 내려받기
-  private async saveLessonBundle(open: ((name: string) => Promise<{ write(d: Blob): Promise<void>; close(): Promise<void> } | null>) | null): Promise<boolean> {
+  private async saveLessonBundle(open: ((name: string) => Promise<{ write(d: Blob): Promise<void>; close(): Promise<void> } | null>) | null, sid = ''): Promise<boolean> {
     const { name, blob } = await buildBundle({ store: this.store, editors: this.editors, packetId: this.pack?.packet?.packet_id });
     let ok = false;
+    // 드라이브로 올리는 수업: 판 기록도 같은 조각 묶음에 얹는다 (내려받기는 올리기가 안 될 때만)
+    if (sid && gasReady()) {
+      try {
+        await attachFile(sid, name, blob);
+        this.store.dirtySince = 0;
+        this.lastBundleAt = Date.now();
+        this.renderChip();
+        return true;
+      } catch (e) {
+        console.warn('bundle attach', e);
+      }
+    }
     const w = open ? await open(name) : null;
     if (w) {
       await w.write(blob);

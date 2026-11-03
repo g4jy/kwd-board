@@ -5,7 +5,7 @@
 // - 시각: 시작 순간의 판 시계(store.now) 를 _rec.json 에 → 판 사건 기록과 영상 시각이 맞는다
 // 파일은 KWD 폴더 Student_Lessons/<학생>/녹화/ 에 1초마다 이어 쓴다. 폴더가 없으면 끝날 때 내려받기.
 
-import { beginSession, putChunk, markEnded } from './recstore';
+import { beginSession, putChunk, markEnded, patchSession } from './recstore';
 
 export interface RecFiles {
   video: string;
@@ -34,6 +34,55 @@ interface Track {
   seq: number;
 }
 
+// 소리 크기 재기 (T083d): 11/02 수업은 선생님·학생 마이크가 모두 연결되지 않아 43분 내내 무음이었다 → 녹음 중 소리 크기를 보이고 무음이면 바로 알린다
+const QUIET_DB = -60;
+const WARN_AFTER_S = 10;
+export type MeterKind = 'teacher' | 'student' | 'tab';
+export interface MeterStat {
+  present: boolean; // 소리 줄이 연결됐나
+  silent_ratio: number; // 재는 동안 무음(-60dB 아래)이던 비율
+  max_db: number;
+  mean_db: number;
+}
+class Meter {
+  an: AnalyserNode;
+  private buf: Float32Array<ArrayBuffer>;
+  present = false;
+  n = 0;
+  quiet = 0;
+  run = 0; // 연속 무음 횟수
+  max = -120;
+  pow = 0;
+  cur = -120;
+  constructor(ac: AudioContext) {
+    this.an = ac.createAnalyser();
+    this.an.fftSize = 32768; // 약 0.7초: 250ms 마다 재도 사이가 비지 않는다
+    this.buf = new Float32Array(32768);
+  }
+  sample() {
+    this.an.getFloatTimeDomainData(this.buf);
+    let sq = 0;
+    for (let i = 0; i < this.buf.length; i++) sq += this.buf[i] * this.buf[i];
+    const ms = sq / this.buf.length;
+    this.cur = Math.max(-120, 10 * Math.log10(ms || 1e-12));
+    this.n++;
+    this.pow += ms;
+    if (this.cur > this.max) this.max = this.cur;
+    if (this.cur < QUIET_DB) {
+      this.quiet++;
+      this.run++;
+    } else this.run = 0;
+  }
+  stat(): MeterStat {
+    return { present: this.present, silent_ratio: this.n ? Math.round((this.quiet / this.n) * 1000) / 1000 : 1, max_db: Math.round(this.max * 10) / 10, mean_db: Math.round(Math.max(-120, 10 * Math.log10(this.n ? this.pow / this.n : 1e-12)) * 10) / 10 };
+  }
+}
+export interface MeterLevels {
+  teacher: number;
+  student: number;
+  warn: { teacher: 'none' | 'quiet' | 'missing'; student: 'none' | 'quiet' | 'missing' };
+}
+
 const pick = (cands: string[]) => cands.find((m) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) || '';
 
 export class LessonRecorder {
@@ -53,6 +102,15 @@ export class LessonRecorder {
   private hooked = new WeakSet<HTMLMediaElement>();
   private open = new Map<unknown, MediaSpan>();
   private unwatch: Array<() => void> = [];
+  private mt: Record<MeterKind, Meter> | null = null;
+  private link: { ac: AudioContext; mix: MediaStreamAudioDestinationNode; teacherD: MediaStreamAudioDestinationNode; studentD: MediaStreamAudioDestinationNode; mt: Record<MeterKind, Meter>; linked: Set<string> } | null = null;
+  private getStreams: () => { mine: MediaStream | null; theirs: MediaStream | null } = () => ({ mine: null, theirs: null });
+  private meterTimer = 0;
+  private tickN = 0;
+  private micTrack: MediaStreamTrack | null = null;
+  private warned = new Set<string>();
+  lastSid = ''; // 끝난 수업의 조각 보관 id (드라이브 올리기용)
+  onLevels: (l: MeterLevels) => void = () => {};
 
   get active(): boolean {
     return this.tracks.length > 0;
@@ -62,7 +120,7 @@ export class LessonRecorder {
   }
 
   // stage: 남길 요소. mine/theirs: 내 마이크·상대 소리 (없어도 됨)
-  async start(opts: { stage: HTMLElement; mine: MediaStream | null; theirs: MediaStream | null; stem: string; open: OpenWriter; now: number; tag?: string }) {
+  async start(opts: { stage: HTMLElement; mine: MediaStream | null; theirs: MediaStream | null; stem: string; open: OpenWriter; now: number; tag?: string; keep?: boolean; streams?: () => { mine: MediaStream | null; theirs: MediaStream | null } }) {
     const md = navigator.mediaDevices as MediaDevices & { getDisplayMedia(o: unknown): Promise<MediaStream> };
     this.display = await md.getDisplayMedia({
       video: { frameRate: 15, width: { max: 1920 }, height: { max: 1080 } },
@@ -106,28 +164,29 @@ export class LessonRecorder {
       hushG.connect(d);
       return d;
     };
-    const solo = (s: MediaStream | null) => {
-      const d = dest();
-      if (s?.getAudioTracks().length) {
-        const src = ac.createMediaStreamSource(new MediaStream(s.getAudioTracks()));
-        src.connect(d);
-        src.connect(mix);
-      }
-      return d.stream;
-    };
+    const mt: Record<MeterKind, Meter> = { teacher: new Meter(ac), student: new Meter(ac), tab: new Meter(ac) };
+    this.mt = mt;
+    this.warned.clear();
+    this.micTrack = null;
+    this.tickN = 0;
     const tab = this.display.getAudioTracks()[0] || null;
     this.tabAudio = !!tab;
-    const teacherAudio = solo(opts.mine);
-    // 탭 소리가 있으면 학생 소리는 거기 이미 들어 있다 → 영상에는 선생님 + 탭만
+    // 선생님·학생 소리는 나중에 붙기도 한다(학생이 수업 시작 뒤에 들어옴, 마이크를 뒤늦게 켬) → 줄마다 목적지를 만들어 두고 tick 에서 새 소리 줄을 계속 이어 준다
+    const teacherD = dest();
     const studentOnly = dest();
-    if (opts.theirs?.getAudioTracks().length) {
-      const src = ac.createMediaStreamSource(new MediaStream(opts.theirs.getAudioTracks()));
-      src.connect(studentOnly);
-      if (!tab) src.connect(mix);
-    }
+    this.link = { ac, mix, teacherD, studentD: studentOnly, mt, linked: new Set<string>() };
+    this.getStreams = opts.streams || (() => ({ mine: opts.mine, theirs: opts.theirs }));
+    this.linkStreams();
+    const teacherAudio = teacherD.stream;
+    // 탭 소리가 있으면 학생 소리는 거기 이미 들어 있다 → 영상에는 선생님 + 탭만
     const studentAudio = studentOnly.stream;
     this.mediaDest = dest();
-    if (tab) ac.createMediaStreamSource(new MediaStream([tab])).connect(mix);
+    if (tab) {
+      const ts = ac.createMediaStreamSource(new MediaStream([tab]));
+      ts.connect(mix);
+      ts.connect(mt.tab.an);
+      mt.tab.present = true;
+    }
     const video = new MediaStream([vt, ...mix.stream.getAudioTracks()]);
     const vMime = pick(['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']);
     const aMime = pick(['audio/webm;codecs=opus', 'audio/webm']);
@@ -141,10 +200,9 @@ export class LessonRecorder {
         if (!e.data.size) return;
         t.bytes += e.data.size;
         if (t.writer) t.queue = t.queue.then(() => t.writer!.write(e.data)).catch((err) => console.warn('write', err));
-        else {
-          t.chunks.push(e.data);
-          if (this.sid) t.queue = t.queue.then(() => putChunk(this.sid, t.name, t.seq++, e.data));
-        }
+        else t.chunks.push(e.data);
+        // 브라우저 저장소 복사본: 폴더에 못 쓸 때와 드라이브 올리기용 (끝나면 올린 조각만 정리)
+        if (this.sid) t.queue = t.queue.then(() => putChunk(this.sid, t.name, t.seq++, e.data));
       };
       this.tracks.push(t);
       return rec;
@@ -155,13 +213,14 @@ export class LessonRecorder {
       await add(studentAudio, this.files.student, aMime, { audioBitsPerSecond: 32_000 }),
       await add(this.mediaDest.stream, this.files.media, aMime, { audioBitsPerSecond: 32_000 }),
     ];
-    if (this.tracks.some((t) => !t.writer)) {
+    if (this.tracks.some((t) => !t.writer) || opts.keep) {
       this.sid = `${opts.now}-${Math.random().toString(36).slice(2, 7)}`;
       const tr: Record<string, { mime: string; n: number }> = {};
-      for (const t of this.tracks) if (!t.writer) tr[t.name] = { mime: t.rec.mimeType || 'video/webm', n: 0 };
+      for (const t of this.tracks) if (!t.writer || opts.keep) tr[t.name] = { mime: t.rec.mimeType || 'video/webm', n: 0 };
       await beginSession({ id: this.sid, tag: opts.tag || '', stem: opts.stem, startedAt: opts.now, tracks: tr });
     } else this.sid = '';
     for (const r of recs) r.start(1000);
+    this.meterTimer = window.setInterval(() => this.tick(), 250);
     this.spans = [];
     this.watchMedia(opts.stage.ownerDocument || document);
   }
@@ -273,10 +332,62 @@ export class LessonRecorder {
     });
   }
 
+  // 지금 있는 선생님·학생 소리 줄 중 아직 안 이은 것을 잇는다
+  private linkStreams() {
+    const L = this.link;
+    if (!L) return;
+    const { mine, theirs } = this.getStreams();
+    const hook = (st: MediaStream | null, kind: 'teacher' | 'student') => {
+      for (const t of st?.getAudioTracks() || []) {
+        if (L.linked.has(t.id) || t.readyState === 'ended') continue;
+        L.linked.add(t.id);
+        const src = L.ac.createMediaStreamSource(new MediaStream([t]));
+        if (kind === 'teacher') {
+          src.connect(L.teacherD);
+          src.connect(L.mix);
+          src.connect(L.mt.teacher.an);
+          L.mt.teacher.present = true;
+          this.micTrack = t;
+        } else {
+          src.connect(L.studentD);
+          src.connect(L.mt.student.an);
+          L.mt.student.present = true;
+          if (!this.tabAudio) src.connect(L.mix);
+        }
+      }
+    };
+    hook(mine, 'teacher');
+    hook(theirs, 'student');
+  }
+
+  private tick() {
+    const mt = this.mt;
+    if (!mt) return;
+    if (++this.tickN % 4 === 0) this.linkStreams();
+    for (const m of Object.values(mt)) m.sample();
+    const need = WARN_AFTER_S * 4;
+    const mic = this.micTrack;
+    const micDead = !!mic && (mic.readyState === 'ended' || mic.muted || !mic.enabled);
+    const t: MeterLevels['warn']['teacher'] = !mt.teacher.present || micDead ? 'missing' : mt.teacher.run >= need ? 'quiet' : 'none';
+    // 학생 소리: 학생 줄이나 탭 소리 둘 중 하나라도 들리면 정상
+    const sPresent = mt.student.present || mt.tab.present;
+    const sRun = Math.min(mt.student.present ? mt.student.run : Infinity, mt.tab.present ? mt.tab.run : Infinity);
+    const s: MeterLevels['warn']['student'] = !sPresent ? 'missing' : sRun >= need ? 'quiet' : 'none';
+    // 연결이 없는 줄은 10초가 지난 뒤부터 알린다
+    const age = mt.teacher.n;
+    const w = { teacher: age < need && t === 'missing' ? 'none' : t, student: age < need && s === 'missing' ? 'none' : s } as MeterLevels['warn'];
+    for (const k of ['teacher', 'student'] as const) if (w[k] !== 'none') this.warned.add(k + ':' + w[k]);
+    this.onLevels({ teacher: mt.teacher.cur, student: Math.max(mt.student.cur, mt.tab.cur), warn: w });
+  }
+
   // 끝: 파일을 닫고, 폴더가 없던 것은 Blob 으로 돌려준다
   async stop(meta: Record<string, unknown>, open: OpenWriter): Promise<{ saved: string[]; blobs: Array<{ name: string; blob: Blob }>; empty: string[] }> {
     const saved: string[] = [];
     const blobs: Array<{ name: string; blob: Blob }> = [];
+    window.clearInterval(this.meterTimer);
+    const audioCheck = this.mt ? { teacher: this.mt.teacher.stat(), student: this.mt.student.stat(), tab: this.mt.tab.stat(), warned: [...this.warned], sampled_s: Math.round((this.mt.teacher.n / 4) * 10) / 10 } : undefined;
+    this.mt = null;
+    this.link = null;
     for (const k of Array.from(this.open.keys())) this.end(k);
     this.unwatch.forEach((f) => f());
     this.unwatch = [];
@@ -319,6 +430,7 @@ export class LessonRecorder {
         },
         media: this.spans,
         bytes: sizes,
+        audio_check: audioCheck,
         ...meta,
       },
       null,
@@ -344,6 +456,7 @@ export class LessonRecorder {
     void this.ac?.close();
     this.ac = null;
     this.tracks = [];
+    this.lastSid = this.sid;
     this.sid = '';
     return { saved, blobs, empty };
   }
@@ -351,5 +464,6 @@ export class LessonRecorder {
 
 async function markEndedWithMeta(sid: string, name: string, blob: Blob) {
   await putChunk(sid, name, 0, blob);
+  await patchSession(sid, (s) => ({ tracks: { ...s.tracks, [name]: { mime: 'application/json', n: 1 } }, meta: name, holdUntil: Date.now() + 120_000 }));
   await markEnded(sid);
 }

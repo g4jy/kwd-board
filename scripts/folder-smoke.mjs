@@ -16,7 +16,8 @@ p.on('pageerror', (e) => errs.push(String(e)));
 const res = {};
 await p.goto(`${BASE}/#/`);
 await p.waitForSelector('.home');
-res.noFolderCard = await p.locator('.home-card button').textContent();
+res.noKeyLead = await p.locator('.home-card .home-lead').first().textContent(); // 열쇠가 없는 기기: 안내 한 줄, 폴더 연결은 '고급' 안
+res.noFolderCard = await p.locator('.home-boards .home-card button').textContent();
 await p.screenshot({ path: `${OUT}/0-home-nofolder.png` });
 res.files = await p.evaluate(writeOpfs, fixtureFiles(today));
 await p.waitForSelector('.lesson-row');

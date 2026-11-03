@@ -8,3 +8,6 @@ server/cloudflare/.wrangler/
 dist-artifact/
 server/cloudflare/.dev.vars
 server-data/
+gas/Secret.gs
+gas/.clasp.json
+.secrets/

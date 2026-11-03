@@ -23,6 +23,11 @@ export interface RecSession {
   startedAt: number;
   tracks: Record<string, { mime: string; n: number }>;
   ended?: boolean;
+  up?: Record<string, number>; // 드라이브에 올린 조각 수(트랙별, 앞에서부터 이어서)
+  uploaded?: boolean; // 끝까지 다 올림 (_done 표시까지)
+  meta?: string; // 끝에 저장한 _rec.json 이름
+  upErr?: string; // 마지막 올리기 실패 이유
+  holdUntil?: number; // 판 기록(zip)을 얹는 동안 '끝' 표시를 미룬다
 }
 
 export async function beginSession(s: RecSession) {
@@ -31,8 +36,9 @@ export async function beginSession(s: RecSession) {
     const tx = db.transaction('sessions', 'readwrite');
     tx.objectStore('sessions').put(s);
     await done(tx);
+    // 오래된 복사본 정리: 드라이브에 다 올라간 것만 (아직 못 올린 녹화는 14일까지 지킨다)
     const all = await listSessions();
-    for (const old of all.slice(KEEP)) await dropSession(old.id);
+    for (const old of all.slice(KEEP)) if (old.uploaded || Date.now() - old.startedAt > 14 * 86400000) await dropSession(old.id);
   } catch (e) {
     console.warn('recstore', e);
   }
@@ -110,4 +116,43 @@ export async function dropSession(id: string) {
   } catch (e) {
     console.warn('recstore drop', e);
   }
+}
+
+export async function getSession(id: string): Promise<RecSession | null> {
+  try {
+    const db = await open();
+    const tx = db.transaction('sessions');
+    const q = tx.objectStore('sessions').get(id);
+    await done(tx);
+    return (q.result as RecSession) || null;
+  } catch {
+    return null;
+  }
+}
+
+// 일부 칸만 고친다 (읽고 쓰기를 한 번에, 다른 칸은 그대로)
+export async function patchSession(id: string, patch: Partial<RecSession> | ((s: RecSession) => Partial<RecSession>)) {
+  try {
+    const db = await open();
+    const tx = db.transaction('sessions', 'readwrite');
+    const g = tx.objectStore('sessions').get(id);
+    g.onsuccess = () => {
+      const s = g.result as RecSession | undefined;
+      if (s) tx.objectStore('sessions').put({ ...s, ...(typeof patch === 'function' ? patch(s) : patch) });
+    };
+    await done(tx);
+  } catch (e) {
+    console.warn('recstore patch', e);
+  }
+}
+
+const pad = (n: number) => String(n).padStart(7, '0');
+// 한 트랙의 조각 [from, to) 를 순서대로
+export async function readChunks(id: string, name: string, from: number, to: number): Promise<Blob[]> {
+  if (to <= from) return [];
+  const db = await open();
+  const tx = db.transaction('chunks');
+  const q = tx.objectStore('chunks').getAll(IDBKeyRange.bound(`${id}|${name}|${pad(from)}`, `${id}|${name}|${pad(to - 1)}`));
+  await done(tx);
+  return q.result as Blob[];
 }

@@ -29,6 +29,7 @@ const small = (list, min) => list.filter(([w, hh]) => Math.min(w, hh) < min);
   await p.click('.demo-card.main');
   await p.waitForSelector('.roster-grid');
   await p.click('.rs-card:has-text("Mina K")');
+  await p.click('.stu-panel .primary'); // 이름 → 학생 교실 → 오늘 판 열기
   await p.waitForFunction(() => location.hash.startsWith('#/b/'));
   await p.waitForTimeout(2500);
   await p.screenshot({ path: `${OUT}/1-laptop.png` });
@@ -92,6 +93,7 @@ for (const [name, vp, touch] of [['tablet', { width: 1180, height: 820 }, true],
   await p.click('.demo-card.main');
   await p.waitForSelector('.roster-grid');
   await p.click('.rs-card:has-text("Mina K")');
+  await p.click('.stu-panel .primary'); // 이름 → 학생 교실 → 오늘 판 열기
   await p.waitForFunction(() => location.hash.startsWith('#/b/'));
   await p.waitForTimeout(2500);
   await p.screenshot({ path: `${OUT}/7-${name}.png` });

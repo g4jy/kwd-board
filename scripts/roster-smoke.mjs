@@ -80,6 +80,7 @@ await p.waitForSelector('.roster-grid');
 res.archReload = await p.locator('.rs-chip.ghost').innerText();
 await p.screenshot({ path: `${OUT}/4-archive.png`, fullPage: true });
 await p.click('.rs-card:has-text("Mina K")');
+await p.click('.stu-panel .primary'); // 이름 → 학생 교실 → 오늘 판 열기
 await p.waitForFunction(() => location.hash.startsWith('#/b/'));
 res.opened = await p.evaluate(() => location.hash);
 await p.setViewportSize({ width: 390, height: 800 });

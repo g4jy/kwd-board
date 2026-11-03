@@ -3371,6 +3371,16 @@ body.in-demo { background: var(--bg); overflow: auto; }
 }
 .mic-rec { background: #fff; color: var(--ink); border-color: var(--line); }
 .mic-rec[hidden] { display: none; }
+/* 녹화 중 소리 크기 막대와 무음 경고 (T083d) */
+.rec-meter { display: inline-flex; gap: 10px; align-items: center; font-size: 12px; color: var(--ink); }
+.rec-meter[hidden] { display: none; }
+.rec-meter .rm-l { display: inline-flex; align-items: center; gap: 4px; }
+.rec-meter .rm-l i { display: block; width: 0; height: 8px; min-width: 2px; max-width: 60px; background: #3b7d4f; border-radius: 4px; transition: width .2s; }
+.rec-meter .rm-l::before { content: ''; }
+.rec-meter .rm-l[data-warn='quiet'] i, .rec-meter .rm-l[data-warn='missing'] i { background: #b3261e; }
+.rec-meter .rm-l[data-warn='missing'] b { color: #b3261e; }
+.rec-meter .rm-l b { font-weight: 600; font-size: 12px; }
+.rec-warn { position: fixed; top: 56px; left: 50%; transform: translateX(-50%); z-index: 40; max-width: min(92vw, 720px); background: #b3261e; color: #fff; padding: 12px 18px; border-radius: 12px; font-size: 16px; font-weight: 600; text-align: center; box-shadow: var(--shadow); }
 
 /* 작게 본 학습지(판 < 100%) 위 덮개: 첫 누름으로 100% 로 키운다 */
 .frame-guard { position: absolute; inset: 0; display: none; z-index: 3; cursor: zoom-in; }
@@ -3386,3 +3396,12 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
   *, *::before, *::after { animation-duration: 0.15s !important; animation-iteration-count: 1 !important; transition-duration: 0.15s !important; }
   button:active { transform: none !important; }
 }
+
+/* 학생 교실 한눈에 (이름을 눌렀을 때, T083d) */
+.stu-panel { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.stu-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.stu-head h2 { font-size: 20px; color: var(--ink); margin: 0; }
+.stu-panel .stu-sub { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.stu-panel .stu-sub h3 { font-size: 13px; font-weight: 700; color: var(--muted); margin: 0; }
+.stu-panel .empty { margin: 0; font-size: 14px; }
+.stu-panel .primary.big { align-self: flex-start; }

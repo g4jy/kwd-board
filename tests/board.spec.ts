@@ -676,7 +676,8 @@ test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
   test('KWD 폴더: 오늘 수업 → 학생 → 이 학생 패널 6칸, 자료를 판에, 체험 학생, 학생 기기에는 없음', () => {
     const r = JSON.parse(execFileSync('node', ['scripts/folder-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/foldert' } }));
     expect(r.errs).toEqual([]);
-    expect(r.noFolderCard).toBe('KWD 폴더 연결하기');
+    expect(r.noKeyLead).toContain('선생님 링크');
+    expect(r.noFolderCard).toBe('폴더 연결하기');
     expect(r.rows).toHaveLength(2);
     expect(r.rows[1]).toContain('시작');
     expect(r.url).toMatch(/^\/b\/k[a-z0-9]{8}d\d{6}\?r=t$/);

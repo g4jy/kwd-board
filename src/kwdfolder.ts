@@ -2,6 +2,8 @@
 // 오늘 수업(intake/<날짜>/brief_data.json)과 학생 폴더(Student_Lessons/<이름 (번호)>)를 판이 직접 읽는다.
 // AI·서버 없이 브라우저 안에서만 읽고, 학생 기기로는 아무것도 보내지 않는다.
 import { validUnit, type KwdUnit } from './units';
+import { gasReady } from './gas';
+import { RemoteDir, remoteWork } from './remotefs';
 import { validPacket, indexEntries, type LessonPacket } from './packet';
 import type { VerifyRec } from './homework';
 import type { StudentMemory, MemVocab, MemGrammar, MemError, MemHomework, MemLesson } from './memory';
@@ -97,7 +99,11 @@ async function idbSet(key: string, v: unknown) {
   }
 }
 
-export const canUseFolder = (): boolean => typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker === 'function' || !!testHandle;
+// 구글 드라이브 거울(선생님 열쇠가 있을 때) — 폴더를 고르지 않아도 읽는다. 쓰기는 안 된다(VDir 처럼)
+const isRemote = (h: unknown): boolean => h instanceof RemoteDir;
+const isVirt = (h: unknown): boolean => h instanceof VDir || h instanceof RemoteDir;
+export const useRemote = (): boolean => !testHandle && gasReady();
+export const canUseFolder = (): boolean => gasReady() || typeof (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker === 'function' || !!testHandle;
 
 // 시험용: 실제 폴더 대신 쓸 손잡이 (OPFS 등)
 export function setWorkHandleForTest(h: FileSystemDirectoryHandle | null) {
@@ -167,6 +173,7 @@ export async function useDemoFolder(): Promise<boolean> {
 
 export async function storedWork(): Promise<DirHandle | null> {
   if (testHandle) return testHandle;
+  if (gasReady()) return remoteWork() as unknown as DirHandle;
   return idbGet<DirHandle>('work');
 }
 
@@ -174,7 +181,7 @@ export type FolderState = 'none' | 'prompt' | 'granted' | 'denied';
 export async function folderState(): Promise<{ state: FolderState; name: string }> {
   const h = await storedWork();
   if (!h) return { state: 'none', name: '' };
-  if (testHandle) return { state: 'granted', name: h.name };
+  if (testHandle || isRemote(h)) return { state: 'granted', name: h.name };
   try {
     const p = (await h.queryPermission?.({ mode: 'read' })) || 'granted';
     return { state: p === 'granted' ? 'granted' : p === 'denied' ? 'denied' : 'prompt', name: h.name };
@@ -390,6 +397,17 @@ export type RosterEdit = { stage?: string; purpose?: string; trial?: boolean; st
 async function readRosterTeacher(): Promise<Record<string, RosterEdit> | null> {
   try {
     const work = await storedWork();
+    if (isRemote(work)) {
+      // 드라이브 거울은 쓸 수 없다 → 이 기기에 둔 수정을 거울의 수정 파일 위에 얹는다
+      let base: Record<string, RosterEdit> = {};
+      try {
+        const sl0 = await work!.getDirectoryHandle('Student_Lessons');
+        base = (JSON.parse(await (await (await sl0.getFileHandle(TEACHER_FILE)).getFile()).text()) as { students?: Record<string, RosterEdit> }).students || {};
+      } catch (e) {
+        if ((e as DOMException)?.name !== 'NotFoundError') throw e;
+      }
+      return { ...base, ...localEdits() };
+    }
     const sl = await work!.getDirectoryHandle('Student_Lessons');
     let f: File;
     try {
@@ -407,9 +425,28 @@ async function readRosterTeacher(): Promise<Record<string, RosterEdit> | null> {
 export async function loadRosterTeacher(): Promise<Record<string, RosterEdit>> {
   return (await readRosterTeacher()) || {};
 }
+const EDITS_KEY = 'kwd.rosterEdits';
+function localEdits(): Record<string, RosterEdit> {
+  try {
+    return JSON.parse(localStorage.getItem(EDITS_KEY) || '{}') as Record<string, RosterEdit>;
+  } catch {
+    return {};
+  }
+}
 export async function saveRosterEdit(folder: string, edit: RosterEdit): Promise<boolean> {
   const work = await storedWork();
   if (!work) return false;
+  if (isRemote(work)) {
+    try {
+      const all = localEdits();
+      const now = new Date().toISOString();
+      all[folder] = { ...all[folder], ...edit, at: now, ...(edit.stage !== undefined ? { stage_changed_at: now } : {}) };
+      localStorage.setItem(EDITS_KEY, JSON.stringify(all));
+      return true;
+    } catch {
+      return false;
+    }
+  }
   const all = await readRosterTeacher();
   if (!all) {
     console.warn('roster edit: 기존 수정 파일을 읽지 못해 저장을 멈춤');
@@ -523,6 +560,20 @@ export async function listStudents(force = false): Promise<StudentEntry[]> {
   if (!work) return [];
   const sl = await sub(work, 'Student_Lessons');
   if (!sl) return [];
+  if (isRemote(work)) {
+    // 드라이브는 폴더마다 목록을 부르면 느리다 → 학생 표(_roster.json)로 만든다
+    const r = await loadRoster();
+    if (r) {
+      const out2: StudentEntry[] = r.students.map((s) => {
+        const { name, id } = parseFolder(s.folder);
+        return { folder: s.folder, name: s.name || name, id, key: studentKey(s.folder), lessons: s.lessons || 0, lastDate: s.last_lesson || '', trial: !!s.trial };
+      });
+      out2.sort((a, b) => (b.lastDate || '').localeCompare(a.lastDate || '') || a.name.localeCompare(b.name));
+      cache.students = out2;
+      cache.at = Date.now();
+      return out2;
+    }
+  }
   const dirs = (await entries(sl)).filter((e) => e.kind === 'directory' && !e.name.startsWith('_') && !e.name.startsWith('.'));
   const out: StudentEntry[] = [];
   await Promise.all(
@@ -819,7 +870,7 @@ export async function loadPack(folder: string, brief?: BriefLesson): Promise<Stu
 // 학생 폴더 검증/verify_*.json 을 모두 읽어 id별 최신 기록으로 합친다 (새로고침 뒤 '저장함' 복원). 못 읽으면 빈 목록
 export async function readStudentVerify(folder: string): Promise<VerifyRec[]> {
   const work = await storedWork();
-  if (!work || (work as unknown as VDir) instanceof VDir || !folder) return [];
+  if (!work || (work as unknown as VDir) instanceof VDir || !folder) return []; // 체험 폴더
   const byId = new Map<string, VerifyRec>();
   try {
     const sd = await (await work.getDirectoryHandle('Student_Lessons')).getDirectoryHandle(folder);
@@ -847,7 +898,7 @@ export async function readStudentVerify(folder: string): Promise<VerifyRec[]> {
 // 학생 폴더 안 파일에 이어 쓰기 (수업 녹화). 체험·파일 목록 폴더는 null
 export async function openStudentWriter(folder: string, sub: string, name: string): Promise<FileSystemWritableFileStream | null> {
   const work = await storedWork();
-  if (!work || (work as unknown as VDir) instanceof VDir || !folder) return null;
+  if (!work || isVirt(work) || !folder) return null;
   try {
     const p = (await work.requestPermission?.({ mode: 'readwrite' })) || 'granted';
     if (p !== 'granted') return null;
@@ -866,7 +917,7 @@ export async function openStudentWriter(folder: string, sub: string, name: strin
 // 같은 이름이 있으면 ' (2)'… 를 붙여 새로 만든다. 파일은 그 안에. 폴더 연결이 없으면 null(→ 내려받기)
 export async function makeLessonDir(folder: string, board: string, stamp: string): Promise<{ path: string; open: (name: string) => Promise<FileSystemWritableFileStream | null> } | null> {
   const work = await storedWork();
-  if (!work || (work as unknown as VDir) instanceof VDir) return null;
+  if (!work || isVirt(work)) return null;
   try {
     const p = (await work.requestPermission?.({ mode: 'readwrite' })) || 'granted';
     if (p !== 'granted') return null;
@@ -910,7 +961,7 @@ export async function makeLessonDir(folder: string, board: string, stamp: string
 
 export async function saveToStudentFolder(folder: string, sub: string, name: string, text: string): Promise<string | null> {
   const work = await storedWork();
-  if (!work || (work as unknown as VDir) instanceof VDir) return null;
+  if (!work || isVirt(work)) return null;
   try {
     const p = (await work.requestPermission?.({ mode: 'readwrite' })) || 'granted';
     if (p !== 'granted') return null;
