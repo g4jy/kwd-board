@@ -1104,3 +1104,33 @@ test.describe('T083b: 스크롤형 자료 펼침 · 펜 고정 · 학생 같은 
     expect(m.scroll).toBeLessThanOrEqual(m.client + 1);
   });
 });
+
+test.describe('T083c: 펜 도구에서 자료 탭 = 클릭, 끌기 = 펜 자국', () => {
+  test.describe.configure({ timeout: 90_000 });
+  test('펜 상태에서 자료 버튼을 짧게 탭하면 눌리고 점이 안 찍히며, 끌면 자국이 남는다', async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 1366, height: 820 } });
+    const t = await ctx.newPage();
+    const errs: string[] = [];
+    t.on('pageerror', (e) => errs.push(String(e)));
+    await openTeacher(t, newId(), '7', WS);
+    await t.evaluate((h) => (window as any).__kwd.placeHtml(h, '탭 시험'), '<body style="margin:0"><button id="b" style="position:absolute;left:40px;top:40px;width:120px;height:60px" onclick="this.textContent=\'눌림\'">누르기</button><div style="height:400px"></div></body>');
+    await expect(t.locator('.obj-frame')).toHaveCount(1);
+    await t.evaluate(() => (window as any).__kwd.setTool('pen'));
+    const fb = (await t.locator('.obj-frame').boundingBox())!;
+    const inkN = () => kwd(t, (k) => { const o = k.objs(k.pages()[0].id).find((x: any) => x.type === 'html'); return k.store.ink(`ws:${o.id}:1`).length + k.store.ink(k.pages()[0].id).length; });
+    const n0 = await inkN();
+    const x = fb.x + 80, y = fb.y + 70;
+    await t.mouse.move(x, y);
+    await t.mouse.down();
+    await t.mouse.up();
+    await expect(t.frameLocator('.obj-frame').locator('#b')).toHaveText('눌림');
+    expect(await inkN()).toBe(n0); // 탭은 자국을 남기지 않는다
+    await t.mouse.move(x, y + 100);
+    await t.mouse.down();
+    for (let i = 1; i <= 10; i++) await t.mouse.move(x + i * 12, y + 100);
+    await t.mouse.up();
+    await expect.poll(inkN).toBe(n0 + 1); // 끌기는 자국
+    expect(errs).toEqual([]);
+    await ctx.close();
+  });
+});

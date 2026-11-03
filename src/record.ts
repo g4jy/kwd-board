@@ -90,7 +90,7 @@ function xmlText(store: BoardStore, pageId: string): string {
 export function inkSummary(store: BoardStore, pageId: string): string[] {
   const alive = new Set(store.ink(pageId).toArray().map((s) => s.id));
   const lines: string[] = [];
-  for (const e of store.events.toArray()) {
+  for (const e of store.sortedEvents()) {
     if (e.kind !== 'ink' || e.page !== pageId || !e.id || !alive.has(e.id)) continue;
     lines.push(describeInk(e));
   }
@@ -118,7 +118,7 @@ export async function buildBundle(input: RecordInput): Promise<{ name: string; b
   const startedAt = Number(store.meta.get('startedAt') || 0);
   const endedAt = Number(store.meta.get('lastAt') || 0);
   const roles = new Set<string>();
-  for (const e of store.events.toArray()) roles.add(e.role);
+  for (const e of store.sortedEvents()) roles.add(e.role);
   const manifest = {
     schema: 'kwd-lesson-bundle/v1',
     app: APP_VERSION,

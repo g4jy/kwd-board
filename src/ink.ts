@@ -253,7 +253,21 @@ export class InkLayer {
     if (st.hl) this.drawing.o = st.opacity ?? 0.35;
     else if (st.kind && st.kind !== 'fountain') this.drawing.k = st.kind;
     this.screenPts = [[e.clientX, e.clientY]];
+    this.downAt = performance.now();
     this.invalidate();
+  }
+  private downAt = 0;
+  // T083c: 자료(iframe) 위의 짧은 탭 = 자료 클릭으로 넘김. 끌기 = 펜 자국
+  private tapToFrame(e: PointerEvent): boolean {
+    if (e.type !== 'pointerup' || performance.now() - this.downAt >= 300) return false;
+    const p0 = this.screenPts[0];
+    if (!p0 || this.screenPts.some((q) => Math.hypot(q[0] - p0[0], q[1] - p0[1]) >= 6)) return false;
+    const frame = document.elementsFromPoint(p0[0], p0[1]).find((el) => el instanceof HTMLIFrameElement && el.classList.contains('mat-frame')) as HTMLIFrameElement | undefined;
+    if (!frame?.contentWindow) return false;
+    const r = frame.getBoundingClientRect();
+    const k = r.width / (frame.offsetWidth || r.width || 1);
+    frame.contentWindow.postMessage({ type: 'kwd:tap', x: (p0[0] - r.left) / k, y: (p0[1] - r.top) / k }, '*');
+    return true;
   }
   private screenPts: Array<[number, number]> = [];
   private tempErase = false;
@@ -322,6 +336,10 @@ export class InkLayer {
     const d = this.drawing;
     this.drawing = null;
     this.store.awareness.setLocalStateField('drawing', null);
+    if (this.tapToFrame(e)) {
+      this.invalidate();
+      return;
+    }
     if (d.pts.length < 6) d.pts.push(d.pts[0] + 0.5, d.pts[1] + 0.5, d.pts[2]);
     const stroke: Stroke = { id: randomId(8), role: this.store.role, color: d.color, size: d.size, hl: d.hl, pts: d.pts.map((v) => Math.round(v * 100) / 100), t: this.store.now() };
     if (d.k) stroke.k = d.k;

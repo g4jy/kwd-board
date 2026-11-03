@@ -3056,7 +3056,7 @@ export class BoardScreen {
   private openSummary() {
     const box = h('div', { class: 'menu wide summary' });
     box.append(h('div', { class: 'mh' }, '수업 요약'), h('p', { class: 'mnote' }, '이 판에 지금까지 남은 것을 한눈에. 수업 기록(.kwd.zip)과 밤 루틴 입력도 같은 내용에서 만들어져요.'));
-    const evs = this.store.events.toArray();
+    const evs = this.store.sortedEvents();
     const st = (this.store.meta.get('startedAt') as number) || evs[0]?.t;
     const en = (this.store.meta.get('lastAt') as number) || evs[evs.length - 1]?.t;
     const count = (role: Role, kind: string) => evs.filter((e) => e.role === role && e.kind === kind).length;

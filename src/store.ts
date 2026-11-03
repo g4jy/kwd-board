@@ -488,6 +488,16 @@ export class BoardStore {
   // ---- 사건 ----
   log(ev: Omit<BoardEvent, 't' | 'role'>) {
     const full: BoardEvent = { t: this.now(), role: this.role, ...ev };
+    // 같은 설정·페이지 보기가 2초 안에 그대로 또 오면 한 번만 (11/02 수업: look 값 0.4초 간격 중복, 페이지 보기 1초 간격 중복)
+    if (ev.kind === 'setting' || ev.kind === 'page') {
+      const v = ev.data && typeof ev.data === 'object' ? { ...(ev.data as Record<string, unknown>) } : ev.data;
+      const val = v && typeof v === 'object' && (v as { value?: unknown }).value && typeof (v as { value: unknown }).value === 'object' ? { ...((v as { value: Record<string, unknown> }).value) } : null;
+      if (val) delete val.t;
+      const sig = JSON.stringify([ev.kind, ev.page, ev.id, val ? { ...(v as object), value: val } : v]);
+      if (sig === this.lastSig && full.t - this.lastSigAt < 2000) return;
+      this.lastSig = sig;
+      this.lastSigAt = full.t;
+    }
     this.doc.transact(() => {
       this.events.push([full]);
       if (!this.meta.get('startedAt') && ev.kind !== 'setting' && ev.kind !== 'presence') this.meta.set('startedAt', full.t);
@@ -549,9 +559,20 @@ export class BoardStore {
     this.log({ kind: 'erase', page: pageId, data: { all: true } });
   }
 
-  eventsNdjson(): string {
+  // 사건은 접속이 끊겼다 이어진 쪽이 나중에 합쳐져 배열 순서가 시간순이 아닐 수 있다 → t 순(같으면 배열 순)
+  sortedEvents(): BoardEvent[] {
     return this.events
       .toArray()
+      .map((e, i) => [e, i] as const)
+      .sort((a, b) => a[0].t - b[0].t || a[1] - b[1])
+      .map((x) => x[0]);
+  }
+
+  private lastSig = '';
+  private lastSigAt = 0;
+
+  eventsNdjson(): string {
+    return this.sortedEvents()
       .map((e) => JSON.stringify(e))
       .join('\n') + '\n';
   }

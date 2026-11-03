@@ -515,7 +515,7 @@ export class Classroom {
     const dur = Math.round((this.host.store.now() - this.rec.startedAt) / 1000);
     const open = this.recOpen;
     const { saved, blobs, empty } = await this.rec.stop({ board: this.host.store.id, ...this.host.meta(), call: this.call?.stats() }, open || (async () => null));
-    this.host.store.log({ kind: 'lesson', data: { op: 'end', seconds: dur, saved: saved.length, empty: empty.length ? empty : undefined } });
+    this.host.store.log({ kind: 'lesson', data: { op: 'end', seconds: dur, saved: saved.length, downloaded: blobs.length, mode: saved.length ? 'folder' : 'download', empty: empty.length ? empty : undefined } });
     this.renderLesson();
     // 폴더에 못 쓰고 내려받기로 끝나면 파일 이름만으로 학생·시각을 알 수 있게 학생 번호를 앞에 붙인다(예: 'pending-student-141 2026-11-02 20-00_#19_Teacher.webm')
     const tag = saved.length ? '' : String(this.host.meta().student || '').replace(/[^\w-]/g, '');
