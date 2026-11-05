@@ -3405,3 +3405,82 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 .stu-panel .stu-sub h3 { font-size: 13px; font-weight: 700; color: var(--muted); margin: 0; }
 .stu-panel .empty { margin: 0; font-size: 14px; }
 .stu-panel .primary.big { align-self: flex-start; }
+
+/* T160 선생님 첫 화면: 오늘 수업 목록 · 수업 카드 · 설정. 글씨 3단(제목 17~24 · 본문 15 · 보조 13), 테두리 대신 면과 간격 */
+.home.th { max-width: 960px; }
+.th-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.th-title { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.th-title h1 { margin: 0; font-size: 24px; font-weight: 700; }
+.th-tools { display: flex; align-items: center; gap: 4px; }
+.th-hub { display: inline-flex; align-items: center; min-height: 44px; padding: 0 12px; font-size: 15px; font-weight: 600; color: var(--accent); text-decoration: none; border-radius: 12px; }
+.th-hub:hover { background: var(--box); }
+.th-icon { width: 44px; height: 44px; padding: 0; border: 0; background: transparent; font-size: 20px; color: var(--muted); border-radius: 12px; cursor: pointer; }
+.th-icon:hover, .th-icon.on { background: var(--box); color: var(--ink); }
+.th-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.th-item { background: var(--paper); border-radius: var(--radius); box-shadow: none; }
+.th-item.live, .th-item.next { background: #eaf0fd; }
+.th-item.past { opacity: .6; }
+.th-row { display: grid; grid-template-columns: 64px 1fr auto; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; border-radius: var(--radius); }
+.th-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.th-time { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.th-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.th-name { font-size: 17px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.th-name em { margin-left: 8px; font-style: normal; font-size: 13px; font-weight: 600; color: var(--accent); }
+.th-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; font-size: 14px; color: var(--muted); }
+.th-l { font-weight: 700; color: var(--ink); }
+.th-chip { font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--box); color: var(--muted); }
+.th-chip.ok { background: #e2f3ea; color: var(--ok); }
+.th-chip.bad { background: #fbe6e3; color: var(--no); }
+.th-chip.warn { background: #fdf0d6; color: #8a5a10; }
+.th-chip.todo { background: #e2e9fb; color: var(--accent); }
+.th-acts { display: flex; gap: 8px; }
+.th-acts button { min-height: 44px; padding: 0 16px; font-size: 15px; }
+.th-card { padding: 4px 16px 20px; display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 28px; border-radius: 0 0 var(--radius) var(--radius); }
+.th-card[hidden] { display: none; }
+.th-col { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.th-col h3 { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
+.th-k { margin: 8px 0 0; font-size: 15px; font-weight: 700; }
+.th-li, .th-line { margin: 0; font-size: 15px; line-height: 1.55; overflow-wrap: anywhere; }
+.th-line b { margin-right: 8px; font-size: 13px; font-weight: 700; color: var(--muted); }
+.th-line.warn { color: var(--no); }
+.th-line.mute { color: var(--muted); }
+.th-links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; font-size: 15px; }
+.th-links a, .th-board { color: var(--accent); text-decoration: none; font-size: 15px; }
+.th-board { display: block; }
+.th-presence { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: #b9c0d3; flex: none; }
+.dot.on { background: var(--ok); }
+.th-panel-head { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.th-panel-head h2 { margin: 0; font-size: 17px; }
+.th-close { min-height: 44px; border: 0; background: transparent; color: var(--accent); font-size: 15px; cursor: pointer; }
+.stu-panel { background: var(--paper); border-radius: var(--radius); padding-top: 12px; margin-bottom: 12px; }
+.th-empty { background: var(--paper); border-radius: var(--radius); padding: 20px 16px; margin-bottom: 20px; }
+.th-empty-t { margin: 0 0 12px; font-size: 15px; line-height: 1.6; }
+.th-empty-a { display: flex; gap: 8px; flex-wrap: wrap; }
+.th-empty-a button { min-height: 44px; font-size: 15px; }
+.th-foot { margin: -8px 0 20px; font-size: 13px; color: var(--muted); }
+.th-loading { padding: 16px 0; }
+.th-all { margin-bottom: 20px; }
+.th-all > summary { cursor: pointer; font-size: 15px; font-weight: 700; padding: 12px 0; min-height: 44px; }
+.th-settings { background: var(--paper); border-radius: var(--radius); padding: 8px 16px 16px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 4px; }
+.th-set { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; align-items: flex-start; }
+.th-set h3 { margin: 0; font-size: 13px; font-weight: 700; color: var(--muted); }
+.th-set .open-code { width: 100%; max-width: 440px; }
+.th-past { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.th-past a { flex: 1; display: flex; justify-content: space-between; gap: 12px; text-decoration: none; color: inherit; font-size: 15px; }
+.th-set .board-list { width: 100%; }
+@media (max-width: 900px) {
+  .th-card { grid-template-columns: 1fr; gap: 20px; }
+}
+@media (max-width: 640px) {
+  .th-row { grid-template-columns: 56px 1fr; }
+  .th-acts { grid-column: 1 / -1; }
+  .th-acts button { flex: 1; }
+  .th-time { font-size: 18px; }
+}
+.th-past .br-del { font-size: 13px; min-height: 44px; padding: 0 8px; }
+.th-links a, .th-set .linkish, .th-set a.linkish, .th-all .rs-chip { display: inline-flex; align-items: center; min-height: 44px; }
+.th-all .rs-chip { padding: 0 14px; }
+.th-board { min-height: 44px; display: flex; align-items: center; }
+.th-set button { min-height: 44px; }
+.th-main .lr-split { font-size: 13px; color: var(--muted); }

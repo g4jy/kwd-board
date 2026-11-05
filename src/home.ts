@@ -1,21 +1,50 @@
-// 시작 화면: KWD 폴더가 연결돼 있으면 오늘 수업 시간표와 학생 목록, 아니면 폴더 연결 한 번.
-// 학생을 누르면 그 학생의 오늘 판이 열리고, 브리핑·수업안·로드맵·지난 수업이 선생님 화면에만 붙는다.
-import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl } from './store';
+// 선생님 첫 화면 (T160): 오늘 수업 목록 → 학생 줄을 누르면 수업 카드(전·중·후). 연결·폴더·방 코드·체험은 ⚙ 설정 한 곳.
+// 학생 이름·정보는 선생님 열쇠로 런타임에만 불러온다 (이 저장소에는 없음). 학생 정보는 읽기만.
+import * as Y from 'yjs';
+import { WebsocketProvider } from 'y-websocket';
+import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl, DEFAULT_SERVER } from './store';
 import { h, fmtDateTime, toast } from './ui';
 import { gasReady, gasCall } from './gas';
 import { listSessions } from './recstore';
-import { loadPack } from './kwdfolder';
-import { canUseFolder, folderState, pickWorkFolder, useDroppedItems, PICKER_BLOCKED, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, packetFor, isDemo, loadRoster, saveRosterEdit, loadRosterTeacher, type StudentEntry, type BriefLesson, type Roster, type RosterStudent, type RosterEdit, type RosterStatus } from './kwdfolder';
+import { hubCards, HUB_URL, type HubCard } from './homework';
+import { loadStudentInfo, infoFor, packetFor, canUseFolder, folderState, pickWorkFolder, useDroppedItems, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, isDemo, loadRoster, saveRosterEdit, loadRosterTeacher, type StudentEntry, type BriefLesson, type StudentInfo, type Roster, type RosterStudent, type RosterEdit, type RosterStatus } from './kwdfolder';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
+const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+const list = (v: unknown): string[] => (Array.isArray(v) ? v : typeof v === 'string' && v ? [v] : []).map((x) => String(x).trim()).filter(Boolean);
+const HW_LABEL: Record<string, [string, string]> = {
+  done: ['과제 했음', 'ok'],
+  doing: ['과제 하는 중', 'warn'],
+  open: ['과제 안 함', 'bad'],
+  wait: ['과제 안 함 · 승인 대기', 'bad'],
+  skipped: ['과제 건너뜀', 'mute'],
+  rest: ['쉬는 날', 'mute'],
+  none: ['과제 세트 없음', 'mute'],
+};
+const mins = (t: string) => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(t || '');
+  return m ? Number(m[1]) * 60 + Number(m[2]) : -1;
+};
+const nowMin = () => new Date().getHours() * 60 + new Date().getMinutes();
+
+// 오늘 수업 한 줄에 필요한 것을 한곳에 모은 값
+interface Row {
+  l: BriefLesson;
+  info?: StudentInfo;
+  hub?: HubCard;
+  sid: string;
+  checks: string[];
+}
 
 export class HomeScreen {
   readonly root: HTMLElement;
   private alive = true;
   private names = new Map<string, string>(); // 학생 번호 → 이름 (열쇠가 있을 때 화면에서만)
+  private peek: { provider: WebsocketProvider; doc: Y.Doc } | null = null;
+  private openCard: HTMLElement | null = null;
 
   constructor() {
-    this.root = h('div', { class: 'home' });
+    this.root = h('div', { class: 'home th' });
     void this.render();
   }
 
@@ -26,118 +55,286 @@ export class HomeScreen {
     location.hash = `#/b/${bid}?r=t&st=${encodeURIComponent(id || folder)}`;
   }
 
+  private async copyStudentLink(folder: string) {
+    const code = await ensureClassCode(folder);
+    if (!code) return toast('체험 화면에서는 학생 링크가 없어요');
+    const srv = getServerUrl();
+    const srvQ = srv && srv !== DEFAULT_SERVER ? `?srv=${encodeURIComponent(srv)}` : '';
+    const url = `${location.origin}${location.pathname}#/c/${code}${srvQ}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('학생 링크를 복사했어요');
+    } catch {
+      window.prompt('학생 링크 (복사해 주세요)', url);
+    }
+  }
+
   private async render() {
+    this.stopPeek();
+    this.openCard = null;
     this.root.innerHTML = '';
     const d = new Date();
-    const head = h('div', { class: 'home-head' }, h('h1', {}, 'KWD 클래스룸'), h('span', { class: 'home-date' }, `${d.getMonth() + 1}월 ${d.getDate()}일 ${WEEK[d.getDay()]}`));
+    const gear = h('button', { type: 'button', class: 'th-icon', 'aria-label': '설정', title: '설정' }, '⚙');
+    const hub = h('a', { class: 'th-hub', href: HUB_URL, target: '_blank', rel: 'noopener' }, '허브로');
+    const head = h('div', { class: 'th-head' }, h('div', { class: 'th-title' }, h('h1', {}, '오늘 수업'), h('span', { class: 'home-date' }, `${d.getMonth() + 1}월 ${d.getDate()}일 ${WEEK[d.getDay()]}요일`)), h('div', { class: 'th-tools' }, hub, gear));
     this.root.append(head);
+    const set = h('div', { class: 'th-settings', hidden: '' });
+    gear.addEventListener('click', () => {
+      set.hidden = !set.hidden;
+      gear.classList.toggle('on', !set.hidden);
+    });
+    this.root.append(set);
     const main = h('div', { class: 'home-main' });
     this.root.append(main);
 
     const remote = gasReady();
     const fs = canUseFolder() ? await folderState() : { state: 'none' as const, name: '' };
     if (!this.alive) return;
+    let connected = false;
+    let problem = '';
     if (remote) {
-      // 폴더 고르기 없이 구글 드라이브에서 읽는다 (T083d). 안 되면 이유와 다시 시도만 보여 준다
+      const wait = h('p', { class: 'empty th-loading' }, '구글 드라이브에서 불러오는 중…');
+      main.append(wait);
       const ok = await gasCall('ping', {}, 20_000).then(() => '', (e: Error) => e.message || 'fail');
       if (!this.alive) return;
-      if (!ok) await this.renderConnected(main);
-      else {
-        const card = h('div', { class: 'home-card' });
-        const again = h('button', { type: 'button', class: 'primary big' }, '다시 시도');
+      wait.remove();
+      if (!ok) connected = true;
+      else problem = ok === 'auth' ? '이 기기의 열쇠가 맞지 않아요. 선생님 링크를 다시 열어 주세요.' : ok === 'net' ? '구글 드라이브에 닿지 못했어요. 인터넷을 확인하고 다시 시도해 주세요.' : '구글 드라이브 연결이 아직 준비되지 않았어요 (' + ok + ').';
+    } else if (canUseFolder() && fs.state === 'granted') connected = true;
+    else if (canUseFolder() && (fs.state === 'prompt' || fs.state === 'denied')) problem = `폴더 접근을 다시 허용해야 해요 (${fs.name}).`;
+    else problem = '이 기기는 아직 연결되지 않았어요. 선생님 링크로 한 번 열면 저절로 연결돼요.';
+
+    if (connected) await this.renderToday(main);
+    else {
+      const card = h('div', { class: 'th-empty' }, h('p', { class: 'th-empty-t' }, problem));
+      const row = h('div', { class: 'th-empty-a' });
+      if (remote) {
+        const again = h('button', { type: 'button', class: 'primary' }, '다시 시도');
         again.addEventListener('click', () => void this.render());
-        const why = ok === 'auth' ? '이 기기의 열쇠가 맞지 않아요. 선생님 링크를 다시 열어 주세요.' : ok === 'net' ? '구글 드라이브에 닿지 못했어요. 인터넷을 확인하고 다시 시도해 주세요.' : '구글 드라이브 연결이 아직 준비되지 않았어요 (' + ok + ').';
-        card.append(h('p', { class: 'home-lead' }, why), again);
-        main.append(card);
-        this.renderManual(main, true);
+        row.append(again);
+      } else if (canUseFolder() && (fs.state === 'prompt' || fs.state === 'denied')) {
+        const b = h('button', { type: 'button', class: 'primary' }, '폴더 다시 열기');
+        b.addEventListener('click', async () => ((await reopenFolder()) ? void this.render() : toast('폴더를 열지 못했어요. 설정에서 다시 골라 주세요.')));
+        row.append(b);
       }
-    } else if (canUseFolder() && fs.state === 'granted') await this.renderConnected(main);
-    else if (canUseFolder() && (fs.state === 'prompt' || fs.state === 'denied')) {
-      const card = h('div', { class: 'home-card' });
-      const b = h('button', { type: 'button', class: 'primary big' }, '컴퓨터 폴더 열기');
-      b.addEventListener('click', async () => {
-        if (await reopenFolder()) void this.render();
-        else toast('폴더를 열지 못했어요. 다시 골라 주세요.');
+      const more = h('button', { type: 'button' }, '설정 열기');
+      more.addEventListener('click', () => {
+        set.hidden = false;
+        gear.classList.add('on');
       });
-      card.append(h('p', { class: 'home-lead' }, `오늘 수업과 학생 자료를 보려면 한 번 눌러 주세요 (${fs.name}).`), b);
+      row.append(more);
+      card.append(row);
       main.append(card);
-      this.renderManual(main, true);
-    } else {
-      // 열쇠도 폴더도 없는 기기: 안내 한 줄. 폴더 직접 연결은 '고급' 안에 둔다
-      const card = h('div', { class: 'home-card' });
-      card.append(h('p', { class: 'home-lead' }, '선생님 링크로 이 기기를 한 번 열면 학생·녹화·자료가 저절로 연결돼요.'), h('p', { class: 'home-note' }, '링크는 선생님이 가진 클래스룸 주소(…?k=…)예요. 한 번 열면 이 기기에 기억돼요.'));
-      card.append(h('a', { class: 'linkish home-demo', href: '#/demo' }, '열쇠 없이 먼저 체험해 보기 →'));
-      main.append(card);
-      this.renderAdvanced(main);
-      this.renderManual(main, canUseFolder());
     }
-    this.renderBoards(main);
-    this.renderFoot(fs.state !== 'none' ? fs.name : '');
+    this.renderSettings(set, connected, fs.state !== 'none' ? fs.name : '');
+    if (!connected) {
+      this.root.insertBefore(main, set); // 안 될 때는 이유와 [다시 시도]가 설정보다 위
+      set.hidden = false;
+      gear.classList.add('on');
+    }
   }
 
-
-  // 고급: 이 컴퓨터의 KWD 폴더를 직접 연결 (열쇠가 없을 때만 필요)
-  private renderAdvanced(main: HTMLElement) {
-    if (!canUseFolder()) return;
-    const det = h('details', { class: 'home-boards' });
-    det.append(h('summary', {}, '고급 · 컴퓨터 폴더 직접 연결'));
-    const card = h('div', { class: 'home-card' });
-    const b = h('button', { type: 'button', class: 'big' }, '폴더 연결하기');
-    const msg = h('p', { class: 'home-warn', hidden: '' });
-    const show = (r: { ok: boolean; name?: string; message?: string }) => {
-      if (r.ok) {
-        toast(`연결했어요: ${r.name}`);
-        void this.render();
-        return;
-      }
-      if (!r.message) return;
-      msg.hidden = false;
-      msg.textContent = r.message;
-    };
-    b.addEventListener('click', async () => show(await pickWorkFolder()));
-    card.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      card.classList.add('drop');
+  // ---- 오늘 수업 목록 ----
+  private async renderToday(main: HTMLElement) {
+    const skel = h('p', { class: 'empty th-loading' }, '오늘 수업을 불러오는 중…');
+    main.append(skel);
+    const [brief, infos, hubs, students] = await Promise.all([briefFor(ymd()).catch(() => null), loadStudentInfo().catch(() => [] as StudentInfo[]), hubCards().catch(() => null), listStudents().catch(() => [] as StudentEntry[])]);
+    if (!this.alive) return;
+    skel.remove();
+    for (const s of students) if (s.id) this.names.set(s.id, s.name);
+    const lessons = brief?.lessons || [];
+    const rows: Row[] = lessons.map((l) => {
+      const info = infoFor(infos, l.folder, l.name);
+      const hub = hubs?.find((c) => (!!info?.st && c.student_id === info.st) || (!!info?.sno && c.sno === info.sno) || (!!c.name && norm(c.name) === norm(l.name)));
+      return { l, info, hub, sid: (/\(([^)]+)\)/.exec(l.folder) || [])[1] || '', checks: this.checksOf(l) };
     });
-    card.addEventListener('dragleave', () => card.classList.remove('drop'));
-    card.addEventListener('drop', async (e) => {
-      e.preventDefault();
-      card.classList.remove('drop');
-      if (e.dataTransfer) show(await useDroppedItems(e.dataTransfer.items));
-    });
-    card.append(h('p', { class: 'home-note' }, 'KWD 안의 work 폴더를 고르거나 끌어다 놓으세요. 선생님 링크가 있으면 필요 없어요.'), b, msg);
-    det.append(card);
+    const sec = h('section', { class: 'th-list' });
+    if (!rows.length) sec.append(h('div', { class: 'th-empty' }, h('p', { class: 'th-empty-t' }, brief ? '오늘은 잡힌 수업이 없어요.' : '오늘 아침 브리핑이 아직 없어요. 아래 ‘학생 전체’에서 학생을 고르세요.')));
+    const now = nowMin();
+    let nextMarked = false;
+    for (const r of rows) {
+      const t = mins(r.l.time);
+      const past = t >= 0 && now > t + 50;
+      const live = t >= 0 && now >= t - 5 && now <= t + 50;
+      const next = !past && !live && !nextMarked;
+      if (live || next) nextMarked = true;
+      sec.append(this.item(r, past, live ? 'live' : next ? 'next' : ''));
+    }
+    main.append(sec);
+    if (hubs === null && rows.length) main.append(h('p', { class: 'th-foot' }, '과제 했음/안 함 표시는 숙제 연결(판 안 메뉴 ‘숙제 연결’)이 있어야 나와요.'));
+    // 학생 전체 (목표 × 수준 표) — 둘째 자리
+    const roster = await loadRoster();
+    if (!this.alive) return;
+    const det = h('details', { class: 'th-all' });
+    det.append(h('summary', {}, `학생 전체${roster ? ' ' + roster.students.length : students.length ? ' ' + students.length : ''}`));
+    if (roster && roster.students.length) det.append(this.rosterGrid(roster, students));
+    else det.append(this.studentList(students));
     main.append(det);
   }
 
-  private async renderConnected(main: HTMLElement) {
-    const today = ymd();
-    const [brief, students] = await Promise.all([briefFor(today).catch(() => null), listStudents().catch(() => [] as StudentEntry[])]);
-    if (!this.alive) return;
-    const byFolder = new Map(students.map((s) => [s.folder, s]));
-    for (const s of students) if (s.id) this.names.set(s.id, s.name);
-    const edits = await loadRosterTeacher();
-    // 오늘 수업
-    const sec = h('section', { class: 'home-sec' });
-    const lessons = brief?.lessons || [];
-    sec.append(h('h2', {}, lessons.length ? `오늘 수업 ${lessons.length}개` : '오늘 수업'));
-    if (!lessons.length) sec.append(h('p', { class: 'empty' }, brief ? '오늘 브리핑에 수업이 없어요.' : '오늘 아침 브리핑(brief_data.json)이 아직 없어요. 아래 목록에서 학생을 고르세요.'));
-    const now = `${String(new Date().getHours()).padStart(2, '0')}:${String(new Date().getMinutes()).padStart(2, '0')}`;
-    let nextMarked = false;
-    for (const l of lessons) {
-      const s = byFolder.get(l.folder);
-      const done = this.isPast(l.time, now);
-      const isNext = !done && !nextMarked;
-      if (isNext) nextMarked = true;
-      sec.append(this.lessonRow(l, s, done, isNext, edits[l.folder]?.trial));
-    }
-    main.append(sec);
+  // 확인할 것: 내가 한 약속 중 안 끝난 것 · 학생에게 물어볼 것 · 학생이 헷갈린 말
+  private checksOf(l: BriefLesson): string[] {
+    const out: string[] = [];
+    for (const p of l.promises?.tutor || []) if (p.text && !/done|끝|완료/i.test(p.status || '')) out.push('약속: ' + p.text);
+    for (const r of l.rapport || []) if (r.follow_up) out.push('물어볼 것: ' + r.follow_up);
+    const st = (l.warmup_struggled || []).map((x) => (typeof x === 'string' ? x : x.kr)).filter(Boolean);
+    if (st.length) out.push('헷갈린 말: ' + st.slice(0, 5).join(', '));
+    return out;
+  }
 
-    // 학생 전체: 학생 표(_roster.json)가 있으면 목표 × 수준 표, 없으면 찾기 목록
-    const roster = await loadRoster();
-    if (!this.alive) return;
-    if (roster && roster.students.length) main.append(this.rosterGrid(roster, students));
-    else main.append(this.studentList(students));
+  private item(r: Row, past: boolean, mark: '' | 'live' | 'next'): HTMLElement {
+    const { l } = r;
+    const it = h('article', { class: 'th-item' + (past ? ' past' : '') + (mark ? ' ' + mark : '') });
+    const lv = (l as unknown as { level?: string }).level || '';
+    const level = r.info?.level || (/^L\d/.test(lv) ? lv : '');
+    const unit = r.info?.next_unit || (l.next_lesson ? `수업 #${l.next_lesson}` : '');
+    const sub = h('span', { class: 'th-sub' });
+    if (level) sub.append(h('span', { class: 'th-l' }, level));
+    if (unit) sub.append(h('span', {}, '다음 ' + unit));
+    const hw = r.hub?.today?.state ? HW_LABEL[r.hub.today.state] : undefined;
+    if (hw) sub.append(h('span', { class: 'th-chip ' + hw[1] }, hw[0]));
+    if (r.checks.length) sub.append(h('span', { class: 'th-chip todo' }, `확인할 것 ${r.checks.length}`));
+    const go = h('button', { type: 'button', class: 'primary' }, '판 열기');
+    const cp = h('button', { type: 'button' }, '학생 링크 복사');
+    go.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void this.openStudent(l.folder, r.sid);
+    });
+    cp.addEventListener('click', (e) => {
+      e.stopPropagation();
+      void this.copyStudentLink(l.folder);
+    });
+    const row = h('div', { class: 'th-row', role: 'button', tabindex: '0', 'aria-expanded': 'false' }, h('span', { class: 'th-time' }, l.time || '—'), h('span', { class: 'th-main' }, h('span', { class: 'th-name' }, l.name, mark ? h('em', {}, mark === 'live' ? '지금' : '다음') : ''), sub), h('span', { class: 'th-acts' }, go, cp));
+    // 오늘 묶음이 있으면 시간 배분 한 줄 (대화 5 · 과제 10 · 본 30 · 마무리 5)
+    void packetFor(l.folder).then((pk) => {
+      const segs = pk?.time_split?.segments;
+      if (segs?.length) row.querySelector('.th-main')?.append(h('span', { class: 'lr-split' }, segs.map((g) => `${g.label_ko} ${g.minutes}`).join(' · ')));
+    });
+    const card = h('div', { class: 'th-card', hidden: '' });
+    const toggle = () => {
+      const open = card.hidden;
+      if (this.openCard && this.openCard !== card) {
+        this.openCard.hidden = true;
+        this.openCard.parentElement?.querySelector('.th-row')?.setAttribute('aria-expanded', 'false');
+        this.stopPeek();
+      }
+      card.hidden = !open;
+      row.setAttribute('aria-expanded', String(open));
+      this.openCard = open ? card : null;
+      if (open) void this.fillCard(card, r);
+      else this.stopPeek();
+    };
+    row.addEventListener('click', toggle);
+    row.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && e.target === row && (e.preventDefault(), toggle()));
+    it.append(row, card);
+    return it;
+  }
+
+  // ---- 수업 카드: 전 · 중 · 후 ----
+  private async fillCard(card: HTMLElement, r: Row) {
+    const { l, info } = r;
+    card.innerHTML = '';
+    const col = (title: string) => {
+      const c = h('div', { class: 'th-col' }, h('h3', {}, title));
+      card.append(c);
+      return c;
+    };
+    const line = (c: HTMLElement, label: string, text: string, cls = '') => {
+      if (!text) return;
+      c.append(h('p', { class: 'th-line ' + cls }, h('b', {}, label), text));
+    };
+    const link = (href: string, text: string) => h('a', { href, target: '_blank', rel: 'noopener' }, text);
+    // 전
+    const pre = col('수업 전');
+    const core = l.last_core;
+    const last = [core?.overview, ...(core?.taught?.length ? ['배운 것: ' + core.taught.slice(0, 5).join(', ')] : []), ...(core?.corrections?.length ? ['고친 것: ' + core.corrections.slice(0, 2).join(', ')] : [])].filter((x): x is string => !!x).slice(0, 3);
+    pre.append(h('p', { class: 'th-k' }, `지난 수업${l.last_lesson ? ' #' + l.last_lesson : ''}${l.last_date ? ' · ' + l.last_date.slice(5).replace('-', '/') : ''}`));
+    if (last.length) for (const t of last) pre.append(h('p', { class: 'th-li' }, t));
+    else pre.append(h('p', { class: 'empty' }, '지난 수업 기록이 아직 없어요.'));
+    const plan = (l.prep?.summary || []).map((x) => x.replace(/`|\*\*/g, ''));
+    pre.append(h('p', { class: 'th-k' }, '오늘 수업안'));
+    if (plan.length) for (const t of plan.slice(0, 3)) pre.append(h('p', { class: 'th-li' }, t));
+    else if (l.next_focus) pre.append(h('p', { class: 'th-li' }, l.next_focus));
+    else pre.append(h('p', { class: 'empty' }, '오늘 수업안이 아직 없어요.'));
+    const planLinks = Object.values(l.prep?.files || {}).filter((f) => !!f?.link);
+    if (planLinks.length) {
+      const a = h('p', { class: 'th-links' });
+      for (const f of planLinks.slice(0, 3)) a.append(link(f.link as string, f.name || '수업안'));
+      pre.append(a);
+    }
+    line(pre, '피할 주제', list(info?.avoid_topics).join(', '), 'warn');
+    line(pre, '알아 둘 것', [...list(info?.know), ...list(info?.memo).slice(-2)].slice(0, 3).join(' · '));
+    if (r.checks.length) {
+      pre.append(h('p', { class: 'th-k' }, `확인할 것 ${r.checks.length}`));
+      for (const c of r.checks) pre.append(h('p', { class: 'th-li' }, c));
+    }
+    // 중
+    const mid = col('수업 중');
+    const go = h('button', { type: 'button', class: 'primary big' }, '판 열기');
+    go.addEventListener('click', () => void this.openStudent(l.folder, r.sid));
+    const dot = h('p', { class: 'th-presence' }, h('i', { class: 'dot off' }), h('span', {}, '학생 접속 확인 중…'));
+    const rec = h('p', { class: 'th-line' }, h('b', {}, '녹화'), h('span', {}, '확인 중…'));
+    mid.append(go, dot, rec);
+    // 후
+    const post = col('수업 후');
+    const hw = r.hub?.today?.state ? HW_LABEL[r.hub.today.state] : undefined;
+    if (hw) line(post, '과제', hw[0] + (r.hub?.today?.est ? ` · 예상 ${r.hub.today.est}분` : ''), hw[1] === 'bad' ? 'warn' : '');
+    else line(post, '과제', l.promises?.submissions || '과제 상태는 숙제 연결이 있어야 나와요', 'mute');
+    const docs = h('p', { class: 'th-links' });
+    if (l.links?.lesson_doc) docs.append(link(l.links.lesson_doc, '지난 수업 정리 문서'));
+    if (l.links?.folder) docs.append(link(l.links.folder, '학생 폴더'));
+    docs.append(link(HUB_URL, '허브에서 보기'));
+    post.append(docs);
+    const boards = loadIndex().filter((b) => folderForBoard(b.id) === l.folder || (!!r.sid && b.student === r.sid));
+    if (boards.length) {
+      post.append(h('p', { class: 'th-k' }, '지난 판'));
+      for (const b of boards.slice(0, 3)) post.append(h('a', { class: 'th-board', href: `#/b/${b.id}?r=t` }, fmtDateTime(b.lastAt || b.createdAt)));
+    }
+    // 이 기기의 녹화 상태 + 학생 접속(서버가 있을 때 판 방을 잠깐 엿봄)
+    const tag = r.sid.replace(/[^\w-]/g, '');
+    const recs = (await listSessions().catch(() => [])).filter((x) => x.tag === tag);
+    const x = recs[0];
+    rec.lastChild!.textContent = !x ? '이 기기에서 한 녹화 없음' : `${fmtDateTime(x.startedAt)} · ${x.uploaded ? '드라이브에 올라감' : x.ended ? '올리는 중' : '녹화 중'}`;
+    if (!card.isConnected || card.hidden) return;
+    await ensureClassCode(l.folder);
+    if (!card.isConnected || card.hidden) return;
+    this.watchStudent(boardIdFor(l.folder), dot);
+  }
+
+  // 판 방의 접속자를 읽기만 한다 (내 상태는 알리지 않음). 서버 주소가 없으면 안내만
+  private watchStudent(bid: string, dot: HTMLElement) {
+    this.stopPeek();
+    const set = (on: boolean, text: string) => {
+      dot.innerHTML = '';
+      dot.append(h('i', { class: 'dot ' + (on ? 'on' : 'off') }), h('span', {}, text));
+    };
+    const srv = getServerUrl();
+    if (!srv) return set(false, '학생 접속은 서버에 연결해야 보여요 (판 안에서는 보여요)');
+    try {
+      const doc = new Y.Doc();
+      const provider = new WebsocketProvider(srv.replace(/\/+$/, ''), 'kwd-' + bid, doc, { connect: true });
+      provider.awareness.setLocalState(null);
+      this.peek = { provider, doc };
+      const upd = () => {
+        const n = Array.from(provider.awareness.getStates().values()).filter((s) => (s as { role?: string }).role === 'student').length;
+        set(n > 0, n > 0 ? `학생 접속 중${n > 1 ? ' ' + n : ''}` : provider.wsconnected ? '학생 아직 안 들어왔어요' : '서버에 연결 중…');
+      };
+      provider.awareness.on('change', upd);
+      provider.on('status', upd);
+      upd();
+    } catch {
+      set(false, '접속 상태를 읽지 못했어요');
+    }
+  }
+  private stopPeek() {
+    if (!this.peek) return;
+    try {
+      this.peek.provider.destroy();
+      this.peek.doc.destroy();
+    } catch {
+      /* ignore */
+    }
+    this.peek = null;
   }
 
   private studentList(students: StudentEntry[]): HTMLElement {
@@ -346,158 +543,37 @@ export class HomeScreen {
     return card;
   }
 
-
-  // 이름을 누르면: 그 학생의 교실 한눈에 — 오늘 판 열기 · 지난 판 · 녹화 상태 · 수업 자료
-  private async showStudent(r: RosterStudent, sid: string, purposes: Array<{ key: string; label: string }>) {
+  // 학생 전체 표에서 학생을 누르면: 같은 수업 카드를 표 위에 연다 (오늘 수업이 아니어도)
+  private async showStudent(r: RosterStudent, sid: string, _purposes: Array<{ key: string; label: string }>) {
     this.root.querySelector('.stu-panel')?.remove();
-    const panel = h('section', { class: 'home-sec stu-panel' });
-    const close = h('button', { type: 'button', class: 'linkish stu-close' }, '닫기');
+    const infos = await loadStudentInfo().catch(() => [] as StudentInfo[]);
+    const l: BriefLesson = { time: '', name: r.name, folder: r.folder, last_date: r.last_lesson, last_lesson: r.lessons };
+    const row: Row = { l, info: infoFor(infos, r.folder, r.name), sid, checks: [] };
+    const know = (r.know || []).filter(Boolean);
+    const panel = h('section', { class: 'th-card stu-panel' });
+    const close = h('button', { type: 'button', class: 'th-close' }, '닫기');
     close.addEventListener('click', () => panel.remove());
-    const label = purposes.find((p) => p.key === r.purpose)?.label || '목적 미정';
-    const go = h('button', { type: 'button', class: 'primary big' }, '오늘 판 열기');
-    go.addEventListener('click', () => void this.openStudent(r.folder, sid));
-    panel.append(
-      h('div', { class: 'stu-head' }, h('h2', {}, `${r.name}${sid && /^\d+$/.test(sid) ? ' · S' + sid : ''}`), close),
-      h('p', { class: 'home-note' }, [r.stage || '단계 미정', label, r.country ? r.country.toUpperCase() : '', r.last_lesson ? `마지막 수업 ${r.last_lesson}` : '', r.lessons ? `수업 ${r.lessons}회` : ''].filter(Boolean).join(' · ')),
-      ...(r.know || []).filter(Boolean).slice(0, 2).map((k) => h('p', { class: 'rs-know' }, k)),
-      go,
-    );
-    const sub = (title: string) => {
-      const box = h('div', { class: 'stu-sub' }, h('h3', {}, title));
-      panel.append(box);
-      return box;
+    this.root.querySelector('.th-all')?.prepend(panel);
+    const det = this.root.querySelector('.th-all') as HTMLDetailsElement | null;
+    if (det) det.open = true;
+    await this.fillCard(panel, row);
+    panel.prepend(h('div', { class: 'th-panel-head' }, h('h2', {}, r.name + ' · ' + [r.stage || '단계 미정', r.country ? r.country.toUpperCase() : ''].filter(Boolean).join(' · ')), close));
+    if (know.length) panel.querySelector('.th-col')?.append(h('p', { class: 'th-line' }, h('b', {}, '표의 메모'), know.slice(0, 2).join(' · ')));
+    panel.scrollIntoView?.({ block: 'nearest' });
+  }
+
+  // ---- ⚙ 설정: 연결 · 폴더 · 방 코드 · 서버 · 체험 · 지난 수업 ----
+  private renderSettings(box: HTMLElement, connected: boolean, folderName: string) {
+    const part = (title: string) => {
+      const s = h('section', { class: 'th-set' }, h('h3', {}, title));
+      box.append(s);
+      return s;
     };
-    // 지난 판 (이 기기에서 열었던 판)
-    const boards = loadIndex().filter((b) => folderForBoard(b.id) === r.folder || (!!sid && b.student === sid));
-    const bx = sub(`지난 판 ${boards.length}`);
-    if (!boards.length) bx.append(h('p', { class: 'empty' }, '이 기기에서 연 판이 아직 없어요.'));
-    for (const b of boards.slice(0, 8)) bx.append(h('a', { class: 'board-row', href: `#/b/${b.id}?r=t` }, h('span', { class: 'br-student' }, '판'), h('span', { class: 'br-date' }, fmtDateTime(b.lastAt || b.createdAt))));
-    // 녹화 상태
-    const rx = sub('녹화');
-    const tag = sid.replace(/[^\w-]/g, '');
-    const recs = (await listSessions().catch(() => [])).filter((x) => x.tag === tag);
-    if (!recs.length) rx.append(h('p', { class: 'empty' }, '이 기기에서 녹화한 수업이 없어요.'));
-    for (const x of recs.slice(0, 5)) rx.append(h('p', { class: 'home-note' }, `${fmtDateTime(x.startedAt)} · ${x.uploaded ? '드라이브에 올라감' : x.ended ? '올리는 중 (인터넷이 되면 이어서 올려요)' : '녹화 중'}`));
-    // 수업 자료
-    const mx = sub('수업 자료');
-    mx.append(h('p', { class: 'empty' }, '불러오는 중…'));
-    panel.scrollIntoView?.({ block: 'start' });
-    this.root.querySelector('.home-main')?.prepend(panel);
-    const pack = await loadPack(r.folder).catch(() => null);
-    if (!panel.isConnected) return;
-    mx.querySelector('.empty')?.remove();
-    if (!pack) mx.append(h('p', { class: 'empty' }, '자료를 읽지 못했어요.'));
-    else {
-      for (const f of pack.files.slice(0, 8)) mx.append(h('p', { class: 'home-note' }, f.name));
-      if (!pack.files.length) mx.append(h('p', { class: 'empty' }, '판에 넣을 자료가 아직 없어요.'));
-      const ls = pack.lessons.slice(-3).reverse();
-      if (ls.length) mx.append(h('p', { class: 'home-note' }, '지난 수업: ' + ls.map((l) => `#${l.n} ${l.date.slice(5).replace('-', '/')}`).join(' · ')));
-    }
-  }
-
-  private isPast(time: string, now: string): boolean {
-    // 수업은 50분: 시작 + 50분이 지났으면 지난 수업
-    const m = /^(\d{1,2}):(\d{2})/.exec(time || '');
-    if (!m) return false;
-    const end = Number(m[1]) * 60 + Number(m[2]) + 50;
-    const [nh, nm] = now.split(':').map(Number);
-    return nh * 60 + nm > end;
-  }
-
-  private lessonRow(l: BriefLesson, s: StudentEntry | undefined, done: boolean, isNext: boolean, trialEdit?: boolean): HTMLElement {
-    const trial = trialEdit ?? (s?.trial || (!l.last_lesson && /pending/.test(l.folder)));
-    const meta = [l.next_lesson ? `오늘 #${l.next_lesson}` : '', l.level_hint ? l.level_hint.replace(/\s*\(.*\)/, '') : '', trial ? '체험' : ''].filter(Boolean).join(' · ');
-    const goal = (l.prep?.summary || [])[0]?.replace(/^오늘 목표:\s*/, '').replace(/`|\*\*/g, '') || l.next_focus || '';
-    const r = h('button', { type: 'button', class: 'lesson-row' + (done ? ' done' : '') + (isNext ? ' next' : '') }, h('span', { class: 'lr-time' }, l.time), h('span', { class: 'lr-body' }, h('span', { class: 'lr-name' }, l.name), h('span', { class: 'lr-meta' }, meta), goal ? h('span', { class: 'lr-goal' }, goal) : ''), h('span', { class: 'lr-go' }, isNext ? '시작' : '열기'));
-    r.addEventListener('click', () => this.openStudent(l.folder, s?.id || (/\(([^)]+)\)/.exec(l.folder) || [])[1] || ''));
-    // 오늘 묶음이 있으면 배분 한 줄 (대화 5 · 과제 10 · 본 30 · 마무리 5)
-    void packetFor(l.folder).then((pk) => {
-      const segs = pk?.time_split?.segments;
-      if (segs?.length) r.querySelector('.lr-body')?.append(h('span', { class: 'lr-split' }, segs.map((g) => `${g.label_ko} ${g.minutes}`).join(' · ')));
-    });
-    return r;
-  }
-
-  // 폴더 없이: 학생 번호로 새 판
-  private renderManual(main: HTMLElement, secondary = false) {
-    const form = h('form', { class: 'new-board' + (secondary ? ' secondary' : '') });
-    const input = h('input', { type: 'text', inputmode: 'numeric', placeholder: '학생 번호', 'aria-label': '학생 번호', autocomplete: 'off' }) as HTMLInputElement;
-    const btn = h('button', { type: 'submit', class: secondary ? '' : 'primary' }, '새 수업');
-    form.append(input, btn);
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const student = input.value.trim();
-      if (!student) {
-        input.focus();
-        return;
-      }
-      location.hash = `#/b/${randomId(10)}?r=t&st=${encodeURIComponent(student)}`;
-    });
-    main.append(form);
-  }
-
-  private renderBoards(main: HTMLElement) {
-    const list = loadIndex();
-    if (!list.length) return;
-    const det = h('details', { class: 'home-boards' });
-    det.append(h('summary', {}, `지난 판 ${list.length}`));
-    const ul = h('div', { class: 'board-list' });
-    for (const b of list.slice(0, 40)) {
-      const folder = folderForBoard(b.id);
-      const row = h('a', { class: 'board-row', href: `#/b/${b.id}?r=t` });
-      const nm = folder ? folder.replace(/\s*\(.*\)$/, '') : (b.student && this.names.get(b.student)) || (b.student ? `학생 ${b.student}` : '판');
-      row.append(h('span', { class: 'br-student' }, nm), h('span', { class: 'br-date' }, fmtDateTime(b.lastAt || b.createdAt)));
-      const del = h('button', { type: 'button', class: 'br-del', title: '목록에서 빼기 (판은 지워지지 않음)' }, '×');
-      del.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!del.classList.contains('confirm')) {
-          del.classList.add('confirm');
-          del.textContent = '빼기?';
-          window.setTimeout(() => {
-            del.classList.remove('confirm');
-            del.textContent = '×';
-          }, 2500);
-          return;
-        }
-        saveIndex(loadIndex().filter((x) => x.id !== b.id));
-        void this.render();
-      });
-      row.append(del);
-      ul.append(row);
-    }
-    det.append(ul);
-    main.append(det);
-  }
-
-  private renderFoot(folderName: string) {
     const srv = getServerUrl();
-    const foot = h('div', { class: 'home-foot' });
-    const open = h('form', { class: 'open-code' });
-    const codeInput = h('input', { type: 'text', placeholder: '받은 판 링크나 방 코드로 열기', 'aria-label': '방 코드' }) as HTMLInputElement;
-    open.append(codeInput, h('button', { type: 'submit' }, '열기'));
-    open.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const v = codeInput.value.trim();
-      if (!v) return;
-      const m = /#\/b\/([a-z0-9]+)(\?.*)?/i.exec(v);
-      if (m) location.hash = `#/b/${m[1]}${m[2] || '?r=t'}`;
-      else location.hash = `#/b/${v}?r=t`;
-    });
-    const links = h('div', { class: 'home-links' });
+    // 연결
+    const c = part('연결');
+    c.append(h('p', { class: 'th-line' }, gasReady() ? '구글 드라이브: ' + (connected ? '연결됨' : '연결 안 됨') : '구글 드라이브: 이 기기엔 열쇠가 없어요 (선생님 링크를 한 번 열면 저절로 연결돼요)'));
     const srvBtn = h('button', { type: 'button', class: 'linkish' }, srv ? '여러 기기 연결됨 · 바꾸기' : '이 기기에만 저장 중 · 여러 기기 연결');
-    links.append(srvBtn, h('a', { class: 'linkish', href: '#/demo' }, '체험 (모든 기능)'));
-    if (gasReady()) links.append(h('span', { class: 'home-note' }, '구글 드라이브 연결됨'));
-    else if (folderName && !isDemo()) {
-      const fb = h('button', { type: 'button', class: 'linkish' }, `KWD 폴더: ${folderName} · 바꾸기`);
-      fb.addEventListener('click', async () => {
-        await forgetFolder();
-        const r = await pickWorkFolder();
-        if (r.message) toast(r.message, 5000);
-        void this.render();
-      });
-      links.append(fb);
-    }
     const srvForm = h('form', { class: 'open-code', hidden: '' });
     const srvInput = h('input', { type: 'url', placeholder: 'wss://… (비우면 이 기기에서만)', value: srv, 'aria-label': '서버 주소' }) as HTMLInputElement;
     srvForm.append(srvInput, h('button', { type: 'submit' }, '저장'));
@@ -511,12 +587,107 @@ export class HomeScreen {
       srvForm.hidden = !srvForm.hidden;
       if (!srvForm.hidden) srvInput.focus();
     });
-    foot.append(open, links, srvForm);
-    this.root.append(foot);
+    c.append(srvBtn, srvForm);
+    // 방 코드로 열기 · 체험
+    const o = part('판 열기');
+    const open = h('form', { class: 'open-code' });
+    const codeInput = h('input', { type: 'text', placeholder: '받은 판 링크나 방 코드', 'aria-label': '방 코드' }) as HTMLInputElement;
+    open.append(codeInput, h('button', { type: 'submit' }, '열기'));
+    open.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = codeInput.value.trim();
+      if (!v) return;
+      const m = /#\/b\/([a-z0-9]+)(\?.*)?/i.exec(v);
+      if (m) location.hash = `#/b/${m[1]}${m[2] || '?r=t'}`;
+      else location.hash = `#/b/${v}?r=t`;
+    });
+    o.append(open, h('a', { class: 'linkish home-demo', href: '#/demo' }, '체험 (모든 기능, 가상 학생)'));
+    this.renderManual(o);
+    // 컴퓨터 폴더 (열쇠가 없을 때만 필요)
+    if (canUseFolder() && !gasReady()) this.renderAdvanced(part('컴퓨터 폴더 직접 연결'), folderName);
+    // 지난 수업 (이름 · 날짜). 목록에서 빼기는 '정리'를 켠 뒤에만
+    this.renderBoards(part('지난 수업'));
+  }
+
+  private renderAdvanced(box: HTMLElement, folderName: string) {
+    const b = h('button', { type: 'button' }, folderName && !isDemo() ? `KWD 폴더: ${folderName} · 바꾸기` : '폴더 연결하기');
+    const msg = h('p', { class: 'home-warn', hidden: '' });
+    const show = (r: { ok: boolean; name?: string; message?: string }) => {
+      if (r.ok) {
+        toast(`연결했어요: ${r.name}`);
+        void this.render();
+        return;
+      }
+      if (!r.message) return;
+      msg.hidden = false;
+      msg.textContent = r.message;
+    };
+    b.addEventListener('click', async () => {
+      if (folderName && !isDemo()) await forgetFolder();
+      show(await pickWorkFolder());
+    });
+    box.addEventListener('dragover', (e) => e.preventDefault());
+    box.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) show(await useDroppedItems(e.dataTransfer.items));
+    });
+    box.append(h('p', { class: 'home-note' }, 'KWD 안의 work 폴더를 고르거나 끌어다 놓으세요. 선생님 링크가 있으면 필요 없어요.'), b, msg);
+  }
+
+  // 폴더 없이: 학생 번호로 새 판
+  private renderManual(box: HTMLElement) {
+    const form = h('form', { class: 'open-code' });
+    const input = h('input', { type: 'text', inputmode: 'numeric', placeholder: '학생 번호', 'aria-label': '학생 번호', autocomplete: 'off' }) as HTMLInputElement;
+    form.append(input, h('button', { type: 'submit' }, '새 수업'));
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const student = input.value.trim();
+      if (!student) return input.focus();
+      location.hash = `#/b/${randomId(10)}?r=t&st=${encodeURIComponent(student)}`;
+    });
+    box.append(form);
+  }
+
+  private renderBoards(box: HTMLElement) {
+    const boards = loadIndex();
+    if (!boards.length) return void box.append(h('p', { class: 'empty' }, '이 기기에서 연 판이 아직 없어요.'));
+    const edit = h('button', { type: 'button', class: 'linkish' }, '정리하기');
+    const ul = h('div', { class: 'board-list' });
+    let editing = false;
+    const draw = () => {
+      ul.innerHTML = '';
+      for (const b of boards.slice(0, 40)) {
+        const folder = folderForBoard(b.id);
+        const nm = folder ? folder.replace(/\s*\(.*\)$/, '') : (b.student && this.names.get(b.student)) || '수업 판';
+        const row = h('div', { class: 'th-past' }, h('a', { href: `#/b/${b.id}?r=t` }, h('span', { class: 'br-student' }, nm), h('span', { class: 'br-date' }, fmtDateTime(b.lastAt || b.createdAt))));
+        if (editing) {
+          const del = h('button', { type: 'button', class: 'br-del' }, '목록에서 빼기');
+          del.addEventListener('click', () => {
+            if (!del.classList.contains('confirm')) {
+              del.classList.add('confirm');
+              del.textContent = '정말 빼기 (판은 그대로)';
+              return;
+            }
+            saveIndex(loadIndex().filter((x) => x.id !== b.id));
+            void this.render();
+          });
+          row.append(del);
+        }
+        ul.append(row);
+      }
+    };
+    edit.addEventListener('click', () => {
+      editing = !editing;
+      edit.textContent = editing ? '정리 끝' : '정리하기';
+      draw();
+    });
+    box.append(edit, ul);
+    draw();
   }
 
   destroy() {
     this.alive = false;
+    this.stopPeek();
     this.root.remove();
   }
 }

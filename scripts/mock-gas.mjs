@@ -17,12 +17,12 @@ const send = (res, o, code = 200) => {
 const ACT = {
   ping: () => ({ t: Date.now() }),
   ls: (q) => {
-    const d = path.join(mirror, ...(q.p || []));
+    const d = path.join(q.r === 'data' ? path.join(mirror, '..', 'data') : mirror, ...(q.p || []));
     if (!fs.existsSync(d)) throw new Error('notfound');
     return { list: fs.readdirSync(d, { withFileTypes: true }).map((e) => (e.isDirectory() ? { n: e.name, d: 1 } : { n: e.name, d: 0, s: fs.statSync(path.join(d, e.name)).size, m: fs.statSync(path.join(d, e.name)).mtimeMs })) };
   },
   get: (q) => {
-    const f = path.join(mirror, ...(q.p || []));
+    const f = path.join(q.r === 'data' ? path.join(mirror, '..', 'data') : mirror, ...(q.p || []));
     if (!fs.existsSync(f)) throw new Error('notfound');
     return { b: fs.readFileSync(f).toString('base64'), s: fs.statSync(f).size, m: fs.statSync(f).mtimeMs, t: 'application/octet-stream' };
   },

@@ -13,8 +13,8 @@ const res = {};
 // 선생님: 체험 → 오늘 수업 → 판
 await t.goto(`${BASE}/#/demo`);
 await t.click('.demo-card.main');
-await t.waitForSelector('.lesson-row');
-await t.click('.lesson-row.next');
+await t.waitForSelector('.th-item');
+await t.click('.th-item:is(.next,.live) .th-acts .primary');
 await t.waitForFunction(() => window.__kwd?.store?.meta?.get('demoReady'), null, { timeout: 30000 });
 const bid = t.url().match(/#\/b\/([a-z0-9]+)/)[1];
 const C = await t.evaluate(() => window.__kwd.pages()[0].id);

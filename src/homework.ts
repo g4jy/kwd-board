@@ -183,3 +183,21 @@ export async function historyFromApp(name: string, preply: string): Promise<HwHi
   }
   return { student: st.name, lastLesson: lastLesson ? ymd(lastLesson) : undefined, days, source: 'app' };
 }
+
+// 선생님 허브(T166) 서버 표: 학생별 오늘 과제 상태. 이 기기에 숙제 연결(주소·키)이 있을 때만. 실패하면 null (화면은 없는 대로 그린다)
+export interface HubCard {
+  student_id: string;
+  name?: string;
+  sno?: string;
+  today?: { date: string; state: string; est: number };
+}
+export async function hubCards(): Promise<HubCard[] | null> {
+  if (!hwConfig()) return null;
+  try {
+    const r = await call<{ students?: HubCard[] }>('teacher.home', {});
+    return Array.isArray(r.students) ? r.students : null;
+  } catch {
+    return null;
+  }
+}
+export const HUB_URL = 'https://g4jy.github.io/kwd-homework/teacher.html';

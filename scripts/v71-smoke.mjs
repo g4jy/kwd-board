@@ -12,8 +12,8 @@ p.on('console', (m) => m.type() === 'error' && errs.push('console: ' + m.text())
 const res = {};
 await p.goto(`${BASE}/#/demo`);
 await p.click('.demo-card.main');
-await p.waitForSelector('.lesson-row');
-await p.click('.lesson-row.next');
+await p.waitForSelector('.th-item');
+await p.click('.th-item:is(.next,.live) .th-acts .primary');
 await p.waitForFunction(() => window.__kwd?.store?.meta?.get('demoReady'), null, { timeout: 30000 });
 await p.waitForTimeout(1200);
 // 1) 노트: 비어 있고 접혀 있다, 목록에도 없다

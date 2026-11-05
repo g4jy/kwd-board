@@ -2,7 +2,7 @@
 // 오늘 수업(intake/<날짜>/brief_data.json)과 학생 폴더(Student_Lessons/<이름 (번호)>)를 판이 직접 읽는다.
 // AI·서버 없이 브라우저 안에서만 읽고, 학생 기기로는 아무것도 보내지 않는다.
 import { validUnit, type KwdUnit } from './units';
-import { gasReady } from './gas';
+import { gasReady, gasCall } from './gas';
 import { RemoteDir, remoteWork } from './remotefs';
 import { validPacket, indexEntries, type LessonPacket } from './packet';
 import type { VerifyRec } from './homework';
@@ -598,6 +598,47 @@ export async function listStudents(force = false): Promise<StudentEntry[]> {
   cache.students = out;
   cache.at = Date.now();
   return out;
+}
+
+// ---- 학생 정보 정본 사본 (data/student_info.json, 읽기만) — 드라이브 거울의 data 쪽에서. 이름 등은 런타임에만 불러온다 ----
+export interface StudentInfo {
+  folder?: string;
+  name?: string;
+  preply_name?: string;
+  sno?: string;
+  st?: string;
+  level?: string;
+  grammar_level?: string;
+  vocab_level?: string;
+  next_unit?: string;
+  avoid_topics?: string[] | null;
+  know?: string[] | string | null;
+  memo?: string[];
+  daily_min?: number | null;
+  purpose?: string;
+  status?: string;
+}
+let infoCache: { at: number; list: StudentInfo[] } | null = null;
+export async function loadStudentInfo(): Promise<StudentInfo[]> {
+  if (infoCache && Date.now() - infoCache.at < 5 * 60_000) return infoCache.list;
+  let list: StudentInfo[] = [];
+  try {
+    if (gasReady()) {
+      const r = await gasCall<{ b: string }>('get', { r: 'data', p: ['student_info.json'] }, 30_000);
+      const j = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(r.b), (c) => c.charCodeAt(0)))) as { students?: Record<string, StudentInfo> | StudentInfo[] };
+      const st = j.students || {};
+      list = Array.isArray(st) ? st : Object.values(st);
+    }
+  } catch {
+    list = [];
+  }
+  infoCache = { at: Date.now(), list };
+  return list;
+}
+const normName = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+export function infoFor(list: StudentInfo[], folder: string, name = ''): StudentInfo | undefined {
+  const { id } = parseFolder(folder);
+  return list.find((x) => x.folder === folder) || list.find((x) => !!id && /^\d+$/.test(id) && !!x.folder && x.folder.includes(`(${id})`)) || list.find((x) => !!name && normName(x.preply_name || x.name || '') === normName(name));
 }
 
 // ---- 오늘 수업 (아침 브리핑 데이터) ----

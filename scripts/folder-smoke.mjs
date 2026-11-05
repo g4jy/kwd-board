@@ -16,15 +16,16 @@ p.on('pageerror', (e) => errs.push(String(e)));
 const res = {};
 await p.goto(`${BASE}/#/`);
 await p.waitForSelector('.home');
-res.noKeyLead = await p.locator('.home-card .home-lead').first().textContent(); // 열쇠가 없는 기기: 안내 한 줄, 폴더 연결은 '고급' 안
-res.noFolderCard = await p.locator('.home-boards .home-card button').textContent();
+res.noKeyLead = await p.locator('.th-empty-t').first().textContent(); // 열쇠가 없는 기기: 안내 한 줄, 폴더 연결은 '고급' 안
+res.noFolderCard = await p.locator('.th-set button:has-text("폴더 연결하기")').textContent();
 await p.screenshot({ path: `${OUT}/0-home-nofolder.png` });
 res.files = await p.evaluate(writeOpfs, fixtureFiles(today));
-await p.waitForSelector('.lesson-row');
-res.rows = await p.locator('.lesson-row').allInnerTexts();
+await p.waitForSelector('.th-item');
+res.rows = await p.locator('.th-row').allInnerTexts();
+await p.evaluate(() => { document.querySelector('.th-all').open = true; });
 res.students = await p.locator('.student-row').allInnerTexts();
 await p.screenshot({ path: `${OUT}/1-home.png` });
-await p.click('.lesson-row:has-text("Mina")');
+await p.click('.th-item:has-text("Mina") .th-acts .primary');
 await p.waitForFunction(() => window.__kwd && document.querySelector('.mem-btn') && !document.querySelector('.mem-btn').hidden);
 res.url = p.url().split('#')[1];
 res.chip = await p.locator('.chip-main').textContent();
@@ -69,8 +70,8 @@ res.hints = await p.evaluate(() => document.querySelectorAll('.mem-hint').length
 await p.screenshot({ path: `${OUT}/4-vocab.png` });
 // 체험 학생
 await p.goto(`${BASE}/#/`);
-await p.waitForSelector('.lesson-row');
-await p.click('.lesson-row:has-text("Tom")');
+await p.waitForSelector('.th-item');
+await p.click('.th-item:has-text("Tom") .th-acts .primary');
 await p.waitForFunction(() => document.querySelector('.mem-btn') && !document.querySelector('.mem-btn').hidden);
 await p.click('.mem-btn');
 await p.waitForSelector('.mem-panel .mp-tab');

@@ -42,9 +42,9 @@ p.on('console', (m) => m.type() === 'error' && errs.push('console: ' + m.text())
 await p.goto(`${BASE}/#/demo`);
 res.demoCardsEmoji = EMOJI.test(await p.locator('.demo-grid').innerText());
 await p.click('.demo-card.main');
-await p.waitForSelector('.lesson-row');
-res.homeSplit = await p.locator('.lesson-row.next .lr-split').innerText({ timeout: 5000 }).catch(() => '');
-await p.click('.lesson-row.next');
+await p.waitForSelector('.th-item');
+res.homeSplit = await p.locator('.th-item:is(.next,.live) .lr-split').innerText({ timeout: 5000 }).catch(() => '');
+await p.click('.th-item:is(.next,.live) .th-acts .primary');
 await p.waitForFunction(() => window.__kwd?.store?.meta?.get('demoReady'), null, { timeout: 30000 });
 await p.waitForTimeout(800);
 

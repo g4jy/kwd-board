@@ -18,8 +18,8 @@ await p.addInitScript(() => { for (const k of ['showSaveFilePicker', 'showDirect
 await p.goto(`${BASE}/#/`);
 await p.waitForSelector('.home');
 await p.evaluate(writeOpfs, fixtureFiles(today));
-await p.waitForSelector('.lesson-row');
-await p.click('.lesson-row:has-text("Mina")');
+await p.waitForSelector('.th-item');
+await p.click('.th-item:has-text("Mina") .th-acts .primary');
 await p.waitForFunction(() => window.__kwd && document.querySelector('.lesson-btn'));
 const lesson = async () => {
   await p.click('.lesson-btn');

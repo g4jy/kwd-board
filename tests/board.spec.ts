@@ -79,8 +79,9 @@ test.describe('판 화면', () => {
     // 도구 줄: 선택 · 글 · 펜3 · 형광 · 지우개 · 레이저 · ↶ · ↷ · 넣기 · ⋯
     await expect(page.locator('.toolbar button')).toHaveCount(12);
     await page.click('.back-btn');
-    await expect(page.locator('h1')).toHaveText('KWD 클래스룸');
-    await expect(page.locator('.board-row').first()).toContainText('학생 12');
+    await expect(page.locator('h1')).toHaveText('오늘 수업');
+    await page.click('.th-icon'); // 지난 수업 목록은 ⚙ 설정 안
+    await expect(page.locator('.th-past').first()).toContainText('수업 판');
   });
 
   test('한글 조합 입력이 깨지지 않고, 타자 중 자동 변환은 없다 (단어 : 뜻은 글로 남음)', async ({ page }) => {
@@ -679,7 +680,7 @@ test.describe('v4: 펜 종류·선택·글상자·KWD 폴더', () => {
     expect(r.noKeyLead).toContain('선생님 링크');
     expect(r.noFolderCard).toBe('폴더 연결하기');
     expect(r.rows).toHaveLength(2);
-    expect(r.rows[1]).toContain('시작');
+    expect(r.rows[1]).toContain('판 열기');
     expect(r.url).toMatch(/^\/b\/k[a-z0-9]{8}d\d{6}\?r=t$/);
     expect(r.chip).toBe('Mina K');
     expect(r.tabs).toEqual(['오늘', '수업안·자료', '검증', '과제', '학생 정보', '지난 수업', '단어']);
@@ -748,7 +749,7 @@ test.describe('v5: 체험 화면·지우개 부분·자료 종류·숙제·요�
     expect(r.hwGroups[0]).toContain('추석에 송편을 만들었어요');
     expect(r.hwGroups[0]).toContain('선생님: 글씨가 예뻐요');
     expect(r.hwPlaced).toEqual(['box', 'img']);
-    expect(r.hwCalls.slice(0, 5)).toEqual(['teacher.board:key', 'teacher.history:key', 'teacher.student:key', 'teacher.day:key', 'media.get:key']);
+    expect(r.hwCalls.filter((c: string) => c !== 'teacher.home:key').slice(0, 5)).toEqual(['teacher.board:key', 'teacher.history:key', 'teacher.student:key', 'teacher.day:key', 'media.get:key']);
     expect(r.keyInDoc).toBe(false);
   });
 });
@@ -927,8 +928,8 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
   test('학생 표: 목적 × 단계, 지금/모두, 찾기, 카드 → 그 학생 판', () => {
     const r = JSON.parse(execFileSync('node', ['scripts/roster-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/roster' } }));
     expect(r.errs).toEqual([]);
-    expect(r.cols).toEqual(['일상·여행', '한국 생활', '일·비즈니스', 'TOPIK·시험', 'K-문화·취미', '가족·뿌리', '목적 미정']);
-    expect(r.rows).toEqual(['씨앗', '새싹', '잎새', '꽃', '열매', '나무', '단계 미정']); // 단계 6줄은 비어도 보임
+    expect(r.rows).toEqual(['일상·여행', '한국 생활', '일·비즈니스', 'TOPIK·시험', 'K-문화·취미', '가족·뿌리', '목적 미정']); // T083e 이후 행 = 목표
+    expect(r.cols).toEqual(['씨앗', '새싹', '잎새', '꽃', '열매', '나무', '단계 미정']); // 열 = 수준, 6개는 비어도 보임
     expect(r.cards).toBe(21); // 지금 학생만 (복귀 학생 Yuki A 포함)
     expect(r.returning).toEqual([false, '복귀']); // 쉬는 학생인데 수업이 다시 잡힘 → 수업 중 + 복귀 꼬리표
     expect([r.allCards, r.past]).toEqual([23, 2]);
