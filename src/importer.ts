@@ -148,6 +148,15 @@ window.addEventListener('load',function(){report(true);setTimeout(function(){rep
 window.addEventListener('message',function(e){if(e.source===parent&&e.data&&e.data.type==='kwd:measure')report(true)});
 try{new ResizeObserver(soon).observe(document.documentElement);new MutationObserver(soon).observe(document.documentElement,{subtree:true,childList:true,attributes:true,characterData:true})}catch(e){}
 document.addEventListener('input',soon,true);document.addEventListener('click',soon,true);
+// T089: 안쪽 세로 스크롤 칸(overflow:auto + 높이 제한)은 내용 높이로 풀어 필기가 내용과 같이 움직이게 한다. 가로 넘김(scroll-snap 슬라이드)은 두고, 넘긴 화면 위치를 판에 알린다(kwd:view).
+function flat(){var n=0;var all=document.body?document.body.getElementsByTagName('*'):[];for(var i=0;i<all.length&&i<4000;i++){var el=all[i];if(/^(INPUT|TEXTAREA|SELECT|IFRAME|OPTION|svg|path)$/i.test(el.tagName))continue;var cs=getComputedStyle(el);if(/(auto|scroll)/.test(cs.overflowY)&&el.scrollHeight>el.clientHeight+2&&cs.scrollSnapType==='none'){el.style.setProperty('overflow-y','visible','important');el.style.setProperty('max-height','none','important');el.style.setProperty('height','auto','important');n++}}return n}
+window.addEventListener('load',function(){flat();setTimeout(function(){flat();report(true)},400)});
+var ft=0;function flatSoon(){clearTimeout(ft);ft=setTimeout(function(){if(flat())report(true)},150)}
+try{new MutationObserver(flatSoon).observe(document.documentElement,{subtree:true,childList:true})}catch(e){}
+document.addEventListener('click',flatSoon,true);
+var vt=0,lastView='';
+function viewKey(el){if(!el||el.nodeType!==1)el=document.scrollingElement;if(!el)return null;var k='';var cw=el.clientWidth||innerWidth,ch=el.clientHeight||innerHeight;if(el.scrollWidth>=cw*1.8&&cw>0){var x=Math.round(el.scrollLeft/cw);if(x)k+='x'+x}if(el.scrollHeight>=ch*1.8&&ch>0){var y=Math.round(el.scrollTop/ch);if(y)k+='y'+y}return k}
+document.addEventListener('scroll',function(e){var t=e.target;clearTimeout(vt);vt=setTimeout(function(){var k=viewKey(t===document?document.scrollingElement:t);if(k===null||k===lastView)return;lastView=k;try{parent.postMessage({type:'kwd:view',k:k},'*')}catch(x){}},180)},true);
 })();<\/script>`;
 
 export function htmlWithBridge(html: string, expand = false): string {

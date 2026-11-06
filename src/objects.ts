@@ -35,10 +35,12 @@ interface ObjView {
   data: PageObject;
   editor?: Editor;
   frame?: HTMLIFrameElement;
-  ws?: { layer: HTMLElement; objs: PageObjects | null; step: number; frameStep: number; stepEl: HTMLElement };
+  ws?: { layer: HTMLElement; objs: PageObjects | null; step: string; frameStep: number; stepEl: HTMLElement };
 }
 
-export const wsLayerId = (objId: string, step: number) => `ws:${objId}:${step}`;
+export const wsLayerId = (objId: string, step: number | string) => `ws:${objId}:${step}`;
+// 필기층 열쇠: 단계 + (단계 안에서 넘긴 화면 위치) — 슬라이드·스크롤 위치에 필기가 붙는다 (T089)
+export const wsKey = (o: { step?: number; view?: string }): string => `${o.step || 1}${o.view ? '~' + o.view : ''}`;
 
 export const BOX_W = 260;
 
@@ -109,10 +111,11 @@ export class PageObjects {
       ws.frameStep = st;
       v.frame?.contentWindow?.postMessage({ type: 'kwd:goto', n: st }, '*');
     }
-    if (ws.step !== st) {
-      ws.step = st;
+    const key = wsKey(v.data);
+    if (ws.step !== key) {
+      ws.step = key;
       ws.objs?.destroy();
-      ws.objs = new PageObjects(wsLayerId(v.data.id, st), ws.layer, this.ctx);
+      ws.objs = new PageObjects(wsLayerId(v.data.id, key), ws.layer, this.ctx);
     }
   }
 
@@ -257,7 +260,7 @@ export class PageObjects {
       if (md?.html != null) frame.srcdoc = htmlWithBridge(md.html, true);
       const layer = h('div', { class: 'ws-layer' });
       tools.append(grip);
-      if (this.ctx.canType() && this.ctx.addWsBox) tools.append(tool('obj-bt ws-t', 'textbox', '이 단계 위에 글상자', () => this.ctx.addWsBox!(wsLayerId(o.id, v.data.step || 1), Math.max(16, v.data.w / 2 - 130), 40)));
+      if (this.ctx.canType() && this.ctx.addWsBox) tools.append(tool('obj-bt ws-t', 'textbox', '이 단계 위에 글상자', () => this.ctx.addWsBox!(wsLayerId(o.id, wsKey(v.data)), Math.max(16, v.data.w / 2 - 130), 40)));
       tools.append(tool('obj-bt', 'big', this.ctx.role === 'teacher' ? '학습지를 크게 (학생 화면도)' : '학습지를 크게', () => this.ctx.focusObj(this.pageId, o.id)));
       if (this.ctx.role === 'teacher' && this.ctx.saveWs) tools.append(tool('obj-bt', 'save', '필기 넣은 학습지 저장 (학생 폴더 또는 내려받기)', () => this.ctx.saveWs!(this.pageId, o.id)));
       tools.append(del);
@@ -270,7 +273,7 @@ export class PageObjects {
       });
       el.append(bar, frame, guard, layer, tools, size);
       v.frame = frame;
-      v.ws = { layer, objs: null, step: 0, frameStep: 0, stepEl };
+      v.ws = { layer, objs: null, step: '', frameStep: 0, stepEl };
       this.bindMove(v, bar);
       this.bindMove(v, grip);
       this.bindMove(v, el, true);
@@ -300,6 +303,11 @@ export class PageObjects {
           const hh = Math.round((e.data as { h?: number }).h || 0) + 33 + 1;
           if (this.ctx.role === 'teacher' && this.ctx.canEdit() && !v.data.fixh && hh > 80 && Math.abs(hh - v.data.h) > 3) this.ctx.store.updateObj(this.pageId, o.id, { h: hh }, false);
         }
+        else if (t === 'kwd:view') {
+          // 단계 안에서 화면을 넘김(가로 슬라이드·긴 자료 안쪽 스크롤): 그 위치의 필기만 보이게 (선생님만 쓴다 → 학생도 따라감)
+          const k = typeof (e.data as { k?: unknown }).k === 'string' ? String((e.data as { k: string }).k).slice(0, 24) : '';
+          if (this.ctx.canDrive() && synced && (v.data.view || '') !== k) this.ctx.store.updateObj(this.pageId, o.id, { view: k });
+        }
         else if (t === 'kwd:step' && typeof d.n === 'number') {
           v.ws!.frameStep = d.n;
           if (!synced) {
@@ -309,7 +317,7 @@ export class PageObjects {
             return;
           }
           if (this.ctx.canDrive() && (d.n !== v.data.step || (d.total && d.total !== v.data.steps))) {
-            this.ctx.store.updateObj(this.pageId, o.id, { step: d.n, ...(d.total ? { steps: d.total } : {}) });
+            this.ctx.store.updateObj(this.pageId, o.id, { step: d.n, ...(d.total ? { steps: d.total } : {}), ...(v.data.view ? { view: '' } : {}) });
             this.ctx.onHtmlEvent(this.pageId, o.mid || '', { type: 'kwd:event', name: 'step', value: d.n });
           }
         } else if (t === 'kwd:state' && d.key && this.ctx.canDrive()) {

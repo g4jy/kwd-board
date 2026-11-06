@@ -8,7 +8,7 @@ import { attachFile } from './recupload';
 import { BoardStore, randomId, DEFAULT_SERVER, getServerUrl, setServerUrl, getToken, setToken, upsertIndex, loadIndex, LOCAL, TEXT_W, TEXT_H, type Role, type PageInfo, type InkTarget } from './store';
 import { Viewport } from './viewport';
 import { InkLayer, CURSOR_ARROW, CURSOR_TEXT, type Tool, type PageBox } from './ink';
-import { PageObjects, BOX_W, youtubeId, type ObjectHost } from './objects';
+import { PageObjects, BOX_W, youtubeId, wsKey, type ObjectHost } from './objects';
 import { createPageEditor, insertImageFiles, fileToDataUrl, makeHintPlugin, hintKey, ROLE_COLORS, ROLE_NAMES, type HintWord } from './editor';
 import { summarize } from './exportmd';
 import { buildBundle, bundleName, boardMarkdown, canPickFolder, pickFolder, folderName, writeToFolder } from './record';
@@ -26,7 +26,7 @@ import { h, download, downloadBlob, fmtDate, fmtClock, toast, EMBEDDED } from '.
 const GAP = 28; // 페이지 사이
 // 웹 학습지 창: 테두리 1px + 위 막대 32px → iframe 은 (1, 33) 에서 시작
 export const OBJ_BAR = 33;
-export const wsLayer = (objId: string, step: number) => `ws:${objId}:${step}`;
+export const wsLayer = (objId: string, step: number | string) => `ws:${objId}:${step}`;
 const COLORS = { red: '#d32f2f', blue: '#1565c0', green: '#2e7d32' };
 
 export interface BoardParams {
@@ -602,7 +602,7 @@ export class BoardScreen {
       if (!v) continue;
       for (const o of this.store.objList(id)) {
         if (o.type !== 'html') continue;
-        out.push({ id: wsLayer(o.id, o.step || 1), x: o.x + 1, y: v.y + o.y + OBJ_BAR, w: o.w - 2, h: Math.max(10, o.h - OBJ_BAR - 1), visible: true });
+        out.push({ id: wsLayer(o.id, wsKey(o)), x: o.x + 1, y: v.y + o.y + OBJ_BAR, w: o.w - 2, h: Math.max(10, o.h - OBJ_BAR - 1), visible: true });
       }
     }
     return out;

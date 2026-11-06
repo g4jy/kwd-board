@@ -11,3 +11,7 @@ server-data/
 gas/Secret.gs
 gas/.clasp.json
 .secrets/
+
+# T089: 실제 학생 이름이 든 시험 자료(공개 금지)
+tests/fixtures/slides61.html
+tests/fixtures/page61.html

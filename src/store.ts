@@ -42,6 +42,7 @@ export interface PageObject {
   n?: number; // slide: PDF 쪽 번호 (matdata `${mid}/${n}`)
   step?: number; // html: 학습지가 지금 보여 주는 단계(쪽) — 그 단계의 필기만 보인다
   steps?: number; // html: 학습지 단계 수
+  view?: string; // html: 단계 안에서 가로·세로로 넘긴 화면 위치(T089) — 위치마다 필기가 따로 붙는다
   fixh?: boolean; // html: 손으로 높이를 정함 → 내용 높이 자동 맞춤 끔
   t: number;
 }
