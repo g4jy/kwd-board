@@ -90,6 +90,7 @@ export class InkLayer {
   private store: BoardStore;
   private vp: Viewport;
   private drawing: LiveStroke | null = null;
+  private pred: number[] = []; // T094: 브라우저가 예측한 점(화면에만 그림, 저장·전송 안 함)
   private activePointer: number | null = null;
   private pressureSeen = false;
   private hasPenHistory = false;
@@ -319,6 +320,14 @@ export class InkLayer {
       this.drawing.pts.push(cx - pg.x, cy - pg.y, this.pressure(ce));
       this.screenPts.push([ce.clientX, ce.clientY]);
     }
+    this.pred = [];
+    if (e.pointerType === 'pen' && !this.straighten && typeof e.getPredictedEvents === 'function') {
+      const lp = this.drawing.pts[this.drawing.pts.length - 1];
+      for (const pe of e.getPredictedEvents().slice(0, 2)) {
+        const [px, py] = this.vp.toWorld(pe.clientX, pe.clientY);
+        this.pred.push(px - pg.x, py - pg.y, lp);
+      }
+    }
     this.invalidate();
     if (this.straighten) {
       window.clearTimeout(this.holdTimer);
@@ -358,6 +367,7 @@ export class InkLayer {
     if (!this.drawing) return;
     const d = this.drawing;
     this.drawing = null;
+    this.pred = [];
     this.store.awareness.setLocalStateField('drawing', null);
     if (this.tapToFrame(e)) {
       this.invalidate();
@@ -618,7 +628,7 @@ export class InkLayer {
       const d = state?.drawing as LiveStroke | undefined;
       if (d && d.pts && d.pts.length >= 3) drawLive(d);
     }
-    if (this.drawing) drawLive(this.drawing);
+    if (this.drawing) drawLive(this.pred.length ? { ...this.drawing, pts: this.drawing.pts.concat(this.pred) } : this.drawing);
 
     // 레이저 (세상 좌표)
     ctx.setTransform(dpr * s, 0, 0, dpr * s, dpr * x, dpr * y);
