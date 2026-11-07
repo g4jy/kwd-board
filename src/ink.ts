@@ -225,14 +225,37 @@ export class InkLayer {
     return { page: best, x: wx - best.x, y: wy - best.y };
   }
 
+  // T093 팜리젝션 규칙 (과제플랫폼과 같은 규칙):
+  // 1) 펜이 한 번이라도 들어오면 touch 무시 2) 펜 없으면 첫 포인터만, 두 번째 손가락 무시(그리던 획은 버림)
+  // 3) 접촉 폭·높이 > PALM_PX 는 손바닥으로 무시
+  static PALM_PX = 40;
   isDrawPointer(e: PointerEvent) {
-    if (e.pointerType === 'touch') return !this.hasPenHistory; // 펜을 한 번이라도 쓴 기기에선 손가락은 이동용
+    if (e.pointerType === 'touch') {
+      if (this.hasPenHistory) return false; // 펜을 한 번이라도 쓴 기기에선 손가락은 이동용
+      if (Math.max(e.width || 0, e.height || 0) > InkLayer.PALM_PX) return false;
+      if (this.activePointer !== null && this.activePointer !== e.pointerId) return false;
+    }
     return true;
+  }
+
+  private dropStroke() {
+    this.drawing = null;
+    this.activePointer = null;
+    this.tempErase = false;
+    this.screenPts = [];
+    this.store.awareness.setLocalStateField('drawing', null);
+    this.invalidate();
   }
 
   private onDown(e: PointerEvent) {
     if (this.tool === 'text' || this.tool === 'select' || !this.canDraw()) return;
-    if (e.pointerType === 'pen') this.hasPenHistory = true;
+    if (e.pointerType === 'pen') {
+      this.hasPenHistory = true;
+      if (this.activePointer !== null && this.activePointer !== e.pointerId) this.dropStroke(); // 손바닥으로 시작된 획 버림
+    } else if (e.pointerType === 'touch' && this.drawing && this.activePointer !== e.pointerId) {
+      this.dropStroke(); // 두 번째 손가락 = 손바닥·확대 → 지금 획도 버림
+      return;
+    }
     if (this.tool === 'laser') return this.pushLaser(e);
     if (!this.isDrawPointer(e)) return;
     if (e.button !== 0 && e.pointerType === 'mouse') return;

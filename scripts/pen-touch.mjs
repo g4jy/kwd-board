@@ -1,6 +1,6 @@
 // 루프 6: 태블릿 펜(필압) + 손바닥/손가락 — 펜은 그리고, 손가락은 이동·확대만
 import { chromium } from 'playwright';
-const b = await chromium.launch();
+const b = await chromium.launch({channel:'chrome'});
 const ctx = await b.newContext({ viewport: { width: 1180, height: 820 }, hasTouch: true });
 const p = await ctx.newPage();
 const errs = []; p.on('pageerror', (e) => errs.push(String(e)));
