@@ -15,3 +15,8 @@ gas/.clasp.json
 # T089: 실제 학생 이름이 든 시험 자료(공개 금지)
 tests/fixtures/slides61.html
 tests/fixtures/page61.html
+
+# T136r: 파이썬 캐시, 실서버 주소가 든 개인 시험 스크립트
+__pycache__/
+*.pyc
+scripts/t*-live.mjs

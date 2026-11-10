@@ -1,4 +1,4 @@
-// 커리큘럼 v2.3 학생용 단원 파일 (kwd-unit/v1, units/KWD-U###.json) — 읽기만 한다.
+// 커리큘럼 학생용 단원 파일(버전 고정 없음, 실행 때 <work>/curriculum_v2/units 를 읽음) (kwd-unit/v1, units/KWD-U###.json) — 읽기만 한다.
 // 판은 단원을 만들지 않는다: 수업 묶음 로드맵이 가리키는 단원을 찾아 '판에 놓기' 글로 바꿔 보여 줄 뿐.
 export interface UnitBlock {
   id?: string;

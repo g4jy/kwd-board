@@ -210,7 +210,8 @@ export class BoardStore {
     let persistence: IndexeddbPersistence | null = null;
     try {
       if (typeof indexedDB !== 'undefined') persistence = new IndexeddbPersistence('kwd-board-' + id, this.doc);
-    } catch {
+    } catch (e) {
+      console.warn('[kwd] 기기 저장(IndexedDB)을 못 열었어요 — 이 기기에는 판 사본이 남지 않아요', e);
       persistence = null;
     }
     this.persistence = persistence;
@@ -281,7 +282,10 @@ export class BoardStore {
         res();
       };
       const on = (ok: boolean) => ok && done();
-      const t = window.setTimeout(done, ms);
+      const t = window.setTimeout(() => {
+        console.warn(`[kwd] 서버 첫 동기를 ${ms}ms 안에 못 받아 그대로 진행해요`);
+        done();
+      }, ms);
       p.on('sync', on);
     });
   }
@@ -410,8 +414,10 @@ export class BoardStore {
     if (!this.serverUrl || this.status !== 'connected') return false;
     try {
       const r = await fetch(this.blobUrl(key), { method: 'PUT', body: blob, headers: { 'content-type': blob.type || 'application/octet-stream' } });
+      if (!r.ok) console.warn('[kwd] 자료 그림을 서버에 못 올렸어요', r.status);
       return r.ok;
-    } catch {
+    } catch (e) {
+      console.warn('[kwd] 자료 그림을 서버에 못 올렸어요', e);
       return false;
     }
   }

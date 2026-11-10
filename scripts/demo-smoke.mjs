@@ -6,6 +6,8 @@ const OUT = process.env.OUT || 'test-results/demo';
 fs.mkdirSync(OUT, { recursive: true });
 const b = await chromium.launch();
 const ctx = await b.newContext({ viewport: { width: 1366, height: 860 } });
+// T136r: 체험 수업 시각(NOW+5·NOW+65)이 자정을 넘으면 목록 순서가 바뀌어 시험이 흔들린다 → 시계를 오늘 14시에서 시작(시간은 그대로 흐름)
+{ const d = new Date(); d.setHours(14, 0, 0, 0); await ctx.clock.install({ time: d }); }
 const p = await ctx.newPage();
 const errs = [];
 p.on('pageerror', (e) => errs.push(String(e)));

@@ -1,0 +1,14 @@
+#!/bin/sh
+# T136r: main 에 올리면 곧 배포(GitHub Pages)다 → 수업 시간·이름·시험을 먼저 본다.
+# 켜기(한 번): git config core.hooksPath .githooks
+# 시험을 방금 따로 돌려 통과했으면: KWD_PREDEPLOY_NO_TESTS=1 git push
+while read local_ref local_sha remote_ref remote_sha; do
+  if [ "$remote_ref" = "refs/heads/main" ]; then
+    if [ "$KWD_PREDEPLOY_NO_TESTS" = "1" ]; then
+      python -I scripts/predeploy.py --no-tests || exit 1
+    else
+      python -I scripts/predeploy.py || exit 1
+    fi
+  fi
+done
+exit 0
