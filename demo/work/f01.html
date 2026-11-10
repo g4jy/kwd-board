@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>#12 추석에 뭐 했어요? — 수업 페이지</title>
+<style>
+:root{--ink:#0F1A3B;--muted:#5B6684;--card:#fff;--line:#DADFEC;--accent:#2145C4;--blue:#2145C4;--ok:#1F7A4D;--no:#B3261E;--bg:#F6F7FB}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:#1d2733;font-family:sans-serif;color:var(--ink)}
+/* 무대는 늘 960×600 으로 그리고 창 크기에 맞춰 통째로 줄이고 늘린다 → 어느 기기에서나 같은 자리 */
+#stage{position:absolute;left:0;top:0;width:960px;height:600px;transform-origin:0 0;background:var(--bg);overflow:hidden}
+.step{position:absolute;inset:0;padding:44px 56px 86px;opacity:0;pointer-events:none;transform:translateX(40px);transition:opacity .35s ease,transform .35s ease}
+.step.on{opacity:1;pointer-events:auto;transform:none}
+.step.left{transform:translateX(-40px)}
+h1{font-size:46px;margin:0 0 10px;letter-spacing:-.5px}
+h2{font-size:32px;margin:0 0 18px}
+.lead{font-size:20px;color:var(--muted);margin:0 0 20px}
+.nav{position:absolute;left:0;right:0;bottom:0;height:64px;display:flex;align-items:center;justify-content:center;gap:14px;background:rgba(255,255,255,.7);border-top:1px solid var(--line);z-index:5}
+.nav button{font:inherit;font-size:22px;width:44px;height:44px;border-radius:50%;border:1px solid var(--line);background:#fff;cursor:pointer}
+.nav button:disabled{opacity:.3;cursor:default}
+.dots{display:flex;gap:8px}.dot{width:10px;height:10px;border-radius:50%;background:#DADFEC;transition:.2s}.dot.on{background:var(--accent);width:26px;border-radius:6px}
+.label{position:absolute;right:20px;font-size:14px;color:var(--muted)}
+/* 1 */
+.sky{position:absolute;inset:0;background:linear-gradient(#20324a,#4b5f7c 60%,#c98d5a);z-index:-1}
+#s1{color:#fff}#s1 .lead{color:#dfe7f2}
+.moon{position:absolute;right:60px;top:340px;width:120px;height:120px;border-radius:50%;background:radial-gradient(circle at 40% 40%,#fff6cf,#f5d46b 70%,#e4b84a);box-shadow:0 0 60px 20px rgba(255,220,120,.35);transition:top 1.6s cubic-bezier(.2,.8,.2,1)}
+.step.on .moon{top:34px}
+.chips{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px;max-width:700px}
+.pick{font:inherit;font-size:21px;padding:12px 18px;border-radius:14px;border:2px solid rgba(255,255,255,.4);background:rgba(255,255,255,.12);color:#fff;cursor:pointer;transition:.2s}
+.pick.on{background:#fff;color:var(--ink);border-color:#fff;transform:translateY(-3px)}
+/* 2 */
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.flip{height:150px;perspective:600px;cursor:pointer}
+.flip .in{position:relative;width:100%;height:100%;transition:transform .5s;transform-style:preserve-3d}
+.flip.on .in{transform:rotateY(180deg)}
+.face{position:absolute;inset:0;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;backface-visibility:hidden;background:#fff;border:2px solid var(--line);font-size:32px;font-weight:800}
+.face small{font-size:15px;font-weight:500;color:var(--muted);margin-top:6px}
+.back{transform:rotateY(180deg);background:#EEF1FA;border-color:#DADFEC;font-size:44px}
+.back small{font-size:17px}
+/* 3 */
+.machine{display:flex;align-items:center;gap:22px;margin-top:10px}
+.verbs{display:flex;flex-direction:column;gap:10px}
+.verb{font:inherit;font-size:22px;padding:10px 18px;border-radius:12px;border:2px solid var(--line);background:#fff;cursor:pointer;min-width:130px}
+.verb.on{border-color:var(--blue);background:#EEF1FA}
+.arrow{font-size:46px;color:var(--accent)}
+.out{width:330px;height:190px;border-radius:20px;background:#fff;border:3px dashed #DADFEC;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:46px;font-weight:800}
+.out .rule{font-size:16px;font-weight:500;color:var(--muted);margin-top:8px;text-align:center;padding:0 12px}
+.pop{animation:pop .45s ease}
+@keyframes pop{0%{transform:scale(.6);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+/* 4 */
+.dd{display:flex;gap:30px;margin-top:6px}
+.tiles{display:flex;flex-direction:column;gap:10px;width:200px}
+.tile{font-size:24px;font-weight:700;padding:10px 16px;border-radius:12px;background:#fff;border:2px solid var(--line);cursor:grab;user-select:none;touch-action:none}
+.tile.used{opacity:.35}
+.targets{display:grid;grid-template-columns:repeat(3,170px);gap:14px}
+.target{height:130px;border-radius:16px;border:2px dashed #B8C0D6;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:52px;transition:.2s}
+.target .ans{font-size:20px;font-weight:700;min-height:26px;margin-top:4px}
+.target.over{border-color:var(--blue);background:#EEF1FA}
+.target.ok{border-style:solid;border-color:var(--ok);background:#E6F4EC}
+.target.no{border-style:solid;border-color:var(--no);background:#FCEBE9;animation:shake .4s}
+@keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+.ghost{position:fixed;pointer-events:none;z-index:99;font-size:24px;font-weight:700;padding:10px 16px;border-radius:12px;background:#fff;border:2px solid var(--blue);box-shadow:0 8px 20px rgba(0,0,0,.15)}
+/* 5 */
+.foods{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.food{border-radius:18px;background:#fff;border:2px solid var(--line);padding:14px;text-align:center}
+.food .em{font-size:54px}.food .nm{font-size:22px;font-weight:700;margin:4px 0 10px}
+.tastes{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+.taste{font:inherit;font-size:16px;padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:#F6F7FB;cursor:pointer}
+.taste.ok{background:var(--ok);color:#fff;border-color:var(--ok)}
+.taste.no{background:#FCEBE9;border-color:var(--no)}
+/* 6 */
+.slots{display:flex;gap:10px;min-height:70px;padding:12px;border-radius:16px;background:#fff;border:2px solid var(--line);margin-bottom:18px;flex-wrap:wrap}
+.bank{display:flex;gap:10px;flex-wrap:wrap}
+.word{font:inherit;font-size:24px;font-weight:700;padding:10px 16px;border-radius:12px;border:2px solid #DADFEC;background:#EEF1FA;cursor:pointer}
+.result{font-size:22px;font-weight:700;margin-top:16px;min-height:30px}
+.result.ok{color:var(--ok)}.result.no{color:var(--no)}
+/* 7 */
+.hw{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:10px}
+.hwc{border-radius:18px;background:#fff;border:2px solid var(--line);padding:18px;font-size:19px;line-height:1.5}
+.hwc b{display:block;font-size:22px;margin-bottom:6px}
+.bigok{font-size:64px;text-align:center;margin-top:20px;animation:pop .6s}
+/* 그림: 한 그림체(KWD 선화) — 이모지 대신 (RULES 8) */
+.ill{display:inline-block;width:1.4em;height:1.4em;vertical-align:middle}.ill svg{width:100%;height:100%;display:block}
+.back .ill{width:72px;height:72px;font-size:0}.target .ill{width:64px;height:64px}.food .em .ill{width:72px;height:72px}
+.hwc .ill.sm{width:40px;height:40px;display:block;margin-bottom:6px}.bigok .ill{width:84px;height:84px}
+.arrow{font-weight:300}
+</style>
+</head>
+<body>
+<div id="stage">
+  <section class="step" id="s1">
+    <div class="sky"></div><div class="moon"></div>
+    <h1>추석에 뭐 했어요?</h1>
+    <p class="lead">#12 · 이번 추석에 한 일을 모두 골라 보세요</p>
+    <div class="chips" data-key="s1">
+      <button class="pick" data-v="family">가족을 만났어요</button>
+      <button class="pick" data-v="food">송편을 먹었어요</button>
+      <button class="pick" data-v="travel">고향에 갔어요</button>
+      <button class="pick" data-v="moon">보름달을 봤어요</button>
+      <button class="pick" data-v="rest">집에서 쉬었어요</button>
+      <button class="pick" data-v="work">일했어요</button>
+    </div>
+  </section>
+
+  <section class="step" id="s2">
+    <h2>새 단어 — 눌러서 뒤집어 보세요</h2>
+    <div class="cards">
+      <div class="flip" data-i="0"><div class="in"><div class="face">송편<small>songpyeon</small></div><div class="face back"><i class="ill" data-ill="songpyeon"></i><small>rice cake for 추석</small></div></div></div>
+      <div class="flip" data-i="1"><div class="in"><div class="face">고향<small>gohyang</small></div><div class="face back"><i class="ill" data-ill="house"></i><small>hometown</small></div></div></div>
+      <div class="flip" data-i="2"><div class="in"><div class="face">보름달<small>boreumdal</small></div><div class="face back"><i class="ill" data-ill="moon"></i><small>full moon</small></div></div></div>
+      <div class="flip" data-i="3"><div class="in"><div class="face">친척<small>chincheok</small></div><div class="face back"><i class="ill" data-ill="relatives"></i><small>relatives</small></div></div></div>
+      <div class="flip" data-i="4"><div class="in"><div class="face">차례<small>charye</small></div><div class="face back"><i class="ill" data-ill="charye"></i><small>ancestral rite</small></div></div></div>
+      <div class="flip" data-i="5"><div class="in"><div class="face">성묘<small>seongmyo</small></div><div class="face back"><i class="ill" data-ill="seongmyo"></i><small>visiting graves</small></div></div></div>
+    </div>
+  </section>
+
+  <section class="step" id="s3">
+    <h2>-았/었어요 만들기</h2>
+    <p class="lead">동사를 고르면 과거형이 나와요</p>
+    <div class="machine">
+      <div class="verbs">
+        <button class="verb" data-v="가다">가다</button>
+        <button class="verb" data-v="먹다">먹다</button>
+        <button class="verb" data-v="만들다">만들다</button>
+        <button class="verb" data-v="하다">하다</button>
+        <button class="verb" data-v="보다">보다</button>
+      </div>
+      <div class="arrow">→</div>
+      <div class="out" id="out"><span id="outw">?</span><span class="rule" id="outr">왼쪽에서 하나 고르세요</span></div>
+    </div>
+  </section>
+
+  <section class="step" id="s4">
+    <h2>단어를 그림에 끌어다 놓으세요</h2>
+    <div class="dd">
+      <div class="tiles" id="tiles">
+        <div class="tile" data-w="송편">송편</div>
+        <div class="tile" data-w="보름달">보름달</div>
+        <div class="tile" data-w="고향">고향</div>
+        <div class="tile" data-w="친척">친척</div>
+        <div class="tile" data-w="기차">기차</div>
+        <div class="tile" data-w="선물">선물</div>
+      </div>
+      <div class="targets">
+        <div class="target" data-w="송편"><i class="ill" data-ill="songpyeon"></i><div class="ans"></div></div>
+        <div class="target" data-w="보름달"><i class="ill" data-ill="moon"></i><div class="ans"></div></div>
+        <div class="target" data-w="고향"><i class="ill" data-ill="house"></i><div class="ans"></div></div>
+        <div class="target" data-w="친척"><i class="ill" data-ill="relatives"></i><div class="ans"></div></div>
+        <div class="target" data-w="기차"><i class="ill" data-ill="train"></i><div class="ans"></div></div>
+        <div class="target" data-w="선물"><i class="ill" data-ill="gift"></i><div class="ans"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="step" id="s5">
+    <h2>맛이 어때요?</h2>
+    <p class="lead">음식마다 맛을 골라 보세요</p>
+    <div class="foods">
+      <div class="food" data-ok="달아요"><div class="em"><i class="ill" data-ill="songpyeon"></i></div><div class="nm">송편</div><div class="tastes"></div></div>
+      <div class="food" data-ok="매워요"><div class="em"><i class="ill" data-ill="kimchi"></i></div><div class="nm">김치</div><div class="tastes"></div></div>
+      <div class="food" data-ok="셔요"><div class="em"><i class="ill" data-ill="lemon"></i></div><div class="nm">레몬</div><div class="tastes"></div></div>
+      <div class="food" data-ok="짜요"><div class="em"><i class="ill" data-ill="soy"></i></div><div class="nm">간장</div><div class="tastes"></div></div>
+    </div>
+  </section>
+
+  <section class="step" id="s6">
+    <h2>문장 만들기</h2>
+    <p class="lead">단어를 순서대로 눌러 문장을 만드세요</p>
+    <div class="slots" id="slots"></div>
+    <div class="bank" id="bank"></div>
+    <div class="result" id="res"></div>
+  </section>
+
+  <section class="step" id="s7">
+    <h2>오늘 잘했어요</h2>
+    <p class="lead">이번 주 과제 (매일 조금씩)</p>
+    <div class="hw">
+      <div class="hwc"><i class="ill sm" data-ill="pencil"></i><b>쓰기</b>추석에 한 일 3문장<br><span style="color:#5B6684">-았/었어요</span></div>
+      <div class="hwc"><i class="ill sm" data-ill="mic"></i><b>말하기</b>쓴 문장을 읽고 녹음해서 올리기</div>
+      <div class="hwc"><i class="ill sm" data-ill="camera"></i><b>사진</b>좋아하는 한국 음식 사진 + 맛 한 줄</div>
+    </div>
+    <div class="bigok"><i class="ill" data-ill="moon"></i></div>
+  </section>
+
+  <div class="nav"><button id="prev" aria-label="이전">‹</button><div class="dots" id="dots"></div><button id="next" aria-label="다음">›</button><span class="label" id="lab"></span></div>
+</div>
+<script>
+// 그림 창고(KWD 선화) — 같은 선·같은 색 세 가지
+const ILL={"songpyeon": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><ellipse cx=\"32\" cy=\"46\" rx=\"24\" ry=\"6\" fill=\"#eef0f3\"/><path d=\"M14 42c0-10 8-16 16-16-3 5-3 11 0 16z\" fill=\"#9cc5b0\"/><path d=\"M28 42c0-11 9-18 18-18-3 6-3 12 0 18z\" fill=\"#f2b8a0\"/><path d=\"M40 43c2-7 8-11 14-11-2 4-2 8 0 11z\" fill=\"#fff\"/><path d=\"M46 16l4 6M52 14l-2 8\"/></svg>", "moon": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"32\" cy=\"32\" r=\"18\" fill=\"#f3d98b\"/><circle cx=\"26\" cy=\"27\" r=\"3\"/><circle cx=\"37\" cy=\"37\" r=\"4\"/><path d=\"M8 14l2 2M54 50l2 2M52 12h4M8 50h4\"/></svg>", "house": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 30L32 12l22 18\" fill=\"#f2b8a0\"/><path d=\"M15 28v24h34V28\" fill=\"#fff\"/><rect x=\"27\" y=\"38\" width=\"10\" height=\"14\" fill=\"#9cc5b0\"/><rect x=\"40\" y=\"33\" width=\"6\" height=\"6\" fill=\"#f3d98b\"/></svg>", "family": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"18\" cy=\"22\" r=\"5\" fill=\"#fff\"/><path d=\"M10 42 v-5 a8 8 0 0 1 16 0 v5 z\" fill=\"#9cc5b0\"/><circle cx=\"46\" cy=\"22\" r=\"5\" fill=\"#fff\"/><path d=\"M38 42 v-5 a8 8 0 0 1 16 0 v5 z\" fill=\"#f2b8a0\"/><circle cx=\"32\" cy=\"34\" r=\"3.5\" fill=\"#fff\"/><path d=\"M26.4 48.0 v-5 a5.6 5.6 0 0 1 11.2 0 v5 z\" fill=\"#f3d98b\"/><path d=\"M6 56h52\"/></svg>", "relatives": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"13\" cy=\"24\" r=\"4.0\" fill=\"#fff\"/><path d=\"M6.6 40.0 v-5 a6.4 6.4 0 0 1 12.8 0 v5 z\" fill=\"#9cc5b0\"/><circle cx=\"27\" cy=\"20\" r=\"4.5\" fill=\"#fff\"/><path d=\"M19.8 38.0 v-5 a7.2 7.2 0 0 1 14.4 0 v5 z\" fill=\"#f2b8a0\"/><circle cx=\"41\" cy=\"22\" r=\"4.25\" fill=\"#fff\"/><path d=\"M34.2 39.0 v-5 a6.8 6.8 0 0 1 13.6 0 v5 z\" fill=\"#f3d98b\"/><circle cx=\"53\" cy=\"28\" r=\"3.5\" fill=\"#fff\"/><path d=\"M47.4 42.0 v-5 a5.6 5.6 0 0 1 11.2 0 v5 z\" fill=\"#9cc5b0\"/><path d=\"M4 56h56\"/></svg>", "charye": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M8 40h48M14 40v12M50 40v12\"/><rect x=\"8\" y=\"36\" width=\"48\" height=\"4\" fill=\"#f2b8a0\"/><circle cx=\"22\" cy=\"30\" r=\"5\" fill=\"#f3d98b\"/><circle cx=\"32\" cy=\"30\" r=\"5\" fill=\"#f2b8a0\"/><circle cx=\"42\" cy=\"30\" r=\"5\" fill=\"#9cc5b0\"/><path d=\"M52 36V22\"/><path d=\"M52 18c-2 2-2 4 0 4s2-2 0-4z\" fill=\"#f3d98b\"/></svg>", "seongmyo": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M6 52c6-14 16-20 26-20s20 6 26 20z\" fill=\"#9cc5b0\"/><path d=\"M14 34V22\"/><circle cx=\"14\" cy=\"18\" r=\"6\" fill=\"#f2b8a0\"/><path d=\"M44 30l2-6 2 6\"/><path d=\"M6 52h52\"/></svg>", "train": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"16\" y=\"10\" width=\"32\" height=\"38\" rx=\"8\" fill=\"#9cc5b0\"/><rect x=\"21\" y=\"16\" width=\"22\" height=\"12\" rx=\"2\" fill=\"#fff\"/><circle cx=\"24\" cy=\"38\" r=\"2.5\" fill=\"#f3d98b\"/><circle cx=\"40\" cy=\"38\" r=\"2.5\" fill=\"#f3d98b\"/><path d=\"M22 48l-6 8M42 48l6 8M12 56h40\"/></svg>", "gift": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"12\" y=\"26\" width=\"40\" height=\"28\" fill=\"#f3d98b\"/><rect x=\"10\" y=\"20\" width=\"44\" height=\"8\" fill=\"#f2b8a0\"/><path d=\"M32 20v34\"/><path d=\"M32 20c-4-8-14-8-12-2s12 2 12 2c4-8 14-8 12-2s-12 2-12 2z\" fill=\"#fff\"/></svg>", "kimchi": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M10 34h44c0 12-10 20-22 20S10 46 10 34z\" fill=\"#f3d98b\"/><path d=\"M18 34c0-10 6-16 14-16s14 6 14 16\" fill=\"#f2b8a0\"/><path d=\"M26 34c0-6 3-11 6-12M38 34c0-5-2-9-6-12\"/></svg>", "lemon": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><ellipse cx=\"30\" cy=\"36\" rx=\"18\" ry=\"14\" fill=\"#f3d98b\"/><path d=\"M48 32c4-1 6 0 8 2\"/><path d=\"M34 22c2-8 10-10 14-8-2 6-8 9-14 8z\" fill=\"#9cc5b0\"/></svg>", "soy": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M26 8h12v8l6 8v30H20V24l6-8z\" fill=\"#f2b8a0\"/><rect x=\"23\" y=\"32\" width=\"18\" height=\"12\" fill=\"#fff\"/><path d=\"M26 16h12\"/></svg>", "pencil": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M12 52l4-12 26-26 8 8-26 26z\" fill=\"#f3d98b\"/><path d=\"M38 18l8 8M12 52l10-4\"/></svg>", "mic": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"24\" y=\"10\" width=\"16\" height=\"26\" rx=\"8\" fill=\"#9cc5b0\"/><path d=\"M16 30c0 9 7 16 16 16s16-7 16-16M32 46v8M24 54h16\"/></svg>", "camera": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"10\" y=\"20\" width=\"44\" height=\"30\" rx=\"4\" fill=\"#f2b8a0\"/><path d=\"M24 20l3-6h10l3 6\"/><circle cx=\"32\" cy=\"35\" r=\"8\" fill=\"#fff\"/></svg>", "pear": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M32 14c-6 0-8 6-8 12-8 4-12 10-12 16 0 8 9 12 20 12s20-4 20-12c0-6-4-12-12-16 0-6-2-12-8-12z\" fill=\"#f3d98b\"/><path d=\"M32 14v-6\"/><path d=\"M33 10c4-4 9-4 11-2-3 4-8 4-11 2z\" fill=\"#9cc5b0\"/></svg>", "apple": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M32 22c-6-4-20-4-20 12 0 12 10 20 14 20 3 0 4-2 6-2s3 2 6 2c4 0 14-8 14-20 0-16-14-16-20-12z\" fill=\"#f2b8a0\"/><path d=\"M32 22c0-6 2-10 4-12\"/><path d=\"M34 16c4-5 10-5 12-3-3 5-9 5-12 3z\" fill=\"#9cc5b0\"/></svg>", "chestnut": "<svg viewBox=\"0 0 64 64\" fill=\"none\" stroke=\"#1f2a44\" stroke-width=\"2.2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M32 12c10 8 18 18 18 28 0 8-8 14-18 14s-18-6-18-14c0-10 8-20 18-28z\" fill=\"#f2b8a0\"/><path d=\"M16 44c10 4 22 4 32 0\" /><path d=\"M14 44c0 6 8 10 18 10s18-4 18-10\" fill=\"#f3d98b\"/></svg>"};
+document.querySelectorAll('.ill').forEach((e)=>{e.innerHTML=ILL[e.dataset.ill]||''});
+
+(function () {
+  var K = window.kwd || { step: function () {}, onGoto: function () {}, state: function () {}, onState: function () {} };
+  var stage = document.getElementById('stage');
+  var steps = Array.prototype.slice.call(document.querySelectorAll('.step'));
+  var N = steps.length, cur = 0;
+  function fit() { var s = Math.min(innerWidth / 960, innerHeight / 600); stage.style.transform = 'scale(' + s + ')'; stage.style.left = (innerWidth - 960 * s) / 2 + 'px'; stage.style.top = (innerHeight - 600 * s) / 2 + 'px'; }
+  addEventListener('resize', fit); fit();
+  var dots = document.getElementById('dots');
+  for (var i = 0; i < N; i++) dots.appendChild(Object.assign(document.createElement('span'), { className: 'dot' }));
+  function show(n, report) {
+    n = Math.max(1, Math.min(N, n));
+    steps.forEach(function (s, i) { s.classList.toggle('on', i === n - 1); s.classList.toggle('left', i < n - 1); });
+    Array.prototype.forEach.call(dots.children, function (d, i) { d.classList.toggle('on', i === n - 1); });
+    document.getElementById('prev').disabled = n === 1;
+    document.getElementById('next').disabled = n === N;
+    document.getElementById('lab').textContent = n + ' / ' + N;
+    if (n === 3 && !S.verb) {}
+    cur = n;
+    if (report) K.step(n, N);
+  }
+  document.getElementById('prev').onclick = function () { show(cur - 1, true); };
+  document.getElementById('next').onclick = function () { show(cur + 1, true); };
+  addEventListener('keydown', function (e) { if (e.key === 'ArrowRight') show(cur + 1, true); if (e.key === 'ArrowLeft') show(cur - 1, true); });
+  K.onGoto(function (n) { show(n, false); });
+
+  // ---- 함께 보는 상태: 학생이 누르면 선생님 화면에도, 선생님이 누르면 학생 화면에도 ----
+  var S = {};
+  function set(key, val) { S[key] = val; apply(key); K.state(key, val); if (K.event) K.event(key, JSON.stringify(val).slice(0, 80)); }
+  K.onState(function (key, val) { S[key] = val; apply(key); });
+  function apply(key) {
+    if (key === 's1') document.querySelectorAll('#s1 .pick').forEach(function (b) { b.classList.toggle('on', (S.s1 || []).indexOf(b.dataset.v) >= 0); });
+    if (key === 's2') document.querySelectorAll('.flip').forEach(function (f) { f.classList.toggle('on', !!(S.s2 || {})[f.dataset.i]); });
+    if (key === 's3') renderVerb();
+    if (key === 's4') renderDrop();
+    if (key === 's5') renderTastes();
+    if (key === 's6') renderSentence();
+  }
+  // 1
+  document.querySelectorAll('#s1 .pick').forEach(function (b) {
+    b.onclick = function () { var a = (S.s1 || []).slice(); var i = a.indexOf(b.dataset.v); if (i >= 0) a.splice(i, 1); else a.push(b.dataset.v); set('s1', a); };
+  });
+  // 2
+  document.querySelectorAll('.flip').forEach(function (f) {
+    f.onclick = function () { var o = Object.assign({}, S.s2 || {}); o[f.dataset.i] = !o[f.dataset.i]; set('s2', o); };
+  });
+  // 3
+  var PAST = { '가다': ['갔어요', 'ㅏ + 았어요 → 갔어요 (가 + 았 = 갔)'], '먹다': ['먹었어요', 'ㅓ 등 → 었어요'], '만들다': ['만들었어요', 'ㅡ → 었어요'], '하다': ['했어요', '하다 → 했어요 (특별)'], '보다': ['봤어요', 'ㅗ + 았어요 → 봤어요'] };
+  document.querySelectorAll('.verb').forEach(function (b) { b.onclick = function () { set('s3', b.dataset.v); }; });
+  function renderVerb() {
+    var v = S.s3; document.querySelectorAll('.verb').forEach(function (b) { b.classList.toggle('on', b.dataset.v === v); });
+    if (!v) return; var out = document.getElementById('out');
+    document.getElementById('outw').textContent = PAST[v][0]; document.getElementById('outr').textContent = PAST[v][1];
+    out.classList.remove('pop'); void out.offsetWidth; out.classList.add('pop');
+  }
+  // 4: 끌어다 놓기 (마우스·손가락)
+  var drag = null;
+  document.querySelectorAll('.tile').forEach(function (t) {
+    t.addEventListener('pointerdown', function (e) {
+      if (t.classList.contains('used')) return;
+      e.preventDefault(); t.setPointerCapture(e.pointerId);
+      var g = document.createElement('div'); g.className = 'ghost'; g.textContent = t.dataset.w; document.body.appendChild(g);
+      drag = { t: t, g: g }; move(e);
+    });
+    t.addEventListener('pointermove', function (e) { if (drag && drag.t === t) move(e); });
+    t.addEventListener('pointerup', function (e) {
+      if (!drag || drag.t !== t) return; drag.g.remove();
+      var tg = targetAt(e.clientX, e.clientY); clearOver(); drag = null;
+      if (tg) { var o = Object.assign({}, S.s4 || {}); o[tg.dataset.w] = t.dataset.w; set('s4', o); }
+    });
+  });
+  function move(e) { drag.g.style.left = e.clientX - 40 + 'px'; drag.g.style.top = e.clientY - 24 + 'px'; clearOver(); var tg = targetAt(e.clientX, e.clientY); if (tg) tg.classList.add('over'); }
+  function targetAt(x, y) { var r = null; document.querySelectorAll('.target').forEach(function (t) { var b = t.getBoundingClientRect(); if (x >= b.left && x <= b.right && y >= b.top && y <= b.bottom) r = t; }); return r; }
+  function clearOver() { document.querySelectorAll('.target.over').forEach(function (t) { t.classList.remove('over'); }); }
+  function renderDrop() {
+    var o = S.s4 || {}; var used = {};
+    document.querySelectorAll('.target').forEach(function (t) {
+      var a = o[t.dataset.w]; t.querySelector('.ans').textContent = a || '';
+      t.classList.toggle('ok', !!a && a === t.dataset.w); t.classList.toggle('no', !!a && a !== t.dataset.w);
+      if (a === t.dataset.w) used[a] = 1;
+    });
+    document.querySelectorAll('.tile').forEach(function (t) { t.classList.toggle('used', !!used[t.dataset.w]); });
+  }
+  // 5
+  var TASTES = ['달아요', '매워요', '셔요', '짜요'];
+  document.querySelectorAll('.food').forEach(function (f, i) {
+    TASTES.forEach(function (tt) { var b = document.createElement('button'); b.className = 'taste'; b.textContent = tt; b.onclick = function () { var o = Object.assign({}, S.s5 || {}); o[i] = tt; set('s5', o); }; f.querySelector('.tastes').appendChild(b); });
+  });
+  function renderTastes() {
+    var o = S.s5 || {};
+    document.querySelectorAll('.food').forEach(function (f, i) { f.querySelectorAll('.taste').forEach(function (b) { var picked = o[i] === b.textContent; b.classList.toggle('ok', picked && b.textContent === f.dataset.ok); b.classList.toggle('no', picked && b.textContent !== f.dataset.ok); }); });
+  }
+  // 6
+  var ANSWER = ['추석에', '가족하고', '송편을', '만들었어요'];
+  var BANK = ['송편을', '추석에', '만들었어요', '가족하고'];
+  function renderSentence() {
+    var picked = S.s6 || []; var slots = document.getElementById('slots'), bank = document.getElementById('bank'), res = document.getElementById('res');
+    slots.innerHTML = ''; bank.innerHTML = '';
+    picked.forEach(function (w, i) { var b = document.createElement('button'); b.className = 'word'; b.textContent = w; b.onclick = function () { var a = picked.slice(); a.splice(i, 1); set('s6', a); }; slots.appendChild(b); });
+    BANK.forEach(function (w) { if (picked.indexOf(w) >= 0) return; var b = document.createElement('button'); b.className = 'word'; b.textContent = w; b.onclick = function () { set('s6', picked.concat([w])); }; bank.appendChild(b); });
+    if (picked.length === ANSWER.length) { var ok = picked.join(' ') === ANSWER.join(' '); res.textContent = ok ? '정답! 추석에 가족하고 송편을 만들었어요.' : '다시 해 봐요 — 언제 → 누구하고 → 무엇을 → 했어요'; res.className = 'result ' + (ok ? 'ok' : 'no'); }
+    else { res.textContent = ''; res.className = 'result'; }
+  }
+  renderSentence();
+  show(1, false);
+  K.step(1, N);
+})();
+</script>
+</body>
+</html>
