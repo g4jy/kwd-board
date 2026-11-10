@@ -258,6 +258,90 @@ def add_stages(data, notes, by_ko, cards):
     return data
 
 
+def _norm(s):
+    return re.sub(r'\s+', ' ', (s or '').strip().lower()).rstrip('.')
+
+
+def master_index(path):
+    """T136ag (A14-F04): 중앙 단어 DB 최신 판(vocab_master.csv) → 표제어 → 행들. 뜻·레벨은 이 판이 정답."""
+    import csv
+    csv.field_size_limit(10 ** 9)
+    by = {}
+    with open(path, encoding='utf-8-sig', newline='') as f:
+        for r in csv.DictReader(f):
+            hw = (r.get('headword') or '').strip()
+            if hw:
+                by.setdefault(hw, []).append(r)
+    return by
+
+
+def master_row(rows, en):
+    """같은 표제어가 여러 행이면: 지금 뜻과 같은 행 → 카드(flashcard=yes) 행 → 레벨 있는 행 → 첫 행."""
+    for test in (lambda r: _norm(r.get('en')) == _norm(en), lambda r: r.get('flashcard') == 'yes',
+                 lambda r: (r.get('level_final') or '').isdigit()):
+        hit = [r for r in rows if test(r)]
+        if hit:
+            return hit[0]
+    return rows[0]
+
+
+def apply_master(data, M, tag):
+    """판 단어의 뜻(en)·레벨(topik·level·step)을 마스터 값으로. 마스터에 없는 낱말은 옛 DB 값 그대로(mid 없음)."""
+    hit = 0
+    for v in data['vocab']:
+        rows = M.get(v['w'])
+        if not rows:
+            continue
+        r = master_row(rows, v.get('en'))
+        hit += 1
+        v['mid'] = r.get('id')
+        if (r.get('en') or '').strip():
+            v['en'] = r['en'].strip()
+        lv = r.get('level_final') or ''
+        if lv.isdigit():
+            v['topik'] = v['level'] = int(lv)
+            v['step'] = STAGES.get(int(lv), '')
+        else:
+            v['topik'] = None
+    data['vocab_master'] = tag
+    data['master_hit'] = hit
+    return data
+
+
+def class_words(data, st_file, M):
+    """T136ag (A07-F07): 10/18 뒤 수업 단어(work/student_words/st_N.tsv, check=ok·제외 아님)를 판 단어에 더한다."""
+    if not st_file or not os.path.exists(st_file):
+        return 0
+    have = {v['w'] for v in data['vocab']}
+    n = 0
+    for r in read_tsv(st_file):
+        ko = (r.get('ko') or '').strip()
+        if not ko or r.get('check') != 'ok' or (r.get('excluded') or '').strip() or ko in have:
+            continue
+        have.add(ko)
+        try:
+            les = int(r.get('lesson') or 0) or None
+        except ValueError:
+            les = None
+        data['vocab'].append({'w': ko, 'en': r.get('en') or '', 'cat': '', 'pos': r.get('pos') or '', 'topik': None,
+                              'first': les, 'last': les, 'seen': 1, 'status': '', 'rel': {}, 'src': 'lesson',
+                              'from': 'class_words', 'date': r.get('date') or ''})
+        n += 1
+    return n
+
+
+def st_files(work):
+    """옛 DB 학생 id(db_id) → work/student_words/st_<n>.tsv. 정본 = data/student_info.json (work/st_map.py)."""
+    sys.path.insert(0, work)
+    try:
+        import st_map
+        m = st_map.by_db_id()
+    except Exception as e:  # noqa: BLE001
+        print('  (st_map 못 읽음)', e, file=sys.stderr)
+        m = {}
+    return {k: os.path.join(work, 'student_words', v + '.tsv') for k, v in m.items()}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--db')
@@ -266,7 +350,18 @@ def main():
     ap.add_argument('--app', help='kwd-app 저장소 (notes.tsv·sets.tsv)')
     ap.add_argument('--word-events', help='숙제 단어 카드 결과 word_events.jsonl')
     ap.add_argument('--hw-roster', help='숙제 student_id ↔ preply_id 표 (json 목록)')
+    ap.add_argument('--master', help='vocab_master.csv (기본: work/vocab_latest.latest_master — 가장 높은 판)')
+    ap.add_argument('--out', help='쓸 폴더 (기본 work/board_data; 시험은 임시 폴더)')
     a = ap.parse_args()
+    if a.master:
+        mpath, mtag = a.master, (re.search(r'vocab_master_(v[\d.]+)', a.master) or [None, '?'])[1]
+    else:
+        sys.path.insert(0, a.work)
+        import vocab_latest
+        mpath, mtag = vocab_latest.latest_master('kwd_board_export')
+    M = master_index(mpath)
+    print(f'중앙 단어 DB {mtag}: 표제어 {len(M)}개')
+    stf = st_files(a.work)
     app = a.app or next(iter(glob.glob('C:/Users/*/Projects/kwd-app') + glob.glob('C:/KWD/kwd-app')), None)
     notes, by_ko = app_index(app)
     ev = a.word_events or next(iter(glob.glob(os.path.join(a.work, 'hw_platform/grader/kwd_sync/word_events.jsonl'))), None)
@@ -276,7 +371,7 @@ def main():
     if not db or not os.path.exists(db):
         sys.exit('DB를 찾지 못했어요: --db 로 알려 주세요')
     c = sqlite3.connect('file:' + db + '?mode=ro', uri=True)
-    out = os.path.join(a.work, 'board_data')
+    out = a.out or os.path.join(a.work, 'board_data')
     os.makedirs(out, exist_ok=True)
     lessons = os.path.join(a.work, 'Student_Lessons')
     folders = set(os.listdir(lessons)) if os.path.isdir(lessons) else set()
@@ -298,6 +393,9 @@ def main():
             continue
         data = export_student(c, st, idx, cat_words)
         add_stages(data, notes, by_ko, cards_all.get(str(st[2] or ''), {}) or cards_all.get(folder, {}))
+        added = class_words(data, stf.get(str(st[0])), M)
+        apply_master(data, M, mtag)
+        data['class_words_added'] = added
         if not data['vocab'] and not data['grammar']:
             continue
         with open(os.path.join(out, folder + '.json'), 'w', encoding='utf-8') as f:
@@ -306,6 +404,7 @@ def main():
         staged = sum(1 for v in data['vocab'] if v.get('step'))
         print(f"{folder}: 단어 {len(data['vocab'])} (단계 붙음 {staged}) · 문형 {len(data['grammar'])}")
     print(f'{n}명 → {out}')
+    print(json.dumps({'files': n, 'vocab_master': mtag, 'out': out}, ensure_ascii=False))
 
 
 if __name__ == '__main__':
