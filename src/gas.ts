@@ -24,8 +24,8 @@ const ls = {
 };
 
 export const gasKey = () => ls.get(KEY);
-// T136ak(A07-F09): 녹화를 올릴 곳은 구글 Apps Script 웹앱 주소만. 링크의 &g= 나 저장된 값이 다른 곳이면 버린다
-export const safeGasUrl = (u: string) => (/^https:\/\/script\.google\.com\/macros\/s\/[\w-]{20,120}\/exec$/.test(u) ? u : '');
+// T136ak(A07-F09): 녹화를 올릴 곳은 구글 Apps Script 웹앱 주소(또는 이 PC의 시험용 가짜 구글)만. 링크의 &g= 나 저장된 값이 다른 곳이면 버린다
+export const safeGasUrl = (u: string) => (/^https:\/\/script\.google\.com\/macros\/s\/[\w-]{20,120}\/exec$/.test(u) || /^http:\/\/(localhost|127\.0\.0\.1):\d{2,5}\/?$/.test(u) ? u : '');
 export const gasUrl = () => safeGasUrl(ls.get(URL_KEY)) || GAS_URL_DEFAULT;
 export const gasReady = () => !!gasKey() && !!gasUrl();
 export function setGas(key: string, url = '') {
