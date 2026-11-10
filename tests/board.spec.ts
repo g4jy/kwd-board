@@ -925,6 +925,40 @@ test.describe('v8: 교실 (1:1 통화 · 녹화)', () => {
     }
     expect(r.toast1).toContain('녹화 + 판 기록');
   });
+  test('T136x 녹화가 조용히 사라지지 않는다: 무음 경고 · 탭 닫기 경고 · 올리기 실패 붉은 칸 + 내려받기(_rec.json 포함) · 닫힌 탭 수업도 _rec.json·끝 표시', () => {
+    const r = JSON.parse(execFileSync('node', ['scripts/t136x-rec.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/t136x' } }));
+    expect(r.errs).toEqual([]);
+    expect(r.crop).toBe('element');
+    expect([r.unloadAsks, r.unloadAfter]).toEqual([true, false]); // 녹화 중에만 묻는다
+    expect(r.warn).toContain('선생님 소리가 10초 넘게 안 들려요'); // T083d 무음 장치가 실제로 돈다
+    expect(r.failText).toContain('구글 드라이브에 아직 다 못 올렸어요');
+    expect(r.failAfterS).toBeLessThan(60);
+    expect(r.failOverflow).toBe(false);
+    expect(r.zipName).toMatch(/_녹화\.zip$/);
+    expect([...r.zipFiles].sort()).toEqual(['.kwd.zip', '.webm', '_Media.webm', '_Student.webm', '_Teacher.webm', '_rec.json']);
+    expect(r.meta.faces).toEqual({ student: false, teacher: false });
+    expect(r.meta.faces_basis).toBe('crop:element');
+    expect(r.meta.empty).toEqual([]);
+    expect(r.meta.teacherSilent).toBeGreaterThan(0.9);
+    expect(r.meta.warned).toContain('teacher:quiet');
+    expect(Object.keys(r.meta.kbps)).toHaveLength(4);
+    expect(r.events).toContain('rec_fail:upload');
+    expect(r.sessionsAfterFail.some((s: { uploaded: boolean }) => !s.uploaded)).toBe(true); // 못 올린 녹화는 남아 있다
+    expect(r.doneAfterBack).toBe(1); // 인터넷이 돌아오면 이어 올려 끝 표시
+    expect(r.landing1[0]).toEqual(['.kwd.zip', '_done.json', '_rec.json']);
+    expect(r.orphanDirs).toBe(1); // 탭이 닫힌 수업
+    expect(r.orphanFiles).toEqual(expect.arrayContaining(['.webm', '_Teacher.webm', '_rec.json', '_done.json']));
+    expect(r.orphanDone.meta).toBe(true);
+    expect(r.orphanMeta.orphan).toBe(true);
+  });
+  test('T136x 지난 녹화 정리: 못 올리고 못 저장한 녹화는 날짜와 상관없이 지우지 않는다', async () => {
+    const { prunable } = await import('../src/recstore');
+    const old = Date.now() - 30 * 86400000;
+    const mk = (id: string, at: number, x: object = {}) => ({ id, tag: '', stem: id, startedAt: at, tracks: {}, ...x });
+    const all = [mk('a', Date.now()), mk('b', Date.now() - 1000), mk('c', Date.now() - 2000), mk('up', old, { uploaded: true }), mk('local', old, { localOk: true }), mk('lost', old), mk('lost2', old - 1)];
+    expect(prunable(all).sort()).toEqual(['local', 'up']);
+    expect(prunable(all.slice(0, 3))).toEqual([]);
+  });
   test('학생 표: 목적 × 단계, 지금/모두, 찾기, 카드 → 그 학생 판', () => {
     const r = JSON.parse(execFileSync('node', ['scripts/roster-smoke.mjs'], { encoding: 'utf8', env: { ...process.env, OUT: 'test-results/roster' } }));
     expect(r.errs).toEqual([]);

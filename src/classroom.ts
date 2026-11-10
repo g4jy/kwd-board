@@ -3,9 +3,9 @@
 import { icon } from './icons';
 import { h, toast, downloadBlob } from './ui';
 import JSZip from 'jszip';
-import { listSessions, loadSession, dropSession } from './recstore';
+import { listSessions, loadSession, dropSession, patchSession } from './recstore';
 import { Call, fakeMedia, DEFAULT_ICE } from './call';
-import { LessonRecorder, type OpenWriter, type MeterLevels } from './lessonrec';
+import { LessonRecorder, type OpenWriter, type MeterLevels, type RecFail } from './lessonrec';
 import { gasReady } from './gas';
 import { finishUpload, pumpUploads, releaseHold } from './recupload';
 import { httpBase, type BoardStore, type Role } from './store';
@@ -58,6 +58,8 @@ export class Classroom {
   readonly micBtn: HTMLButtonElement | null = null; // 카메라 없이 마이크만 켜고 녹화
   readonly meterEl: HTMLElement | null = null; // 녹화 중 소리 크기 막대 (선생님 · 학생)
   private warnEl: HTMLElement | null = null; // 무음 경고
+  private failMsgs: string[] = []; // 수업 중 녹화 실패 (소리 경고와 함께 붉은 줄에, 수업이 끝날 때까지 남김)
+  private failEl: HTMLElement | null = null; // 수업 끝 뒤 실패 알림 + 내려받기 단추
   private rec = new LessonRecorder();
   private remoteV: HTMLVideoElement;
   private localV: HTMLVideoElement;
@@ -114,6 +116,15 @@ export class Classroom {
       this.meterEl = h('span', { class: 'rec-meter', hidden: '', title: '녹화 중 소리 크기: 왼쪽 선생님 · 오른쪽 학생' }, h('span', { class: 'rm-l', 'data-k': 'teacher' }, h('i', {}), h('b', {}, '나')), h('span', { class: 'rm-l', 'data-k': 'student' }, h('i', {}), h('b', {}, '학생')));
       this.rec.onLevels = (l) => this.showLevels(l);
       this.rec.onEnded = () => void this.endLesson(); // 크롬의 '공유 중지'
+      this.rec.onFail = (k, tr) => this.recFailed(k, tr);
+      // 녹화 중 탭 닫기·새로고침 → 브라우저가 한 번 묻는다 (T136x A07-F03). 조각은 이미 브라우저 저장소에 있다
+      const unload = (e: BeforeUnloadEvent) => {
+        if (!this.rec.active) return;
+        e.preventDefault();
+        e.returnValue = '';
+      };
+      window.addEventListener('beforeunload', unload);
+      this.offs.push(() => window.removeEventListener('beforeunload', unload));
       this.rec.onMedia = (op, sp) => host.store.log({ kind: 'media', data: { op, kind: sp.kind, name: sp.name, ref: sp.ref, at_s: op === 'play' ? sp.from_s : sp.to_s } });
     }
     const setObs = () => this.applyView();
@@ -497,7 +508,10 @@ export class Classroom {
       const dir = await this.host.lessonDir(stem.replace(/_#\d+$/, ''));
       this.recOpen = dir?.open || null;
       this.recPath = dir?.path || '';
-      await this.rec.start({ stage: this.host.stage, mine: this.call?.local || null, theirs: this.call?.remote() || null, stem, open: this.recOpen || (async () => null), now: this.host.store.now(), tag: String(this.host.meta().student || '').replace(/[^\w-]/g, ''), keep: gasReady(), streams: () => ({ mine: this.call?.local || null, theirs: this.call?.remote() || null }) });
+      await this.rec.start({ stage: this.host.stage, mine: this.call?.local || null, theirs: this.call?.remote() || null, stem, open: this.recOpen || (async () => null), now: this.host.store.now(), tag: String(this.host.meta().student || '').replace(/[^\w-]/g, ''), keep: true, streams: () => ({ mine: this.call?.local || null, theirs: this.call?.remote() || null }) });
+      this.failMsgs = this.failMsgs.filter((m) => m.startsWith('판만 자르기'));
+      this.failEl?.remove();
+      this.failEl = null;
       this.host.store.meta.set('recording', { startedAt: this.rec.startedAt, files: this.rec.files, crop: this.rec.cropped || 'none' });
       this.host.store.log({ kind: 'lesson', data: { op: 'start', rec: this.rec.files, crop: this.rec.cropped || 'none' } });
       toast(this.rec.cropped ? '수업을 시작했어요 · 판과 목소리를 녹화해요' : '수업을 시작했어요 · 녹화 중');
@@ -526,26 +540,85 @@ export class Classroom {
     this.confirmEnd = 0;
     const dur = Math.round((this.host.store.now() - this.rec.startedAt) / 1000);
     const open = this.recOpen;
-    const { saved, blobs, empty } = await this.rec.stop({ board: this.host.store.id, ...this.host.meta(), call: this.call?.stats() }, open || (async () => null));
-    this.host.store.log({ kind: 'lesson', data: { op: 'end', seconds: dur, saved: saved.length, downloaded: blobs.length, mode: saved.length ? 'folder' : 'download', empty: empty.length ? empty : undefined } });
+    let r: Awaited<ReturnType<LessonRecorder['stop']>>;
+    try {
+      r = await this.rec.stop({ board: this.host.store.id, ...this.host.meta(), call: this.call?.stats() }, open || (async () => null));
+    } catch (e) {
+      // 끝내기 자체가 실패해도 조각은 브라우저 저장소에 있다 → 그 자리에서 내려받게
+      console.warn('rec stop', e);
+      this.host.store.log({ kind: 'lesson', data: { op: 'rec_fail', what: 'stop', error: String(e).slice(0, 120) } });
+      this.renderLesson();
+      this.showFail(['녹화를 마무리하지 못했어요'], this.rec.lastSid || this.rec.sid);
+      return;
+    }
+    const { saved, blobs, empty, fallback, fails } = r;
+    this.host.store.log({ kind: 'lesson', data: { op: 'end', seconds: dur, saved: saved.length, downloaded: blobs.length, mode: saved.length ? 'folder' : 'download', empty: empty.length ? empty : undefined, fails: fails.length ? fails : undefined } });
     this.renderLesson();
     // 폴더에 못 쓰고 내려받기로 끝나면 파일 이름만으로 학생·시각을 알 수 있게 학생 번호를 앞에 붙인다(예: '<학생 폴더 코드> 2026-11-02 20-00_#19_Teacher.webm')
     const sid = this.rec.lastSid;
     const toDrive = !saved.length && !!sid && gasReady();
     const tag = saved.length || toDrive ? '' : String(this.host.meta().student || '').replace(/[^\w-]/g, '');
-    if (!toDrive) await this.downloadZip(blobs, tag, this.host.stem());
+    const problems: string[] = [];
+    if (fallback) {
+      // 폴더에 다 못 썼다 → 브라우저 저장소 복사본 전체를 zip 으로 (폴더에 남은 파일은 그대로 둔다)
+      problems.push('수업 폴더에 녹화를 다 쓰지 못했어요');
+      await this.downloadZip(await loadSession(sid).catch(() => blobs), tag, this.host.stem());
+    } else if (!toDrive) await this.downloadZip(blobs, tag, this.host.stem());
+    if (!toDrive && sid && !fallback) void patchSession(sid, { localOk: true }); // 이 기기에서 저장 끝 → 오래되면 정리해도 된다
     // 판 기록도 같은 수업 폴더에 (묻는 창 없이). 드라이브로 올리는 수업은 같은 묶음에 얹는다
     const bundled = await this.host.saveBundle(open, toDrive ? sid : '');
     if (toDrive) {
       await releaseHold(sid);
       toast('녹화를 구글 드라이브 작업중으로 올리는 중이에요 · 이 탭을 닫지 말아 주세요', 6000);
       const ok = await finishUpload(sid);
-      toast(ok ? '녹화와 판 기록을 구글 드라이브 작업중에 올렸어요' : '아직 다 못 올렸어요 · 이 기기에 안전하게 남아 있고, 인터넷이 되면 판을 열 때 이어서 올려요', 9000);
+      if (ok) toast('녹화와 판 기록을 구글 드라이브 작업중에 올렸어요', 9000);
+      else {
+        problems.push('구글 드라이브에 아직 다 못 올렸어요 (이 기기에 남아 있고, 인터넷이 되면 판을 열 때 이어서 올려요)');
+        this.host.store.log({ kind: 'lesson', data: { op: 'rec_fail', what: 'upload' } });
+      }
       void pumpUploads();
     } else toast(saved.length ? `수업 폴더에 저장했어요 · ${this.recPath}${bundled ? ' (녹화 + 판 기록)' : ''}` : '녹화 파일을 내려받았어요', 6000);
     this.recOpen = null;
     void this.hasSaved().then((v) => this.savedBtn && ((this.savedBtn.dataset.none = v ? '' : '1'), (this.savedBtn.hidden = !v)));
-    if (empty.length && dur > 5) toast('주의: 녹화 파일이 비어 있어요 (' + empty.map((n) => n.replace(/^.*_/, '')).join(', ') + ') · 마이크 허용과 소리 줄을 확인해 주세요', 9000);
+    if (empty.length && dur > 5) problems.push('녹화 파일이 비어 있어요 (' + empty.map((n) => n.replace(/^.*_/, '')).join(', ') + ')');
+    for (const f of fails) if (f.kind !== 'crop') problems.push(this.failText(f.kind, f.track));
+    if (problems.length) this.showFail([...new Set(problems)], sid);
+    this.failMsgs = [];
+  }
+
+  // ---- 녹화 실패 알림 (T136x A07-F03): 수업 중엔 붉은 줄에 남기고, 끝나면 붉은 칸 + 그 자리에서 내려받기 ----
+  private failText(kind: RecFail, track: string): string {
+    const which = /_Teacher\./.test(track) ? '선생님 소리' : /_Student\./.test(track) ? '학생 소리' : /_Media\./.test(track) ? '자료 소리' : /_rec\.json$/.test(track) ? '녹화 기록' : '영상';
+    if (kind === 'crop') return '판만 자르기가 안 돼요 — 카메라 칸도 녹화돼요';
+    if (kind === 'write') return `수업 폴더에 쓰지 못해요 (${which}) — 이 기기 브라우저에는 남아요`;
+    if (kind === 'store') return `이 기기 저장 공간에 녹화를 남기지 못해요 (${which})`;
+    return `녹화가 멈춘 것 같아요 (${which} 파일이 15초 넘게 그대로)`;
+  }
+  private recFailed(kind: RecFail, track: string) {
+    const msg = this.failText(kind, track);
+    if (!this.failMsgs.includes(msg)) this.failMsgs.push(msg);
+    this.host.store.log({ kind: 'lesson', data: { op: 'rec_fail', what: kind, track } });
+    this.paintWarn([]);
+  }
+  private showFail(msgs: string[], sid: string) {
+    this.failEl?.remove();
+    const dl = h('button', { type: 'button', class: 'rf-dl' }, '녹화 내려받기') as HTMLButtonElement;
+    const close = h('button', { type: 'button', class: 'rf-x', 'aria-label': '닫기' }, '닫기');
+    const el = h('div', { class: 'rec-fail', role: 'alert' }, h('p', {}, '녹화 확인 필요: ' + msgs.join(' · ')), h('div', { class: 'rf-row' }, dl, close));
+    dl.addEventListener('click', async () => {
+      dl.disabled = true;
+      const parts = sid ? await loadSession(sid).catch(() => []) : [];
+      if (parts.length) {
+        const s = (await listSessions()).find((x) => x.id === sid);
+        await this.downloadZip(parts, s?.tag || '', s?.stem || this.host.stem());
+        void patchSession(sid, { localOk: true });
+        toast('녹화를 zip 으로 내려받았어요', 6000);
+      } else toast('이 기기에 남은 녹화가 없어요', 6000);
+      dl.disabled = false;
+    });
+    close.addEventListener('click', () => (el.remove(), this.failEl === el && (this.failEl = null)));
+    this.failEl = el;
+    this.host.root.append(el);
   }
 
   // 내려받기 1개 묶음(zip) — 크롬의 '여러 파일 내려받기' 차단을 피한다. 영상은 이미 압축돼 있어 묶기만(STORE)
@@ -558,7 +631,8 @@ export class Classroom {
       downloadBlob(`${tag ? tag + ' ' : ''}${stem}_녹화.zip`, out);
     } catch (e) {
       console.warn('zip', e);
-      for (const b of blobs) downloadBlob(tag ? `${tag} ${b.name}` : b.name, b.blob); // 묶기 실패 → 낱개로
+      // 묶기 실패 → 낱개로. 크롬이 여러 파일을 막으면 뒤쪽이 빠진다(11/02 _rec.json) → 기록(json)부터
+      for (const b of [...blobs].sort((x, y) => Number(!x.name.endsWith('.json')) - Number(!y.name.endsWith('.json')))) downloadBlob(tag ? `${tag} ${b.name}` : b.name, b.blob);
     }
   }
 
@@ -604,6 +678,10 @@ export class Classroom {
     else if (l.warn.teacher === 'quiet') msgs.push('선생님 소리가 10초 넘게 안 들려요 — 마이크 음소거를 확인하세요');
     if (l.warn.student === 'missing') msgs.push('학생 소리가 연결되지 않았어요 — 학생이 마이크를 켰는지 확인하세요');
     else if (l.warn.student === 'quiet') msgs.push('학생 소리가 10초 넘게 안 들려요');
+    this.paintWarn(msgs);
+  }
+  private paintWarn(level: string[]) {
+    const msgs = [...this.failMsgs, ...level];
     if (!msgs.length) {
       this.warnEl?.remove();
       this.warnEl = null;

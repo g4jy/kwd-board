@@ -28,6 +28,19 @@ export interface RecSession {
   meta?: string; // 끝에 저장한 _rec.json 이름
   upErr?: string; // 마지막 올리기 실패 이유
   holdUntil?: number; // 판 기록(zip)을 얹는 동안 '끝' 표시를 미룬다
+  lastAt?: number; // 마지막 조각을 받은 시각 (탭이 닫혀 끝 표시가 없는 수업을 가려낸다)
+  localOk?: boolean; // 이 기기에서 폴더 저장·내려받기를 마침 (드라이브에 안 올리는 수업)
+  orphan?: boolean; // 탭이 닫혀 수업 끝 처리가 없었다 → 다시 열 때 _rec.json 을 만들어 닫음 (T136x)
+}
+
+// 오래된 복사본 정리 대상 (T136x A07-F03): 최근 KEEP 개 밖에서, 드라이브에 다 올렸거나 이 기기에서 저장을 마친 것만.
+// 올리지도 저장하지도 못한 녹화는 날짜와 상관없이 지우지 않는다 (예전: 14일 지나면 지움). 직접 지우기는 '지난 녹화' 메뉴
+export function prunable(all: RecSession[]): string[] {
+  return [...all]
+    .sort((a, b) => b.startedAt - a.startedAt)
+    .slice(KEEP)
+    .filter((s) => s.uploaded || s.localOk)
+    .map((s) => s.id);
 }
 
 export async function beginSession(s: RecSession) {
@@ -37,14 +50,14 @@ export async function beginSession(s: RecSession) {
     tx.objectStore('sessions').put(s);
     await done(tx);
     // 오래된 복사본 정리: 드라이브에 다 올라간 것만 (아직 못 올린 녹화는 14일까지 지킨다)
-    const all = await listSessions();
-    for (const old of all.slice(KEEP)) if (old.uploaded || Date.now() - old.startedAt > 14 * 86400000) await dropSession(old.id);
+    for (const id of prunable(await listSessions())) await dropSession(id);
   } catch (e) {
     console.warn('recstore', e);
   }
 }
 
-export async function putChunk(id: string, name: string, n: number, blob: Blob) {
+// 조각 하나 저장. 실패하면 false (저장소 가득 참 등) — 부르는 쪽이 화면에 알린다
+export async function putChunk(id: string, name: string, n: number, blob: Blob): Promise<boolean> {
   try {
     const db = await open();
     const tx = db.transaction(['chunks', 'sessions'], 'readwrite');
@@ -54,12 +67,15 @@ export async function putChunk(id: string, name: string, n: number, blob: Blob) 
       const s = g.result as RecSession | undefined;
       if (s && s.tracks[name]) {
         s.tracks[name].n = Math.max(s.tracks[name].n, n + 1);
+        s.lastAt = Date.now();
         tx.objectStore('sessions').put(s);
       }
     };
     await done(tx);
+    return true;
   } catch (e) {
     console.warn('recstore chunk', e);
+    return false;
   }
 }
 
@@ -155,4 +171,33 @@ export async function readChunks(id: string, name: string, from: number, to: num
   const q = tx.objectStore('chunks').getAll(IDBKeyRange.bound(`${id}|${name}|${pad(from)}`, `${id}|${name}|${pad(to - 1)}`));
   await done(tx);
   return q.result as Blob[];
+}
+
+// 지금 이 탭에서 녹화 중인 수업 (탭이 닫힌 수업과 구별)
+export const liveSessions = new Set<string>();
+const orphanMs = () => {
+  try {
+    return Number(localStorage.getItem('kwd.test.orphanMs')) || 10 * 60_000; // 시험만 짧게
+  } catch {
+    return 10 * 60_000;
+  }
+};
+// 탭이 닫혀 '끝' 처리가 없던 수업 (T136x A07-F03): 10분 넘게 조각이 없으면 있는 조각으로 _rec.json 을 만들어 끝 표시.
+// 그래야 드라이브 올리기가 끝 표시(_done)까지 가고, 묶음에 _rec.json 이 항상 들어간다. 닫은 개수
+export async function closeOrphans(now = Date.now()): Promise<number> {
+  let n = 0;
+  for (const s of await listSessions()) {
+    if (s.ended || liveSessions.has(s.id) || now - (s.lastAt || s.startedAt) < orphanMs()) continue;
+    const meta = `${s.stem}_rec.json`;
+    if (!s.tracks[meta]) {
+      const bytes: Record<string, number> = {};
+      for (const [k, v] of Object.entries(s.tracks)) bytes[k] = v.n; // 조각 수(1초 단위)
+      const text = JSON.stringify({ schema: 'kwd-lesson-rec/v2', orphan: true, note: '탭이 닫혀 수업 끝 처리가 없었음 — 다음에 판을 열 때 만든 기록', started_at: s.startedAt, started_at_iso: new Date(s.startedAt).toISOString(), last_chunk_at_iso: s.lastAt ? new Date(s.lastAt).toISOString() : null, duration_s: s.lastAt ? Math.max(0, Math.round((s.lastAt - s.startedAt) / 1000)) : null, chunks: bytes, crop: 'unknown', faces: { student: null, teacher: null } }, null, 1);
+      if (!(await putChunk(s.id, meta, 0, new Blob([text], { type: 'application/json' })))) continue;
+      await patchSession(s.id, (c) => ({ tracks: { ...c.tracks, [meta]: { mime: 'application/json', n: 1 } }, meta, orphan: true }));
+    }
+    await markEnded(s.id);
+    n++;
+  }
+  return n;
 }

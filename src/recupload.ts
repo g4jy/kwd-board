@@ -117,12 +117,15 @@ export function startUploadLoop() {
 // 끝난 수업: 남은 것을 모두 올리고 기다린다 (최대 waitMs). 다 올랐으면 true
 export async function finishUpload(sid: string, waitMs = 90_000): Promise<boolean> {
   const t0 = Date.now();
+  let errSince = 0;
   for (;;) {
     await pumpUploads(true);
     const s = await getSession(sid);
     if (!s) return false;
     if (s.uploaded) return true;
-    if (Date.now() - t0 > waitMs || s.upErr === 'auth') return false;
+    // 올리기가 20초 내내 실패하면 더 기다리지 않고 알린다 (T136x: 선생님이 바로 내려받을 수 있게). 뒤에서 계속 이어 올린다
+    errSince = s.upErr ? errSince || Date.now() : 0;
+    if (Date.now() - t0 > waitMs || s.upErr === 'auth' || (errSince && Date.now() - errSince > 20_000)) return false;
     await new Promise((r) => window.setTimeout(r, 2000));
   }
 }

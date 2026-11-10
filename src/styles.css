@@ -3484,3 +3484,10 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 .th-board { min-height: 44px; display: flex; align-items: center; }
 .th-set button { min-height: 44px; }
 .th-main .lr-split { font-size: 13px; color: var(--muted); }
+
+/* T136x 녹화 실패: 수업이 끝난 뒤에도 닫을 때까지 남는 붉은 칸 + 내려받기 */
+.rec-fail { position: fixed; top: 56px; left: 50%; transform: translateX(-50%); z-index: 41; width: min(92vw, 560px); background: #fff; color: var(--ink); border: 2px solid #b3261e; padding: 12px 16px; border-radius: 12px; font-size: 15px; box-shadow: var(--shadow); }
+.rec-fail p { margin: 0 0 10px; font-weight: 600; color: #b3261e; line-height: 1.45; }
+.rec-fail .rf-row { display: flex; gap: 8px; justify-content: flex-end; }
+.rec-fail button { min-height: 44px; padding: 0 16px; border-radius: 10px; font-size: 15px; border: 1px solid var(--line, #ccc); background: #fff; cursor: pointer; }
+.rec-fail .rf-dl { background: #b3261e; border-color: #b3261e; color: #fff; font-weight: 600; }

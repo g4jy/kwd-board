@@ -8,6 +8,7 @@ import { DemoScreen, type DemoView } from './demo';
 import { h } from './ui';
 import { takeGasKeyFromLocation, gasReady } from './gas';
 import { startUploadLoop } from './recupload';
+import { closeOrphans } from './recstore';
 
 // 시험용 손잡이 (자동 시험이 실제 폴더 대신 OPFS 폴더를 넣는다)
 (window as unknown as { __kwdFolder?: unknown }).__kwdFolder = { setWorkHandleForTest, listStudents, rerender: () => route() };
@@ -84,7 +85,8 @@ function demoBadge(on: boolean) {
 }
 
 takeGasKeyFromLocation(); // 선생님 링크의 ?k=열쇠 → 이 기기에 저장하고 주소에서 지움
-if (gasReady()) startUploadLoop(); // 못 올린 녹화 이어서 올리기
+// 탭이 닫혀 끝나지 않은 녹화를 닫고(_rec.json 만들기, T136x) → 못 올린 녹화 이어서 올리기
+void closeOrphans().catch(() => 0).then(() => gasReady() && startUploadLoop());
 window.addEventListener('hashchange', route);
 if (isDemo()) void useDemoFolder().then(route);
 else route();

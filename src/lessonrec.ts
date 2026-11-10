@@ -5,7 +5,7 @@
 // - 시각: 시작 순간의 판 시계(store.now) 를 _rec.json 에 → 판 사건 기록과 영상 시각이 맞는다
 // 파일은 KWD 폴더 Student_Lessons/<학생>/녹화/ 에 1초마다 이어 쓴다. 폴더가 없으면 끝날 때 내려받기.
 
-import { beginSession, putChunk, markEnded, patchSession } from './recstore';
+import { beginSession, putChunk, markEnded, patchSession, liveSessions } from './recstore';
 
 export interface RecFiles {
   video: string;
@@ -32,7 +32,15 @@ interface Track {
   bytes: number;
   queue: Promise<void>;
   seq: number;
+  writeErr: number; // 폴더 쓰기 실패 수
+  storeErr: number; // 브라우저 저장소 조각 저장 실패 수
+  grewAt: number; // 마지막으로 크기가 늘어난 tick
+  seen: number; // 그때 크기
 }
+// 녹화가 조용히 사라지지 않게 (T136x A07-F03): 수업 중에 바로 선생님 화면에 알리는 실패 종류
+export type RecFail = 'write' | 'store' | 'stall' | 'crop';
+export type RecFailRow = { kind: RecFail; track: string; at_s: number };
+const STALL_S = 15; // 이만큼 파일 크기가 안 늘면 '녹화가 멈춘 것 같아요'
 
 // 소리 크기 재기 (T083d): 11/02 수업은 선생님·학생 마이크가 모두 연결되지 않아 43분 내내 무음이었다 → 녹음 중 소리 크기를 보이고 무음이면 바로 알린다
 const QUIET_DB = -60;
@@ -111,6 +119,13 @@ export class LessonRecorder {
   private warned = new Set<string>();
   lastSid = ''; // 끝난 수업의 조각 보관 id (드라이브 올리기용)
   onLevels: (l: MeterLevels) => void = () => {};
+  onFail: (kind: RecFail, track: string) => void = () => {};
+  fails: RecFailRow[] = [];
+  private fail(kind: RecFail, track: string) {
+    if (this.fails.some((f) => f.kind === kind && f.track === track)) return; // 같은 실패는 한 번만
+    this.fails.push({ kind, track, at_s: this.t() });
+    this.onFail(kind, track);
+  }
 
   get active(): boolean {
     return this.tracks.length > 0;
@@ -145,7 +160,12 @@ export class LessonRecorder {
       }
     } catch (e) {
       console.warn('crop', e);
+      this.cropped = '';
     }
+    this.fails = [];
+    this.startedPerf = performance.now();
+    // 판만 자르기가 안 되면 카메라 칸까지 찍힌다 → 바로 알리고 _rec.json faces 에 그대로 적는다 (A07-F11)
+    if (!this.cropped) this.fail('crop', 'video');
     vt.addEventListener('ended', () => this.onEnded()); // '공유 중지'를 누르면
     // 소리
     const ac = new AudioContext();
@@ -195,14 +215,27 @@ export class LessonRecorder {
     this.files = { video: `${opts.stem}.webm`, teacher: `${opts.stem}_Teacher.webm`, student: `${opts.stem}_Student.webm`, media: `${opts.stem}_Media.webm`, meta: `${opts.stem}_rec.json` };
     const add = async (stream: MediaStream, name: string, mime: string, bps: { videoBitsPerSecond?: number; audioBitsPerSecond?: number }) => {
       const rec = new MediaRecorder(stream, { mimeType: mime, ...bps });
-      const t: Track = { rec, name, writer: await opts.open(name), chunks: [], bytes: 0, queue: Promise.resolve(), seq: 0 };
+      const t: Track = { rec, name, writer: await opts.open(name), chunks: [], bytes: 0, queue: Promise.resolve(), seq: 0, writeErr: 0, storeErr: 0, grewAt: 0, seen: 0 };
       rec.ondataavailable = (e) => {
         if (!e.data.size) return;
         t.bytes += e.data.size;
-        if (t.writer) t.queue = t.queue.then(() => t.writer!.write(e.data)).catch((err) => console.warn('write', err));
+        if (t.writer)
+          t.queue = t.queue.then(() => t.writer!.write(e.data)).catch((err) => {
+            console.warn('write', err);
+            t.writeErr++;
+            this.fail('write', t.name);
+          });
         else t.chunks.push(e.data);
         // 브라우저 저장소 복사본: 폴더에 못 쓸 때와 드라이브 올리기용 (끝나면 올린 조각만 정리)
-        if (this.sid) t.queue = t.queue.then(() => putChunk(this.sid, t.name, t.seq++, e.data));
+        if (this.sid) {
+          const sid = this.sid;
+          t.queue = t.queue.then(async () => {
+            if (!(await putChunk(sid, t.name, t.seq++, e.data))) {
+              t.storeErr++;
+              this.fail('store', t.name);
+            }
+          });
+        }
       };
       this.tracks.push(t);
       return rec;
@@ -218,6 +251,7 @@ export class LessonRecorder {
       const tr: Record<string, { mime: string; n: number }> = {};
       for (const t of this.tracks) if (!t.writer || opts.keep) tr[t.name] = { mime: t.rec.mimeType || 'video/webm', n: 0 };
       await beginSession({ id: this.sid, tag: opts.tag || '', stem: opts.stem, startedAt: opts.now, tracks: tr });
+      liveSessions.add(this.sid);
     } else this.sid = '';
     for (const r of recs) r.start(1000);
     this.meterTimer = window.setInterval(() => this.tick(), 250);
@@ -365,6 +399,11 @@ export class LessonRecorder {
     if (!mt) return;
     if (++this.tickN % 4 === 0) this.linkStreams();
     for (const m of Object.values(mt)) m.sample();
+    // 파일 크기가 15초 넘게 그대로면 그 줄 녹화가 멈춘 것 (11/02 무음 수업도 크기는 늘었다 → 소리 크기 경고와 따로 본다)
+    for (const tr of this.tracks) {
+      if (tr.bytes !== tr.seen) ((tr.seen = tr.bytes), (tr.grewAt = this.tickN));
+      else if (this.tickN - tr.grewAt >= STALL_S * 4) this.fail('stall', tr.name);
+    }
     const need = WARN_AFTER_S * 4;
     const mic = this.micTrack;
     const micDead = !!mic && (mic.readyState === 'ended' || mic.muted || !mic.enabled);
@@ -381,7 +420,7 @@ export class LessonRecorder {
   }
 
   // 끝: 파일을 닫고, 폴더가 없던 것은 Blob 으로 돌려준다
-  async stop(meta: Record<string, unknown>, open: OpenWriter): Promise<{ saved: string[]; blobs: Array<{ name: string; blob: Blob }>; empty: string[] }> {
+  async stop(meta: Record<string, unknown>, open: OpenWriter): Promise<{ saved: string[]; blobs: Array<{ name: string; blob: Blob }>; empty: string[]; fallback: boolean; fails: RecFailRow[] }> {
     const saved: string[] = [];
     const blobs: Array<{ name: string; blob: Blob }> = [];
     window.clearInterval(this.meterTimer);
@@ -404,14 +443,25 @@ export class LessonRecorder {
     for (const t of this.tracks) {
       await t.queue;
       if (t.writer) {
-        await t.writer.close();
-        saved.push(t.name);
+        try {
+          await t.writer.close();
+          if (!t.writeErr) saved.push(t.name);
+        } catch (e) {
+          console.warn('close', e);
+          t.writeErr++;
+          this.fail('write', t.name);
+        }
       } else blobs.push({ name: t.name, blob: new Blob(t.chunks, { type: t.rec.mimeType }) });
     }
-    // 0바이트 줄 점검 — 학생·자료 줄은 비는 수업도 있어 알림은 영상·선생님 줄만, 크기는 모두 기록
+    // 0바이트 줄 점검 (T136x): 네 줄 모두. 빈 줄에도 무음이 흐르므로(hush) 0바이트는 언제나 실패다
     const sizes: Record<string, number> = {};
     for (const t of this.tracks) sizes[t.name] = t.bytes;
-    const empty = this.tracks.filter((t) => !t.bytes && (t.name === this.files?.video || t.name === this.files?.teacher)).map((t) => t.name);
+    const empty = this.tracks.filter((t) => !t.bytes).map((t) => t.name);
+    const durS = Math.max(1, (performance.now() - this.startedPerf) / 1000);
+    const kbps: Record<string, number> = {};
+    for (const t of this.tracks) kbps[t.name] = Math.round(((t.bytes * 8) / durS / 1000) * 10) / 10;
+    // 폴더에 못 쓴 줄이 있으면 브라우저 저장소 복사본을 내려받게 한다
+    const fallback = this.tracks.some((t) => t.writeErr) && !!this.sid;
     const metaText = JSON.stringify(
       {
         schema: 'kwd-lesson-rec/v2',
@@ -420,7 +470,9 @@ export class LessonRecorder {
         duration_s: Math.round((performance.now() - this.startedPerf) / 1000),
         files: this.files,
         crop: this.cropped || 'none',
-        faces: { student: false, teacher: false },
+        // 얼굴: 판만 잘라 찍었을 때만 '안 찍힘'. 자르기가 안 됐으면 화면 전체라 카메라 칸이 찍혔을 수 있다 (A07-F11)
+        faces: this.cropped ? { student: false, teacher: false } : { student: true, teacher: true },
+        faces_basis: this.cropped ? 'crop:' + this.cropped : 'crop 실패 → 화면 전체',
         // 전사용: 소리 줄마다 무엇이 들어 있나 + 판 자료 재생 구간(녹화 시작부터 초)
         audio: {
           teacher: '선생님 마이크만',
@@ -430,6 +482,9 @@ export class LessonRecorder {
         },
         media: this.spans,
         bytes: sizes,
+        kbps,
+        empty,
+        rec_fail: this.fails,
         audio_check: audioCheck,
         ...meta,
       },
@@ -437,20 +492,25 @@ export class LessonRecorder {
       1,
     );
     if (this.files) {
-      const w = await open(this.files.meta);
-      if (w) {
-        await w.write(new Blob([metaText], { type: 'application/json' }));
-        await w.close();
-        saved.push(this.files.meta);
-      } else {
-        const mb = new Blob([metaText], { type: 'application/json' });
-        blobs.push({ name: this.files.meta, blob: mb });
-        if (this.sid) {
-          const sid = this.sid;
-          await markEndedWithMeta(sid, this.files.meta, mb);
+      // _rec.json 은 언제나 브라우저 저장소 묶음에도 넣는다 (11/02: 묶음에서 빠짐). 폴더에 쓰면 거기에도
+      const mb = new Blob([metaText], { type: 'application/json' });
+      let wrote = false;
+      try {
+        const w = await open(this.files.meta);
+        if (w) {
+          await w.write(mb);
+          await w.close();
+          saved.push(this.files.meta);
+          wrote = true;
         }
+      } catch (e) {
+        console.warn('meta', e);
+        this.fail('write', this.files.meta);
       }
+      if (!wrote || fallback) blobs.push({ name: this.files.meta, blob: mb });
+      if (this.sid) await markEndedWithMeta(this.sid, this.files.meta, mb);
     }
+    if (this.sid) liveSessions.delete(this.sid);
     this.display?.getTracks().forEach((t) => t.stop());
     this.display = null;
     void this.ac?.close();
@@ -458,7 +518,7 @@ export class LessonRecorder {
     this.tracks = [];
     this.lastSid = this.sid;
     this.sid = '';
-    return { saved, blobs, empty };
+    return { saved, blobs, empty, fallback, fails: this.fails.slice() };
   }
 }
 
