@@ -106,6 +106,8 @@ interface Call {
 
 배포: `cd server/cloudflare && npx wrangler login && npx wrangler secret put TEACHER_TOKEN && npx wrangler secret put TURN_KEY_ID && npx wrangler secret put TURN_KEY_API_TOKEN && npm run deploy`. 판의 ⋯ → 서버 주소에 `wss://kwd-board-sync.<계정>.workers.dev`.
 
+접근 통제 (T136ak, 11/11): 링크 꼴은 그대로(`#/c/<코드>`). 판은 연결 전에 `GET /wt?room=<방>`으로 방 쓰기 토큰을 받아 소켓·자료 올리기에 `?wt=`로 붙인다(서명 = 워커 비밀, 종류 w 쓰기 · r 읽기만 · t 선생님). `wrangler.toml [vars]` 스위치: `WRITE_GUARD="on"`이면 토큰 없는 소켓·자료 PUT 403, `TEACHER_GUARD="on"`이면 이틀 넘게 지난 교실 판은 선생님 열쇠 기기만 쓰기(기본 off — 켜려면 값만 바꿔 `npm run deploy`). 끊은 교실 코드: 선생님 첫 화면 수업 카드 '학생 링크 새로 만들기' → 새 코드 + `POST /admin/block {code}`(선생님 열쇠) → 옛 코드의 /wt·소켓·/turn·자료 403, 판에는 붉은 안내. 되살리기 `POST /admin/unblock`. 방마다 하루 한 번 스냅샷(지난 날 끝 상태, 7개) `GET /rooms/<방>/snaps`·`export?snap=YYMMDD`. 저장 실패는 삼키지 않고 기록·5초 뒤 다시(`export._server.saveFails`). 구글 웹앱(gas/Code.gs)은 판이 읽는 폴더만(`ALLOW`), 틀린 열쇠 10번/1시간이면 1시간 잠금(편집기 `unlock()`). 시험: `scripts/t136ak-worker.mjs`(wrangler dev), `scripts/t136ak-gas.mjs`.
+
 로컬 Node 서버(`server/node`)도 같은 세 가지를 더해 시험용으로 둔다(Playwright 가 이걸로 두 브라우저 통화를 시험).
 
 ## 4. 단계

@@ -2,12 +2,12 @@
 // 학생 이름·정보는 선생님 열쇠로 런타임에만 불러온다 (이 저장소에는 없음). 학생 정보는 읽기만.
 import * as Y from 'yjs';
 import { WebsocketProvider } from 'y-websocket';
-import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl, DEFAULT_SERVER } from './store';
+import { loadIndex, saveIndex, randomId, getServerUrl, setServerUrl, DEFAULT_SERVER, roomToken, getToken, httpBase } from './store';
 import { h, fmtDateTime, toast } from './ui';
 import { gasReady, gasCall } from './gas';
 import { listSessions } from './recstore';
 import { hubCards, HUB_URL, type HubCard } from './homework';
-import { loadStudentInfo, infoFor, packetFor, canUseFolder, folderState, pickWorkFolder, useDroppedItems, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, isDemo, loadRoster, saveRosterEdit, loadRosterTeacher, type StudentEntry, type BriefLesson, type StudentInfo, type Roster, type RosterStudent, type RosterEdit, type RosterStatus } from './kwdfolder';
+import { loadStudentInfo, infoFor, packetFor, canUseFolder, folderState, pickWorkFolder, useDroppedItems, reopenFolder, listStudents, briefFor, boardIdFor, ensureClassCode, rotateClassCode, rememberBoardFolder, folderForBoard, forgetFolder, ymd, isDemo, loadRoster, saveRosterEdit, loadRosterTeacher, type StudentEntry, type BriefLesson, type StudentInfo, type Roster, type RosterStudent, type RosterEdit, type RosterStatus } from './kwdfolder';
 
 const WEEK = ['일', '월', '화', '수', '목', '금', '토'];
 const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
@@ -67,6 +67,27 @@ export class HomeScreen {
     } catch {
       window.prompt('학생 링크 (복사해 주세요)', url);
     }
+  }
+
+  // 학생 링크 새로 만들기 (T136ak A07-F10): 새 코드 → 옛 코드는 서버 막을 목록에 → 새 링크 복사
+  private async newStudentLink(folder: string) {
+    if (!window.confirm('이 학생의 링크를 새로 만들까요?\n지금 링크는 더 이상 열리지 않아요. 새 링크를 학생에게 다시 보내야 해요.')) return;
+    const r = await rotateClassCode(folder);
+    if (!r) return toast('학생 폴더에 쓸 수 없어 바꾸지 않았어요 (폴더 쓰기 허용 필요)', 4000);
+    let blockedOld = !r.old;
+    const srv = getServerUrl();
+    const tk = getToken();
+    if (r.old && srv && tk) {
+      try {
+        const res = await fetch(`${httpBase(srv)}/admin/block`, { method: 'POST', headers: { authorization: 'Bearer ' + tk, 'content-type': 'application/json' }, body: JSON.stringify({ code: r.old }) });
+        blockedOld = res.ok;
+      } catch {
+        blockedOld = false;
+      }
+    }
+    await this.copyStudentLink(folder);
+    if (!blockedOld) toast('새 링크를 복사했어요. 옛 링크는 서버에서 막지 못했어요 (선생님 열쇠 확인)', 5000);
+    else toast('새 링크를 복사했어요. 옛 링크는 막았어요', 3000);
   }
 
   private async render() {
@@ -285,6 +306,9 @@ export class HomeScreen {
     if (l.links?.folder) docs.append(link(l.links.folder, '학생 폴더'));
     docs.append(link(HUB_URL, '허브에서 보기'));
     post.append(docs);
+    const renew = h('button', { type: 'button', class: 'linkish' }, '학생 링크 새로 만들기');
+    renew.addEventListener('click', () => void this.newStudentLink(l.folder));
+    if (!isDemo()) post.append(h('p', { class: 'th-links' }, renew));
     const boards = loadIndex().filter((b) => folderForBoard(b.id) === l.folder || (!!r.sid && b.student === r.sid));
     if (boards.length) {
       post.append(h('p', { class: 'th-k' }, '지난 판'));
@@ -310,9 +334,17 @@ export class HomeScreen {
     };
     const srv = getServerUrl();
     if (!srv) return set(false, '학생 접속은 서버에 연결해야 보여요 (판 안에서는 보여요)');
+    void roomToken(srv, 'kwd-' + bid).then((t) => {
+      if (!dot.isConnected) return;
+      if (t.blocked) return set(false, '끊은 링크예요 — 학생 링크를 새로 만들어 주세요');
+      this.startPeek(srv, bid, t.wt, set);
+    });
+  }
+  private startPeek(srv: string, bid: string, wt: string, set: (on: boolean, text: string) => void) {
+    this.stopPeek();
     try {
       const doc = new Y.Doc();
-      const provider = new WebsocketProvider(srv.replace(/\/+$/, ''), 'kwd-' + bid, doc, { connect: true });
+      const provider = new WebsocketProvider(srv.replace(/\/+$/, ''), 'kwd-' + bid, doc, { connect: true, params: wt ? { wt } : {} });
       provider.awareness.setLocalState(null);
       this.peek = { provider, doc };
       const upd = () => {

@@ -2,7 +2,7 @@ import './styles.css';
 import { clearToast } from './ui';
 import { HomeScreen } from './home';
 import { BoardScreen } from './board';
-import type { Role } from './store';
+import { safeServer, type Role } from './store';
 import { setWorkHandleForTest, listStudents, isDemo, setDemo, useDemoFolder, classBoardId, isClassCode } from './kwdfolder';
 import { DemoScreen, type DemoView } from './demo';
 import { h } from './ui';
@@ -23,20 +23,20 @@ function parseRoute(): { kind: 'home' } | { kind: 'demo'; view?: DemoView } | { 
   const c = /^\/c\/([a-z0-9]{9})\/?(?:\?(.*))?$/i.exec(hash);
   if (c && isClassCode(c[1].toLowerCase())) {
     const q = new URLSearchParams(c[2] || '');
-    return { kind: 'board', id: classBoardId(c[1].toLowerCase()), role: 'student', server: q.get('srv') || undefined };
+    return { kind: 'board', id: classBoardId(c[1].toLowerCase()), role: 'student', server: safeServer(q.get('srv')) || undefined };
   }
   // 선생님 고정 링크: #/t/<교실 코드>?st=<학생 id> → 그날 판에 선생님으로 (학생 링크 #/c/ 는 항상 학생)
   const t = /^\/t\/([a-z0-9]{9})\/?(?:\?(.*))?$/i.exec(hash);
   if (t && isClassCode(t[1].toLowerCase())) {
     const q = new URLSearchParams(t[2] || '');
-    return { kind: 'board', id: classBoardId(t[1].toLowerCase()), role: 'teacher', student: q.get('st') || undefined, server: q.get('srv') || undefined, token: q.get('tk') || undefined, fixed: true };
+    return { kind: 'board', id: classBoardId(t[1].toLowerCase()), role: 'teacher', student: q.get('st') || undefined, server: safeServer(q.get('srv')) || undefined, token: q.get('tk') || undefined, fixed: true };
   }
   const m = /^\/b\/([a-z0-9]{4,})(?:\?(.*))?$/i.exec(hash);
   if (!m) return { kind: 'home' };
   const q = new URLSearchParams(m[2] || '');
   const r = (q.get('r') || 't').toLowerCase();
   const role: Role = r.startsWith('s') ? 'student' : r.startsWith('a') ? 'assist' : 'teacher';
-  return { kind: 'board', id: m[1].toLowerCase(), role, student: q.get('st') || undefined, server: q.get('srv') || undefined, token: q.get('tk') || undefined };
+  return { kind: 'board', id: m[1].toLowerCase(), role, student: q.get('st') || undefined, server: safeServer(q.get('srv')) || undefined, token: q.get('tk') || undefined };
 }
 
 function route() {

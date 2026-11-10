@@ -166,13 +166,41 @@ export function upsertIndex(entry: BoardIndexEntry) {
 }
 // 배포본(github.io)은 선생님 서버가 기본값: 어느 PC·학생 기기에서도 주소를 넣을 필요가 없다. 시험(localhost)에서는 없음
 export const DEFAULT_SERVER = typeof location !== 'undefined' && /\.github\.io$/.test(location.hostname) ? 'wss://kwd-board-sync.impressive261.workers.dev' : '';
-export const getServerUrl = () => lsGet(SERVER_KEY) || DEFAULT_SERVER;
+// T136ak(A07-F09): 동기 서버는 우리 서버·이 PC(시험)만. 링크의 ?srv= 나 저장된 값이 다른 곳이면 버린다
+export const SERVER_HOSTS = ['kwd-board-sync.impressive261.workers.dev', 'localhost', '127.0.0.1'];
+export function safeServer(u: string | null | undefined): string {
+  if (!u) return '';
+  try {
+    const x = new URL(u);
+    return (x.protocol === 'ws:' || x.protocol === 'wss:') && SERVER_HOSTS.includes(x.hostname) ? u : '';
+  } catch {
+    return '';
+  }
+}
+export const getServerUrl = () => safeServer(lsGet(SERVER_KEY)) || DEFAULT_SERVER;
 export const setServerUrl = (u: string) => lsSet(SERVER_KEY, u);
 export const getToken = () => lsGet(TOKEN_KEY);
 export const setToken = (t: string) => lsSet(TOKEN_KEY, t);
 
 export function httpBase(wsUrl: string): string {
   return wsUrl.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/+$/, '');
+}
+
+// 방 쓰기 토큰 (T136ak A07-F09). 서버가 끊은 코드면 blocked. 옛 서버(/wt 없음)·연결 실패면 빈 토큰으로 예전처럼
+export type RoomToken = { wt: string; kind: string; blocked: boolean };
+export async function roomToken(wsUrl: string, room: string): Promise<RoomToken> {
+  const tk = getToken();
+  try {
+    const ctl = new AbortController();
+    const to = setTimeout(() => ctl.abort(), 8000);
+    const r = await fetch(`${httpBase(wsUrl)}/wt?room=${encodeURIComponent(room)}`, { cache: 'no-store', headers: tk ? { authorization: 'Bearer ' + tk } : {}, signal: ctl.signal }).finally(() => clearTimeout(to));
+    if (r.status === 403) return { wt: '', kind: '', blocked: true };
+    if (!r.ok) return { wt: '', kind: '', blocked: false };
+    const j = (await r.json()) as { wt?: string; kind?: string };
+    return { wt: j.wt || '', kind: j.kind || '', blocked: false };
+  } catch {
+    return { wt: '', kind: '', blocked: false };
+  }
 }
 
 export class BoardStore {
@@ -189,6 +217,10 @@ export class BoardStore {
   readonly id: string;
   readonly role: Role;
   status: 'local' | 'connecting' | 'connected' | 'disconnected' = 'local';
+  blocked = false; // 서버가 이 교실 코드를 끊음 (T136ak A07-F10)
+  readOnly = false; // 서버가 읽기만 허락 (지난 판, A05-F17 스위치)
+  private wt = '';
+  private connSeq = 0;
   clockOffset = 0; // 서버 시각 − 이 기기 시각(ms)
   clockRtt = -1;
   dirtySince = 0; // 마지막 기록 묶음 이후 바뀐 시각
@@ -413,7 +445,7 @@ export class BoardStore {
   async putBlob(key: string, blob: Blob): Promise<boolean> {
     if (!this.serverUrl || this.status !== 'connected') return false;
     try {
-      const r = await fetch(this.blobUrl(key), { method: 'PUT', body: blob, headers: { 'content-type': blob.type || 'application/octet-stream' } });
+      const r = await fetch(this.blobUrl(key) + (this.wt ? '?wt=' + encodeURIComponent(this.wt) : ''), { method: 'PUT', body: blob, headers: { 'content-type': blob.type || 'application/octet-stream' } });
       if (!r.ok) console.warn('[kwd] 자료 그림을 서버에 못 올렸어요', r.status);
       return r.ok;
     } catch (e) {
@@ -439,7 +471,25 @@ export class BoardStore {
     }
     const url = serverUrl.replace(/\/+$/, '');
     this.setStatus('connecting');
-    const provider = new WebsocketProvider(url, 'kwd-' + this.id, this.doc, { awareness: this.awareness, maxBackoffTime: 5000 });
+    const seq = ++this.connSeq;
+    void roomToken(url, 'kwd-' + this.id).then((t) => {
+      if (seq !== this.connSeq || this.destroyed) return;
+      this.blocked = t.blocked;
+      this.readOnly = t.kind === 'r';
+      this.wt = t.wt;
+      if (t.blocked) {
+        console.warn('[kwd] 이 교실 링크는 끊겼어요 (서버 막을 목록)');
+        this.setStatus('disconnected');
+        this.statusListeners.forEach((fn) => fn(this.status));
+        return;
+      }
+      this.openProvider(url, t.wt);
+    });
+  }
+
+  private destroyed = false;
+  private openProvider(url: string, wt: string) {
+    const provider = new WebsocketProvider(url, 'kwd-' + this.id, this.doc, { awareness: this.awareness, maxBackoffTime: 5000, params: wt ? { wt } : {} });
     provider.on('status', ({ status }: { status: string }) => {
       if (status === 'connected') {
         this.setStatus('connected');
@@ -468,6 +518,7 @@ export class BoardStore {
   }
 
   disconnect() {
+    this.connSeq++;
     this.provider?.destroy();
     this.provider = null;
     this.setStatus('local');
@@ -585,6 +636,8 @@ export class BoardStore {
   }
 
   destroy() {
+    this.destroyed = true;
+    this.connSeq++;
     this.flushText();
     this.provider?.destroy();
     removeAwarenessStates(this.awareness, [this.doc.clientID], 'leave');

@@ -1560,6 +1560,10 @@ canvas.ink.active {
   border-radius: 999px;
   padding: 2px 8px;
 }
+.chip-perm.chip-bad {
+  color: #c0392b;
+  background: #fdecea;
+}
 .sn-exit {
   border: 0;
   border-left: 1px solid var(--line);
@@ -3491,3 +3495,16 @@ button:focus-visible, [role="button"]:focus-visible, a:focus-visible, input:focu
 .rec-fail .rf-row { display: flex; gap: 8px; justify-content: flex-end; }
 .rec-fail button { min-height: 44px; padding: 0 16px; border-radius: 10px; font-size: 15px; border: 1px solid var(--line, #ccc); background: #fff; cursor: pointer; }
 .rec-fail .rf-dl { background: #b3261e; border-color: #b3261e; color: #fff; font-weight: 600; }
+.join-blocked {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #c0392b;
+  background: #fdecea;
+}
+.join-go:disabled,
+.join-nocam[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

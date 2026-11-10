@@ -24,11 +24,14 @@ const ls = {
 };
 
 export const gasKey = () => ls.get(KEY);
-export const gasUrl = () => ls.get(URL_KEY) || GAS_URL_DEFAULT;
+// T136ak(A07-F09): 녹화를 올릴 곳은 구글 Apps Script 웹앱 주소만. 링크의 &g= 나 저장된 값이 다른 곳이면 버린다
+export const safeGasUrl = (u: string) => (/^https:\/\/script\.google\.com\/macros\/s\/[\w-]{20,120}\/exec$/.test(u) ? u : '');
+export const gasUrl = () => safeGasUrl(ls.get(URL_KEY)) || GAS_URL_DEFAULT;
 export const gasReady = () => !!gasKey() && !!gasUrl();
 export function setGas(key: string, url = '') {
   ls.set(KEY, key);
-  if (url) ls.set(URL_KEY, url);
+  if (url && safeGasUrl(url)) ls.set(URL_KEY, url);
+  else if (url) console.warn('[kwd] 녹화 올릴 주소가 구글 웹앱 주소가 아니라 쓰지 않아요');
 }
 
 // 주소의 ?k=열쇠(&g=웹앱 주소)를 저장하고 주소에서 지운다. 해시 안(#/t/…?k=)과 일반 쿼리(?k=) 둘 다.

@@ -552,6 +552,39 @@ export async function ensureClassCode(folder: string): Promise<string> {
   return code;
 }
 
+// 학생 링크 새로 만들기 (T136ak A07-F10): 새 코드를 학생 폴더 classroom.json 에 먼저 쓰고(실패하면 안 바꿈) 이 기기 기억을 바꾼다.
+// 옛 코드를 서버에서 막는 일은 부르는 쪽(home.ts)이 선생님 열쇠로 한다.
+export async function rotateClassCode(folder: string): Promise<{ old: string; code: string } | null> {
+  if (isDemo()) return null;
+  const old = await ensureClassCode(folder);
+  const a = 'abcdefghjkmnpqrstuvwxyz23456789';
+  const buf = new Uint8Array(8);
+  crypto.getRandomValues(buf);
+  const code = 'k' + Array.from(buf, (b) => a[b % a.length]).join('');
+  const saved = await saveToStudentFolder(folder, 'kwd-board', 'classroom.json', JSON.stringify({ code, note: '학생 고정 교실 링크 코드. 지우면 학생 링크가 바뀌어요.', replaced: old ? new Date().toISOString().slice(0, 10) : undefined }, null, 2));
+  if (!saved) return null;
+  const m = codeMap();
+  m[studentKey(folder)] = code;
+  try {
+    localStorage.setItem(CODE_KEY, JSON.stringify(m));
+  } catch {
+    /* ignore */
+  }
+  return { old, code };
+}
+// 서버가 끊었다고 한 코드는 이 기기 기억에서 지운다 → 다음에 학생 폴더 classroom.json(새 코드)을 읽는다
+export function forgetClassCode(code: string) {
+  const m = codeMap();
+  let hit = false;
+  for (const k of Object.keys(m)) if (m[k] === code) (delete m[k], (hit = true));
+  if (!hit) return;
+  try {
+    localStorage.setItem(CODE_KEY, JSON.stringify(m));
+  } catch {
+    /* ignore */
+  }
+}
+
 const LESSON_RE = /^#(\d+)_.*?(\d{4}-\d{2}-\d{2})/;
 
 export async function listStudents(force = false): Promise<StudentEntry[]> {

@@ -18,9 +18,13 @@ function lessonDay(d = new Date()) {
 const rid = (n = 8) => Array.from({ length: n }, () => 'abcdefghjkmnpqrstuvwxyz23456789'[Math.floor(Math.random() * 31)]).join('');
 const id = `${code}d${dayArg || lessonDay()}`;
 const doc = new Y.Doc();
-const prov = new WebsocketProvider(SERVER, 'kwd-' + id, doc, { WebSocketPolyfill: WS });
-const done = (msg, c = 0) => { console.log(msg); setTimeout(() => { prov.destroy(); process.exit(c); }, 1500); };
+// T136ak: 서버가 방마다 쓰기 토큰을 요구한다(WRITE_GUARD). 옛 서버·로컬 서버면 빈 토큰으로 예전처럼
+const { roomWt } = require('./wt.cjs');
+let prov = null;
+const done = (msg, c = 0) => { console.log(msg); setTimeout(() => { if (prov) prov.destroy(); process.exit(c); }, 1500); };
 setTimeout(() => done('timeout: 서버 동기 안 됨', 1), 20000);
+roomWt(SERVER, 'kwd-' + id).then((wt) => {
+prov = new WebsocketProvider(SERVER, 'kwd-' + id, doc, { WebSocketPolyfill: WS, params: wt ? { wt } : {} });
 prov.on('sync', (ok) => {
   if (!ok) return;
   const pages = doc.getArray('pages');
@@ -50,3 +54,4 @@ prov.on('sync', (ok) => {
   });
   done(`seeded ${id} page=${pages.get(0).get('id')} mid=${mid} bytes=${html.length}`);
 });
+}, (e) => done('blocked: ' + e.message + ' ' + id, 1));

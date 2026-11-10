@@ -16,7 +16,7 @@ import { importPdf, importHtml, htmlWithBridge, joinText } from './importer';
 import { loadPrefs, savePrefs, penSlot, renderSlot, buildPenPopover, type PenPrefs } from './palette';
 import { icon } from './icons';
 import { loadMemory, cacheSet, normalize, headerLines, vocabNote, SAMPLE_MEMORY, type StudentMemory } from './memory';
-import { folderForBoard, listStudents, rememberBoardFolder, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, makeLessonDir, openStudentWriter, readStudentVerify, type StudentPack, type PackFile } from './kwdfolder';
+import { forgetClassCode, isClassCode, folderForBoard, listStudents, rememberBoardFolder, folderState, reopenFolder, briefFor, loadPack, buildMemory, readPackFile, isDemo, saveToStudentFolder, makeLessonDir, openStudentWriter, readStudentVerify, type StudentPack, type PackFile } from './kwdfolder';
 import { annotatedWorksheet } from './wsexport';
 import { Classroom } from './classroom';
 import { renderStudentPanel, cachedHistory, cacheHistory, verifyCount, type SplitSeg, type PanelTab } from './studentpanel';
@@ -2984,6 +2984,10 @@ export class BoardScreen {
     this.chip.innerHTML = '';
     const name = this.role === 'teacher' ? this.pack?.name || this.memory?.profile?.name || (student ? `학생 ${student}` : '판') : '수업 판';
     this.chip.append(h('span', { class: `dot ${this.store.status}` }), h('span', { class: 'chip-main' }, name));
+    // T136ak: 서버가 끊은 링크·읽기만 판은 칩에 붉게 (조용히 안 붙는 일 없게)
+    if (this.store.blocked && isClassCode(this.params.id.slice(0, 9))) forgetClassCode(this.params.id.slice(0, 9));
+    if (this.store.blocked) this.chip.append(h('span', { class: 'chip-perm chip-bad' }, this.role === 'teacher' ? '끊은 링크예요 — 첫 화면에서 새 링크로' : '끊긴 링크예요 — 선생님께 새 링크를 받으세요'));
+    else if (this.store.readOnly) this.chip.append(h('span', { class: 'chip-perm chip-bad' }, '지난 판 · 읽기만'));
     if (elapsed) this.chip.append(h('span', { class: 'chip-sub' }, '수업 ' + elapsed));
     if (this.role === 'teacher') {
       const perms = [this.store.getSetting('studentWrite', false) && '글', this.store.getSetting('studentInk', false) && '펜', this.store.getSetting('studentMaterial', false) && '자료'].filter(Boolean);

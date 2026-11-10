@@ -1170,3 +1170,18 @@ test.describe('T083c: 펜 도구에서 자료 탭 = 클릭, 끌기 = 펜 자국'
     await ctx.close();
   });
 });
+
+test.describe('T136ak: 접근 통제 (드라이브 열쇠 범위 · 방 쓰기 토큰 · 끊은 코드 · 하루 스냅샷)', () => {
+  test.describe.configure({ timeout: 240_000 });
+  test('구글 웹앱: 판이 읽는 곳만 열리고 data/private·secrets·점 파일은 거절, 틀린 열쇠 10번이면 1시간 잠금', () => {
+    const r = JSON.parse(execFileSync('node', ['scripts/t136ak-gas.mjs'], { encoding: 'utf8' }).trim().split('\n').pop()!);
+    expect(r.denied).toEqual({ private_get: true, private_ls: true, data_other: true, secrets: true, dotenv: true, git: true, dotdot: true, slash: true, get_empty: true });
+    expect(r.pass).toBe(true);
+  });
+  test('판 서버(워커, 이 PC): 토큰 없는 연결·자료 올리기 403, 지난 판 학생은 읽기만, 끊은 코드 403 → 풀면 다시, 하루 스냅샷, 자료 넣기 스크립트', () => {
+    const out = execFileSync('node', ['scripts/t136ak-worker.mjs'], { encoding: 'utf8', timeout: 230_000 }).trim().split('\n').pop()!;
+    const r = JSON.parse(out);
+    expect(r, out).toMatchObject({ ws_no_token: 403, ws_ok: 101, blob_put_no_token: 403, past_student_kind: 'r', blocked_ws: 403, unblocked_ws: 101, snap_content: 'hello', seed_blocked: 'blocked' });
+    expect(r.pass).toBe(true);
+  });
+});

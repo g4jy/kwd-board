@@ -11,6 +11,12 @@
 var MIRROR = '00_KWD_거울';
 var LANDING = ['01_현재 업무', '한국어 수업', '작업중'];
 var MAX_GET = 24 * 1024 * 1024;
+// 판이 읽는 곳만 (src/kwdfolder.ts의 sub(work, …)·student_info.json). 새 폴더를 읽게 되면 여기에 한 줄 더한다.
+var ALLOW = {
+  work: ['Student_Lessons', 'board_data', 'curriculum_v2', 'intake', 'lesson_packets'],
+  data: ['student_info.json']
+};
+var BAD_MAX = 10, BAD_WINDOW_MS = 3600 * 1000, LOCK_MS = 3600 * 1000;
 
 function out_(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 function doGet() { return out_({ ok: true, name: 'kwd-classroom' }); }
@@ -18,7 +24,8 @@ function doGet() { return out_({ ok: true, name: 'kwd-classroom' }); }
 function doPost(e) {
   try {
     var q = JSON.parse(e.postData.contents);
-    if (typeof TOKEN === 'undefined' || !TOKEN || q.k !== TOKEN) return out_({ ok: false, error: 'auth' });
+    if (locked_()) return out_({ ok: false, error: 'locked' });
+    if (typeof TOKEN === 'undefined' || !TOKEN || q.k !== TOKEN) { bad_(); return out_({ ok: false, error: 'auth' }); }
     var f = ACT[q.a];
     if (!f) return out_({ ok: false, error: 'action' });
     var r = f(q);
@@ -27,6 +34,42 @@ function doPost(e) {
   } catch (err) {
     return out_({ ok: false, error: String(err && err.message || err) });
   }
+}
+
+// ---- 틀린 열쇠 잠금 (ScriptProperties: 웹앱 전체에 하나) ----
+function locked_() {
+  var until = Number(PropertiesService.getScriptProperties().getProperty('lockUntil') || 0);
+  return until > new Date().getTime();
+}
+function bad_() {
+  var lock = LockService.getScriptLock();
+  try { lock.waitLock(5000); } catch (e) { return; }
+  try {
+    var pr = PropertiesService.getScriptProperties(), now = new Date().getTime();
+    var since = Number(pr.getProperty('badSince') || 0), n = Number(pr.getProperty('badN') || 0);
+    if (now - since > BAD_WINDOW_MS) { since = now; n = 0; }
+    n++;
+    var put = { badSince: String(since), badN: String(n) };
+    if (n >= BAD_MAX) { put.lockUntil = String(now + LOCK_MS); put.badN = '0'; put.badSince = '0'; }
+    pr.setProperties(put);
+  } finally { lock.releaseLock(); }
+}
+/** 잠금을 바로 풀 때: 편집기에서 실행 */
+function unlock() {
+  PropertiesService.getScriptProperties().setProperties({ lockUntil: '0', badN: '0', badSince: '0' });
+}
+
+// ---- 읽어도 되는 경로 ----
+function rootOf_(r) { return r === 'data' ? 'data' : 'work'; }
+function safeSeg_(x) {
+  var s = String(x);
+  return !!s && s.length <= 200 && s.charAt(0) !== '.' && !/[\/]/.test(s) && !/^private$/i.test(s);
+}
+// 폴더 경로 p(파일 이름 포함 가능)가 허용 목록 안인가. p가 비면(맨 위 목록) 허용하되 목록을 거른다.
+function allowed_(r, p) {
+  for (var i = 0; i < p.length; i++) if (!safeSeg_(p[i])) return false;
+  if (!p.length) return true;
+  return ALLOW[rootOf_(r)].indexOf(String(p[0])) >= 0;
 }
 
 function child_(folder, name) {
@@ -70,16 +113,21 @@ var ACT = {
   ping: function () { return { t: new Date().getTime() }; },
 
   ls: function (q) {
-    var d = dir_(q.r, q.p), out = [];
+    var p = q.p || [];
+    if (!allowed_(q.r, p)) throw new Error('denied');
+    var d = dir_(q.r, p), out = [];
     var fs = d.getFolders();
     while (fs.hasNext()) { var x = fs.next(); out.push({ n: x.getName(), d: 1 }); }
     var it = d.getFiles();
     while (it.hasNext()) { var y = it.next(); out.push({ n: y.getName(), d: 0, s: y.getSize(), m: y.getLastUpdated().getTime() }); }
+    if (!p.length) out = out.filter(function (x) { return ALLOW[rootOf_(q.r)].indexOf(x.n) >= 0; });
+    else out = out.filter(function (x) { return safeSeg_(x.n); });
     return { list: out };
   },
 
   get: function (q) {
     var p = (q.p || []).slice();
+    if (!p.length || !allowed_(q.r, p)) throw new Error('denied');
     var name = p.pop();
     var d = dir_(q.r, p);
     var it = d.getFilesByName(name);
